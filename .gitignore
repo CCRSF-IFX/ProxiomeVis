@@ -1,0 +1,50 @@
+# R session and workspace files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# Shiny and app runtime artifacts
+rsconnect/
+shiny-server/
+logs/
+*.log
+*.pid
+*.sock
+
+# Local app data and generated caches
+cache/
+runtime/
+.ProxiomeVis/
+*.rds
+*.rda
+*.RData
+*.sqlite
+*.sqlite3
+
+# Keep source-controlled dependency metadata, ignore installed libraries
+renv/
+
+# R package/build artifacts
+*.tar.gz
+*.tgz
+*.zip
+*.so
+*.o
+
+# Test and report output
+testthat.Rout*
+Rplots.pdf
+reports/
+output/
+exports/
+
+# Editor, OS, and temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

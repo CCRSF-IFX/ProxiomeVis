@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOSTNAME_FQDN="${HOSTNAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown)}"
+DEFAULT_APP_DIR=""
+DEFAULT_R_MODULE=""
+DEFAULT_DEMO_RDS=""
+
+case "${HOSTNAME_FQDN}" in
+  ncifcrf.gov|*.ncifcrf.gov)
+    DEFAULT_APP_DIR="/mnt/ccrsf-static/illumina/RnD_pixelgen_CAR-T_datasets/shiny/proxiome_demo"
+    DEFAULT_DEMO_RDS="/mnt/ccrsf-static/illumina/RnD_pixelgen_CAR-T_datasets/RnD_CS041188_BaoTran_XiaolinWu_3_Pixelgen_042126/notebooks/r/pg_data_combined_fil.pixelator_v4.1.1.rds"
+    ;;
+  biowulf.nih.gov|*.biowulf.nih.gov)
+    DEFAULT_APP_DIR="${BIOWULF_PROXIOME_APP_DIR:-/data/${USER}/ProxiomeVis/proxiome_demo}"
+    DEFAULT_R_MODULE="R/4.5.2"
+    DEFAULT_DEMO_RDS="${BIOWULF_PROXIOME_DEMO_RDS:-}"
+    ;;
+  *)
+    DEFAULT_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    ;;
+esac
+
+APP_DIR="${PROXIOME_APP_DIR:-${DEFAULT_APP_DIR}}"
+PROXIOME_R_MODULE="${PROXIOME_R_MODULE:-${DEFAULT_R_MODULE}}"
+PROXIOMEVIS_HOME="${PROXIOMEVIS_HOME:-${HOME}/.ProxiomeVis}"
+PROXIOME_RUNTIME_DIR="${PROXIOME_RUNTIME_DIR:-${PROXIOMEVIS_HOME}/runtime}"
+
+mkdir -p "${PROXIOMEVIS_HOME}" "${PROXIOMEVIS_HOME}/cache" "${PROXIOME_RUNTIME_DIR}"
+chmod 700 "${PROXIOMEVIS_HOME}" "${PROXIOMEVIS_HOME}/cache" "${PROXIOME_RUNTIME_DIR}" 2>/dev/null || true
+
+if [[ -n "${PROXIOME_R_MODULE:-}" ]]; then
+  if ! type module >/dev/null 2>&1 && [[ -f /etc/profile.d/modules.sh ]]; then
+    # Some OnDemand batch shells do not initialize Lmod until this file is sourced.
+    # shellcheck source=/dev/null
+    source /etc/profile.d/modules.sh
+  fi
+  module load "${PROXIOME_R_MODULE}"
+fi
+
+R_BIN="${R_BIN:-$(command -v Rscript)}"
+if [[ -z "${R_BIN}" ]]; then
+  echo "Could not find Rscript. Set PROXIOME_R_MODULE or R_BIN." >&2
+  exit 1
+fi
+
+cd "${APP_DIR}"
+
+export PROXIOMEVIS_HOME
+export PROXIOME_RUNTIME_DIR
+export PROXIOME_DEMO_RDS="${PROXIOME_DEMO_RDS:-${DEFAULT_DEMO_RDS}}"
+export RENV_CONFIG_AUTOLOADER_ENABLED="${RENV_CONFIG_AUTOLOADER_ENABLED:-TRUE}"
+export RENV_CONFIG_CACHE_ENABLED="${RENV_CONFIG_CACHE_ENABLED:-FALSE}"
+export RENV_DEPLOYMENT_STRICT="${RENV_DEPLOYMENT_STRICT:-TRUE}"
+export RENV_PROJECT="${APP_DIR}"
+export RENV_PATHS_LIBRARY="${RENV_PATHS_LIBRARY:-${APP_DIR}/renv/library}"
+export SHINY_APP_DIR="${APP_DIR}"
+export SHINY_HOST="${SHINY_HOST:-0.0.0.0}"
+export SHINY_PORT="${port:-${PORT:-${PORT1:-6323}}}"
+
+if [[ ! -f "${APP_DIR}/renv/activate.R" ]]; then
+  echo "Missing renv/activate.R in ${APP_DIR}" >&2
+  exit 1
+fi
+
+if [[ ! -f "${APP_DIR}/renv.lock" ]]; then
+  echo "Missing renv.lock in ${APP_DIR}" >&2
+  exit 1
+fi
+
+for required_package in renv shiny bslib ggplot2 plotly future promises rlang; do
+  if [[ ! -d "${RENV_PATHS_LIBRARY}" ]] || ! find -L "${RENV_PATHS_LIBRARY}" -maxdepth 4 -type d -name "${required_package}" | grep -q .; then
+    echo "renv project library is not restored in ${RENV_PATHS_LIBRARY}" >&2
+    echo "Missing package: ${required_package}" >&2
+    echo "Maintainer action: restore the renv project library during deployment." >&2
+    exit 1
+  fi
+done
+
+LAUNCHER_R="${PROXIOME_RUNTIME_DIR}/launch-${SLURM_JOB_ID:-$$}.R"
+cat > "${LAUNCHER_R}" <<'RSCRIPT'
+app_dir <- Sys.getenv("SHINY_APP_DIR")
+source(file.path(app_dir, "renv", "activate.R"))
+
+required_packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang")
+library_root <- file.path(app_dir, "renv", "library")
+candidate_libraries <- unique(c(
+  Sys.getenv("RENV_PATHS_LIBRARY", unset = ""),
+  library_root,
+  Sys.glob(file.path(library_root, "R-*", "*")),
+  Sys.glob(file.path(library_root, "*", "R-*", "*"))
+))
+candidate_libraries <- candidate_libraries[nzchar(candidate_libraries) & dir.exists(candidate_libraries)]
+complete_libraries <- candidate_libraries[vapply(candidate_libraries, function(library_root) {
+  all(dir.exists(file.path(library_root, required_packages)))
+}, logical(1))]
+if (length(complete_libraries) == 0) {
+  stop("No complete app-local renv library was found before launching Shiny.", call. = FALSE)
+}
+.libPaths(normalizePath(c(complete_libraries, .libPaths()), mustWork = FALSE))
+Sys.setenv(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
+
+shiny::runApp(
+  app_dir,
+  host = Sys.getenv("SHINY_HOST"),
+  port = as.integer(Sys.getenv("SHINY_PORT")),
+  launch.browser = FALSE
+)
+RSCRIPT
+
+exec "${R_BIN}" "${LAUNCHER_R}"
