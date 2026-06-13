@@ -300,6 +300,73 @@ test_that("stored assay proximity is used without calling pixelatorR ProximitySc
   expect_false(grepl("pixelatorR::ProximityScores", adapter_source, fixed = TRUE))
 })
 
+test_that("user RDS schema inspection reports assay, metadata, embeddings, proximity, dimensions, and cache estimate", {
+  if (!methods::isClass("ProxiomeSchemaAssay")) {
+    methods::setClass("ProxiomeSchemaAssay", slots = c(proximity = "data.frame"))
+  }
+  if (!methods::isClass("ProxiomeSchemaObject")) {
+    methods::setClass(
+      "ProxiomeSchemaObject",
+      slots = c(
+        assays = "list",
+        meta.data = "data.frame",
+        reductions = "list",
+        active.assay = "character"
+      )
+    )
+  }
+
+  assay <- methods::new(
+    "ProxiomeSchemaAssay",
+    proximity = data.frame(
+      component = c("cell-a", "cell-b"),
+      marker_1 = c("CD3e", "CD4"),
+      marker_2 = c("CD3e", "CD8"),
+      log2_ratio = c(0.5, -0.2),
+      stringsAsFactors = FALSE
+    )
+  )
+  rownames(assay@proximity) <- NULL
+  object <- methods::new(
+    "ProxiomeSchemaObject",
+    assays = list(PNA = assay),
+    meta.data = data.frame(
+      condition = c("UNT", "CD3CD28"),
+      celltype_manual = c("CD8 T", "CD4 T"),
+      row.names = c("cell-a", "cell-b"),
+      stringsAsFactors = FALSE
+    ),
+    reductions = list(umap = matrix(1:4, ncol = 2, dimnames = list(c("cell-a", "cell-b"), c("UMAP_1", "UMAP_2")))),
+    active.assay = "PNA"
+  )
+  rds_path <- tempfile(fileext = ".rds")
+  saveRDS(object, rds_path)
+
+  schema <- inspect_user_rds_schema(rds_path)
+
+  expect_equal(schema$assay$name, "PNA")
+  expect_true(schema$assay$available)
+  expect_equal(schema$marker_count, 3L)
+  expect_equal(schema$cell_count, 2L)
+  expect_true(all(c("condition", "celltype_manual") %in% schema$metadata$present))
+  expect_true("sample_alias" %in% schema$metadata$missing)
+  expect_equal(schema$embeddings$names, "umap")
+  expect_true(schema$embeddings$has_two_dimensional)
+  expect_true(schema$proximity$available)
+  expect_equal(schema$proximity$row_count, 2L)
+  expect_true(schema$estimated_cache_size_bytes > 0)
+
+  report <- format_user_rds_schema_report(schema)
+  expect_match(report, "Expected assay: PNA", fixed = TRUE)
+  expect_match(report, "Metadata columns", fixed = TRUE)
+  expect_match(report, "celltype_manual", fixed = TRUE)
+  expect_match(report, "Embeddings: umap", fixed = TRUE)
+  expect_match(report, "Stored proximity: available", fixed = TRUE)
+  expect_match(report, "3 markers", fixed = TRUE)
+  expect_match(report, "2 cells", fixed = TRUE)
+  expect_match(report, "Estimated cache", fixed = TRUE)
+})
+
 test_that("QC payload preserves original metadata and filter counts", {
   filtered_metadata <- data.frame(
     sample = c("s1", "s2"),

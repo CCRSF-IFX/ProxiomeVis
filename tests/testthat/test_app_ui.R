@@ -516,13 +516,16 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
   expect_true(grepl('id="data_source-data_source_menu"', html, fixed = TRUE))
   expect_false(grepl('id="upload_rds"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_server_path"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-validate_rds_path"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-load_rds_path"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-use_demo_data"', html, fixed = TRUE))
   expect_false(grepl("Upload RDS", html, fixed = TRUE))
   expect_true(grepl("RDS path", html, fixed = TRUE))
+  expect_true(grepl("Validate RDS", html, fixed = TRUE))
   expect_true(grepl("Load Data", html, fixed = TRUE))
   expect_true(grepl("Use demo data", html, fixed = TRUE))
   expect_true(grepl('id="data_source-source_summary"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_schema_report"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_status"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_progress"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_progress_bar"', html, fixed = TRUE))
@@ -533,7 +536,10 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
 
   expect_false(grepl("observeEvent(input$upload_rds", app_source, fixed = TRUE))
   expect_false(grepl("observeEvent(input$load_rds_path", app_source, fixed = TRUE))
+  expect_true(grepl("observeEvent(input$validate_rds_path", data_source_source, fixed = TRUE))
   expect_true(grepl("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE))
+  expect_true(grepl("inspect_user_rds_schema(input$rds_server_path)", data_source_source, fixed = TRUE))
+  expect_true(grepl("format_user_rds_schema_report", data_source_source, fixed = TRUE))
   expect_false(grepl("observeEvent(input$upload_rds_too_large", app_source, fixed = TRUE))
 })
 
@@ -673,7 +679,7 @@ test_that("server RDS path loading is delegated to an async task", {
   data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
   load_observer_start <- regexpr("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE)[[1]]
   expect_gt(load_observer_start, 0)
-  load_observer <- substr(data_source_source, load_observer_start, load_observer_start + 1800)
+  load_observer <- substr(data_source_source, load_observer_start, load_observer_start + 2600)
 
   expect_true(grepl("create_user_rds_load_task", data_source_source, fixed = TRUE))
   expect_true(grepl("ExtendedTask$new", data_source_source, fixed = TRUE))

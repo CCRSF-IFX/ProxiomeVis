@@ -12,6 +12,8 @@ DEFAULT_DEMO_MARKERS <- c(
 
 DEMO_CACHE_SCHEMA_VERSION <- 3L
 ABUNDANCE_LONG_MAX_BLOCK_ENTRIES <- 500000L
+RDS_SCHEMA_EXPECTED_METADATA_COLUMNS <- c("condition", "celltype_manual", "sample_alias")
+RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS <- c("component", "marker_1", "marker_2", "log2_ratio")
 
 default_demo_rds_path <- function(repo_root = NULL, must_work = TRUE) {
   configured_rds <- Sys.getenv("PROXIOME_DEMO_RDS", unset = "")
@@ -264,6 +266,319 @@ stored_assay_proximity <- function(assay_object, markers = NULL) {
   }
 
   proximity
+}
+
+validate_existing_rds_path <- function(rds_path) {
+  rds_path <- trimws(as.character(rds_path %||% ""))
+  if (!nzchar(rds_path)) {
+    stop("Enter an RDS path.", call. = FALSE)
+  }
+  if (!grepl("\\.rds$", rds_path, ignore.case = TRUE)) {
+    stop("RDS path must be an .rds file.", call. = FALSE)
+  }
+  if (!file.exists(rds_path)) {
+    stop("RDS path does not exist.", call. = FALSE)
+  }
+
+  normalizePath(rds_path, mustWork = TRUE)
+}
+
+inspect_user_rds_schema <- function(
+  rds_path,
+  expected_metadata_columns = RDS_SCHEMA_EXPECTED_METADATA_COLUMNS,
+  required_proximity_columns = RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS
+) {
+  rds_path <- validate_existing_rds_path(rds_path)
+  object <- readRDS(rds_path)
+  summarize_user_rds_schema(
+    object,
+    rds_path = rds_path,
+    expected_metadata_columns = expected_metadata_columns,
+    required_proximity_columns = required_proximity_columns
+  )
+}
+
+summarize_user_rds_schema <- function(
+  object,
+  rds_path = NULL,
+  expected_metadata_columns = RDS_SCHEMA_EXPECTED_METADATA_COLUMNS,
+  required_proximity_columns = RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS
+) {
+  assays <- schema_object_assays(object)
+  assay_name <- schema_object_default_assay(object, assays)
+  assay <- if (nzchar(assay_name) && assay_name %in% names(assays)) assays[[assay_name]] else NULL
+  metadata <- schema_object_metadata(object)
+  embeddings <- schema_object_embeddings(object)
+  proximity <- schema_assay_proximity_summary(assay, required_columns = required_proximity_columns)
+  marker_names <- schema_assay_marker_names(assay, object = object, proximity = proximity$data)
+  marker_count <- length(unique(marker_names))
+  cell_count <- schema_object_cell_count(object, metadata = metadata, assay = assay)
+  metadata_names <- names(metadata)
+  metadata_present <- intersect(expected_metadata_columns, metadata_names)
+  metadata_missing <- setdiff(expected_metadata_columns, metadata_names)
+  estimated_cache_size_bytes <- estimate_user_rds_cache_size_bytes(
+    marker_count = marker_count,
+    cell_count = cell_count,
+    proximity_row_count = proximity$row_count,
+    metadata_column_count = length(metadata_names),
+    embedding_count = length(embeddings$names)
+  )
+
+  list(
+    path = rds_path,
+    file_size_bytes = if (!is.null(rds_path) && file.exists(rds_path)) unname(file.info(rds_path)$size[1]) else NA_real_,
+    assay = list(
+      name = assay_name,
+      available = !is.null(assay),
+      choices = names(assays)
+    ),
+    metadata = list(
+      expected = expected_metadata_columns,
+      present = metadata_present,
+      missing = metadata_missing,
+      available = metadata_names,
+      column_count = length(metadata_names)
+    ),
+    embeddings = embeddings,
+    proximity = proximity[c("available", "row_count", "required_columns", "missing_columns", "message")],
+    marker_count = as.integer(marker_count),
+    cell_count = as.integer(cell_count),
+    estimated_cache_size_bytes = estimated_cache_size_bytes,
+    estimated_cache_size = format_bytes(estimated_cache_size_bytes)
+  )
+}
+
+schema_object_assays <- function(object) {
+  assays <- NULL
+  if (isS4(object) && "assays" %in% slotNames(object)) {
+    assays <- methods::slot(object, "assays")
+  } else if (is.list(object) && "assays" %in% names(object)) {
+    assays <- object$assays
+  }
+
+  if (is.null(assays)) {
+    return(list())
+  }
+  as.list(assays)
+}
+
+schema_object_default_assay <- function(object, assays = schema_object_assays(object)) {
+  assay <- tryCatch({
+    if (requireNamespace("Seurat", quietly = TRUE)) {
+      Seurat::DefaultAssay(object)
+    } else {
+      NULL
+    }
+  }, error = function(error) NULL)
+
+  if (is.null(assay) || !length(assay) || is.na(assay) || !nzchar(assay)) {
+    assay <- schema_object_slot_or_item(object, "active.assay")
+  }
+  if (is.null(assay) || !length(assay) || is.na(assay) || !nzchar(assay)) {
+    assay <- names(assays)[1] %||% ""
+  }
+
+  as.character(assay[1])
+}
+
+schema_object_slot_or_item <- function(object, name) {
+  if (isS4(object) && name %in% slotNames(object)) {
+    return(methods::slot(object, name))
+  }
+  if (is.list(object) && name %in% names(object)) {
+    return(object[[name]])
+  }
+  NULL
+}
+
+schema_object_metadata <- function(object) {
+  metadata <- tryCatch(as.data.frame(object[[]]), error = function(error) NULL)
+  if (is.null(metadata)) {
+    metadata <- schema_object_slot_or_item(object, "meta.data")
+  }
+  if (is.null(metadata) || !is.data.frame(metadata)) {
+    return(data.frame())
+  }
+
+  as.data.frame(metadata)
+}
+
+schema_object_embeddings <- function(object) {
+  reduction_names <- tryCatch({
+    if (requireNamespace("Seurat", quietly = TRUE)) {
+      Seurat::Reductions(object)
+    } else {
+      character(0)
+    }
+  }, error = function(error) character(0))
+
+  reductions <- schema_object_slot_or_item(object, "reductions")
+  if (length(reduction_names) == 0 && is.list(reductions)) {
+    reduction_names <- names(reductions)
+  }
+  reduction_names <- unique(as.character(reduction_names %||% character(0)))
+  reduction_names <- reduction_names[nzchar(reduction_names)]
+
+  dimensions <- lapply(reduction_names, function(reduction) {
+    embedding <- tryCatch({
+      if (requireNamespace("Seurat", quietly = TRUE)) {
+        Seurat::Embeddings(object, reduction)
+      } else {
+        NULL
+      }
+    }, error = function(error) NULL)
+
+    if (is.null(embedding) && is.list(reductions) && reduction %in% names(reductions)) {
+      embedding <- reductions[[reduction]]
+    }
+    if (isS4(embedding) && "cell.embeddings" %in% slotNames(embedding)) {
+      embedding <- methods::slot(embedding, "cell.embeddings")
+    }
+
+    dim(embedding) %||% c(NA_integer_, NA_integer_)
+  })
+  names(dimensions) <- reduction_names
+  column_counts <- vapply(dimensions, function(value) as.integer(value[2] %||% NA_integer_), integer(1))
+
+  list(
+    names = reduction_names,
+    dimensions = dimensions,
+    has_two_dimensional = any(column_counts >= 2, na.rm = TRUE)
+  )
+}
+
+schema_assay_proximity_summary <- function(assay, required_columns = RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS) {
+  proximity <- NULL
+  has_slot <- !is.null(assay) && isS4(assay) && "proximity" %in% slotNames(assay)
+  if (has_slot) {
+    proximity <- methods::slot(assay, "proximity")
+  } else if (is.list(assay) && "proximity" %in% names(assay)) {
+    proximity <- assay$proximity
+  }
+
+  missing_columns <- required_columns
+  available <- FALSE
+  row_count <- 0L
+  message <- "missing"
+  if (is.data.frame(proximity)) {
+    missing_columns <- setdiff(required_columns, names(proximity))
+    row_count <- nrow(proximity)
+    available <- row_count > 0 && length(missing_columns) == 0
+    message <- if (available) {
+      "available"
+    } else if (row_count == 0) {
+      "empty"
+    } else {
+      paste("missing columns:", paste(missing_columns, collapse = ", "))
+    }
+  }
+
+  list(
+    available = available,
+    row_count = as.integer(row_count),
+    required_columns = required_columns,
+    missing_columns = missing_columns,
+    message = message,
+    data = proximity
+  )
+}
+
+schema_assay_marker_names <- function(assay, object = NULL, proximity = NULL) {
+  marker_names <- tryCatch(rownames(assay), error = function(error) NULL)
+  if (is.null(marker_names) || length(marker_names) == 0) {
+    marker_names <- tryCatch(rownames(object), error = function(error) NULL)
+  }
+  if ((is.null(marker_names) || length(marker_names) == 0) && is.data.frame(proximity)) {
+    marker_names <- stats::na.omit(as.character(c(proximity$marker_1, proximity$marker_2)))
+  }
+  if (is.null(marker_names)) {
+    return(character(0))
+  }
+
+  unique(as.character(marker_names))
+}
+
+schema_object_cell_count <- function(object, metadata = schema_object_metadata(object), assay = NULL) {
+  cell_count <- tryCatch(ncol(object), error = function(error) NULL)
+  if (is.null(cell_count) || length(cell_count) == 0 || is.na(cell_count)) {
+    cell_count <- nrow(metadata)
+  }
+  if ((is.null(cell_count) || length(cell_count) == 0 || is.na(cell_count)) && !is.null(assay)) {
+    cell_count <- tryCatch(ncol(assay), error = function(error) NULL)
+  }
+  if (is.null(cell_count) || length(cell_count) == 0 || is.na(cell_count)) {
+    return(0L)
+  }
+
+  as.integer(cell_count[1])
+}
+
+estimate_user_rds_cache_size_bytes <- function(
+  marker_count,
+  cell_count,
+  proximity_row_count = 0L,
+  metadata_column_count = 0L,
+  embedding_count = 0L
+) {
+  marker_count <- max(0, as.numeric(marker_count %||% 0))
+  cell_count <- max(0, as.numeric(cell_count %||% 0))
+  proximity_row_count <- max(0, as.numeric(proximity_row_count %||% 0))
+  metadata_column_count <- max(0, as.numeric(metadata_column_count %||% 0))
+  embedding_count <- max(0, as.numeric(embedding_count %||% 0))
+
+  abundance_bytes <- marker_count * cell_count * 48
+  proximity_bytes <- proximity_row_count * 120
+  metadata_bytes <- cell_count * (96 + metadata_column_count * 16 + embedding_count * 24)
+  overhead_bytes <- 1024^2
+  as.numeric(ceiling(abundance_bytes + proximity_bytes + metadata_bytes + overhead_bytes))
+}
+
+format_bytes <- function(bytes) {
+  bytes <- suppressWarnings(as.numeric(bytes[1]))
+  if (!is.finite(bytes) || bytes < 0) {
+    return("unknown")
+  }
+
+  units <- c("B", "KB", "MB", "GB", "TB")
+  unit_index <- 1L
+  while (bytes >= 1024 && unit_index < length(units)) {
+    bytes <- bytes / 1024
+    unit_index <- unit_index + 1L
+  }
+
+  if (unit_index == 1L) {
+    sprintf("%d %s", round(bytes), units[unit_index])
+  } else {
+    sprintf("%.1f %s", bytes, units[unit_index])
+  }
+}
+
+format_user_rds_schema_report <- function(schema) {
+  assay_status <- if (isTRUE(schema$assay$available)) "available" else "missing"
+  metadata_present <- if (length(schema$metadata$present) > 0) paste(schema$metadata$present, collapse = ", ") else "none"
+  metadata_missing <- if (length(schema$metadata$missing) > 0) paste(schema$metadata$missing, collapse = ", ") else "none"
+  embeddings <- if (length(schema$embeddings$names) > 0) paste(schema$embeddings$names, collapse = ", ") else "none"
+  proximity_status <- if (isTRUE(schema$proximity$available)) {
+    paste0("available (", format(schema$proximity$row_count, big.mark = ","), " rows)")
+  } else {
+    schema$proximity$message %||% "missing"
+  }
+
+  paste(
+    paste0("Expected assay: ", schema$assay$name %||% "unknown", " (", assay_status, ")"),
+    paste0(
+      "Dimensions: ",
+      format(schema$cell_count, big.mark = ","),
+      " cells, ",
+      format(schema$marker_count, big.mark = ","),
+      " markers"
+    ),
+    paste0("Metadata columns: present ", metadata_present, "; missing ", metadata_missing),
+    paste0("Embeddings: ", embeddings),
+    paste0("Stored proximity: ", proximity_status),
+    paste0("Estimated cache: ", schema$estimated_cache_size),
+    sep = "\n"
+  )
 }
 
 build_qc_data <- function(object) {

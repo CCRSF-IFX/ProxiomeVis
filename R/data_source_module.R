@@ -119,6 +119,11 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
         placeholder = "/path/to/sample.rds"
       ),
       actionButton(
+        ns("validate_rds_path"),
+        "Validate RDS",
+        class = "btn btn-outline-secondary btn-sm"
+      ),
+      actionButton(
         ns("load_rds_path"),
         "Load Data",
         class = "btn btn-outline-primary btn-sm"
@@ -128,6 +133,7 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
         "Use demo data",
         class = "btn btn-outline-secondary btn-sm"
       ),
+      uiOutput(ns("rds_schema_report")),
       div(
         id = ns("rds_load_status"),
         class = "rds-load-status idle",
@@ -431,6 +437,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
     rds_load_message <- reactiveVal("Enter an RDS path, then click Load Data.")
     rds_load_path_label <- reactiveVal("")
     rds_load_progress_path <- reactiveVal(NULL)
+    rds_schema <- reactiveVal(NULL)
 
     send_rds_load_state <- function(
       state,
@@ -477,6 +484,34 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       send_rds_load_state("success", "Demo data is active.", progress = 100)
       rds_load_path_label("")
       rds_load_progress_path(NULL)
+      rds_schema(NULL)
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$validate_rds_path, {
+      req(user_rds_path_loading_enabled())
+
+      tryCatch(
+        {
+          schema <- inspect_user_rds_schema(input$rds_server_path)
+          rds_schema(schema)
+          send_rds_load_state(
+            "success",
+            paste0("Validated ", basename(schema$path), ". Review the schema summary before loading."),
+            button_label = "Load Data",
+            progress = 0
+          )
+          showNotification("RDS schema validated.", type = "message", duration = 6)
+        },
+        error = function(error) {
+          rds_schema(NULL)
+          send_rds_load_state("error", paste("Could not validate RDS:", conditionMessage(error)), progress = 0)
+          showNotification(
+            paste("Could not validate RDS:", conditionMessage(error)),
+            type = "error",
+            duration = NULL
+          )
+        }
+      )
     }, ignoreInit = TRUE)
 
     observeEvent(input$load_rds_path, {
@@ -486,6 +521,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       tryCatch(
         {
           validate_rds_file_path(input$rds_server_path)
+          rds_schema(inspect_user_rds_schema(input$rds_server_path))
           current_status <- isolate(user_rds_load_task$status())
           current_state <- isolate(rds_load_state())
           if (identical(current_state, "running") || identical(current_status, "running")) {
@@ -628,6 +664,21 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
 
     output$source_summary <- renderText({
       source_summary_text()
+    })
+
+    output$rds_schema_report <- renderUI({
+      schema <- rds_schema()
+      if (is.null(schema)) {
+        return(tags$div(
+          class = "rds-schema-report idle",
+          "Validate RDS to preview assay, metadata, embeddings, proximity, dimensions, and cache size."
+        ))
+      }
+
+      tags$pre(
+        class = "rds-schema-report",
+        format_user_rds_schema_report(schema)
+      )
     })
 
     list(
