@@ -790,36 +790,59 @@ detail_pane <- function(..., size = c("standard", "compact", "wide")) {
   )
 }
 
-ui <- page_navbar(
-  title = "ProxiomeVis",
-  id = "readout_tab",
-  fillable = c("QC", "Abundance", "Spatial Metrics", "Environment"),
-  theme = bs_theme(
-    version = 5,
-    bg = "#f6f8f7",
-    fg = "#192124",
-    primary = "#176d73",
-    secondary = "#c7503e",
-    base_font = "system-ui"
-  ),
-  header = tagList(app_css(), app_js()),
-  qc_module_ui("qc"),
-  abundance_module_ui("abundance"),
-  nav_panel(
-    "Spatial Metrics",
-    navset_tab(
-      id = "spatial_metric_readout",
-      clustering_module_ui("clustering"),
-      colocalization_module_ui("colocalization")
+build_app_ui <- function(show_environment = environment_diagnostics_enabled()) {
+  show_environment <- isTRUE(show_environment)
+  fillable_panels <- c("QC", "Abundance", "Spatial Metrics")
+  nav_items <- list(
+    qc_module_ui("qc"),
+    abundance_module_ui("abundance"),
+    nav_panel(
+      "Spatial Metrics",
+      navset_tab(
+        id = "spatial_metric_readout",
+        clustering_module_ui("clustering"),
+        colocalization_module_ui("colocalization")
+      )
     )
-  ),
-  nav_panel(
-    "Environment",
-    environment_module_ui("environment")
-  ),
-  nav_spacer(),
-  data_source_module_ui("data_source")
-)
+  )
+
+  if (show_environment) {
+    fillable_panels <- c(fillable_panels, "Environment")
+    nav_items <- c(nav_items, list(
+      nav_panel(
+        "Environment",
+        environment_module_ui("environment")
+      )
+    ))
+  }
+
+  do.call(
+    page_navbar,
+    c(
+      list(
+        title = "ProxiomeVis",
+        id = "readout_tab",
+        fillable = fillable_panels,
+        theme = bs_theme(
+          version = 5,
+          bg = "#f6f8f7",
+          fg = "#192124",
+          primary = "#176d73",
+          secondary = "#c7503e",
+          base_font = "system-ui"
+        ),
+        header = tagList(app_css(), app_js())
+      ),
+      nav_items,
+      list(
+        nav_spacer(),
+        data_source_module_ui("data_source")
+      )
+    )
+  )
+}
+
+ui <- build_app_ui()
 
 server <- function(input, output, session) {
   data_source <- data_source_module_server("data_source", app_dir = APP_DIR)
@@ -828,7 +851,9 @@ server <- function(input, output, session) {
   abundance_module_server("abundance", data = demo_data)
   clustering_module_server("clustering", data = demo_data)
   colocalization_module_server("colocalization", data = demo_data)
-  environment_module_server("environment", app_dir = APP_DIR)
+  if (environment_diagnostics_enabled()) {
+    environment_module_server("environment", app_dir = APP_DIR)
+  }
 }
 
 format_percent <- function(value) {

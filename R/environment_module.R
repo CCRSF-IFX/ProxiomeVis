@@ -1,3 +1,12 @@
+environment_diagnostics_enabled <- function(
+  value = Sys.getenv("PROXIOME_SHOW_ENVIRONMENT", unset = "false")
+) {
+  if (is.null(value) || length(value) == 0) {
+    value <- "false"
+  }
+  tolower(trimws(as.character(value[1]))) %in% c("1", "true", "yes", "on")
+}
+
 environment_runtime_paths <- function(app_dir) {
   runtime_rows <- data.frame(
     item = c(

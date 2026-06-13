@@ -443,15 +443,37 @@ test_that("renv restored library resolution ignores incomplete platform librarie
   expect_false(incomplete_root %in% restored_libraries)
 })
 
-test_that("environment diagnostics are available from the navbar", {
-  html <- htmltools::renderTags(ui)$html
-
+expect_environment_nav_visible <- function(html) {
   expect_true(grepl('data-value="Environment"', html, fixed = TRUE))
   expect_true(grepl('id="environment-r_paths"', html, fixed = TRUE))
   expect_true(grepl('id="environment-package_paths"', html, fixed = TRUE))
   expect_true(grepl('id="environment-package_filter"', html, fixed = TRUE))
   expect_true(grepl("R Paths", html, fixed = TRUE))
   expect_true(grepl("Packages", html, fixed = TRUE))
+}
+
+expect_environment_nav_hidden <- function(html) {
+  expect_false(grepl('data-value="Environment"', html, fixed = TRUE))
+  expect_false(grepl('id="environment-r_paths"', html, fixed = TRUE))
+  expect_false(grepl('id="environment-package_paths"', html, fixed = TRUE))
+  expect_false(grepl('id="environment-package_filter"', html, fixed = TRUE))
+  expect_false(grepl("R Paths", html, fixed = TRUE))
+  expect_false(grepl("Packages", html, fixed = TRUE))
+}
+
+test_that("environment diagnostics are hidden unless the debug env var is enabled", {
+  html <- htmltools::renderTags(ui)$html
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  environment_source <- paste(readLines(file.path(APP_DIR, "R", "environment_module.R"), warn = FALSE), collapse = "\n")
+
+  expect_false(environment_diagnostics_enabled())
+  expect_environment_nav_hidden(html)
+  expect_true(grepl('PROXIOME_SHOW_ENVIRONMENT', environment_source, fixed = TRUE))
+  expect_true(grepl('if (environment_diagnostics_enabled())', app_source, fixed = TRUE))
+
+  withr::local_envvar(c(PROXIOME_SHOW_ENVIRONMENT = "true"))
+  expect_true(environment_diagnostics_enabled())
+  expect_environment_nav_visible(htmltools::renderTags(build_app_ui())$html)
 })
 
 test_that("environment diagnostics list R runtime and package paths", {
