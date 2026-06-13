@@ -134,6 +134,92 @@ test_that("marker selection can keep demo defaults or all user markers", {
   )
 })
 
+test_that("sparse abundance matrix conversion avoids dense assay coercion", {
+  skip_if_not_installed("Matrix")
+  if (!methods::isClass("ProxiomeNoDenseSparseMatrix")) {
+    methods::setClass("ProxiomeNoDenseSparseMatrix", contains = "dgCMatrix")
+  }
+  methods::setMethod("as.matrix", "ProxiomeNoDenseSparseMatrix", function(x, ...) {
+    stop("dense coercion blocked", call. = FALSE)
+  })
+
+  sparse <- Matrix::sparseMatrix(
+    i = c(1, 1, 2),
+    j = c(1, 2, 3),
+    x = c(1, 2, 3),
+    dims = c(2, 3),
+    dimnames = list(c("CD3e", "CD8"), c("cell-a", "cell-b", "cell-c"))
+  )
+  sparse <- methods::as(sparse, "ProxiomeNoDenseSparseMatrix")
+
+  abundance <- matrix_to_long(sparse, value_name = "abundance")
+
+  expect_equal(
+    abundance,
+    data.frame(
+      marker = rep(c("CD3e", "CD8"), times = 3),
+      component = rep(c("cell-a", "cell-b", "cell-c"), each = 2),
+      abundance = c(1, 0, 2, 0, 0, 3),
+      stringsAsFactors = FALSE
+    )
+  )
+})
+
+test_that("abundance matrix conversion handles empty marker selections", {
+  empty_layer <- matrix(
+    numeric(),
+    nrow = 0,
+    ncol = 2,
+    dimnames = list(character(), c("cell-a", "cell-b"))
+  )
+
+  expect_equal(
+    matrix_to_long(empty_layer, value_name = "abundance"),
+    data.frame(
+      marker = character(),
+      component = character(),
+      abundance = numeric(),
+      stringsAsFactors = FALSE
+    )
+  )
+  expect_equal(
+    matrix_layers_to_long(empty_layer, empty_layer),
+    data.frame(
+      marker = character(),
+      component = character(),
+      abundance = numeric(),
+      count = numeric(),
+      stringsAsFactors = FALSE
+    )
+  )
+})
+
+test_that("abundance and count layers are combined in component-major order", {
+  data_layer <- matrix(
+    c(1, 0, 2, 3),
+    nrow = 2,
+    dimnames = list(c("CD3e", "CD8"), c("cell-a", "cell-b"))
+  )
+  counts_layer <- matrix(
+    c(10, 0, 20, 30),
+    nrow = 2,
+    dimnames = list(c("CD3e", "CD8"), c("cell-a", "cell-b"))
+  )
+
+  abundance <- matrix_layers_to_long(data_layer, counts_layer, max_block_entries = 2)
+
+  expect_equal(
+    abundance,
+    data.frame(
+      marker = rep(c("CD3e", "CD8"), times = 2),
+      component = rep(c("cell-a", "cell-b"), each = 2),
+      abundance = c(1, 0, 2, 3),
+      count = c(10, 0, 20, 30),
+      stringsAsFactors = FALSE
+    )
+  )
+})
+
 test_that("metadata gains a sample alias for spatial summaries", {
   metadata <- data.frame(
     component = c("cell-a", "cell-b"),
@@ -174,6 +260,16 @@ test_that("proximity summarization separates self clustering from pair colocaliz
   expect_equal(readouts$colocalization$sample_alias, c("sample-1", "sample-2"))
   expect_equal(readouts$clustering_summary$n_cells, c(1L, 1L))
   expect_equal(readouts$colocalization_summary$n_cells, c(1L, 1L))
+})
+
+test_that("proximity and abundance summaries avoid base R merge and aggregate hot paths", {
+  summarize_abundance_source <- paste(deparse(body(summarize_abundance)), collapse = "\n")
+  summarize_proximity_source <- paste(deparse(body(summarize_proximity_readouts)), collapse = "\n")
+  aggregate_source <- paste(deparse(body(aggregate_numeric_readout)), collapse = "\n")
+
+  expect_false(grepl("\\bmerge\\s*\\(", summarize_abundance_source))
+  expect_false(grepl("\\bmerge\\s*\\(", summarize_proximity_source))
+  expect_false(grepl("\\baggregate\\s*\\(", aggregate_source))
 })
 
 test_that("stored assay proximity is used without calling pixelatorR ProximityScores", {

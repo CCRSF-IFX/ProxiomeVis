@@ -133,3 +133,14 @@ test_that("clustering heatmap summary uses stored self-proximity scores", {
   expect_lte(length(selected), 2)
   expect_true("CD3e" %in% selected)
 })
+
+test_that("spatial heatmap summaries avoid base R split lapply and merge hot paths", {
+  spatial_source <- paste(deparse(body(summarize_spatial_heatmap)), collapse = "\n")
+  clustering_source <- paste(deparse(body(summarize_clustering_heatmap)), collapse = "\n")
+
+  for (source_text in c(spatial_source, clustering_source)) {
+    expect_false(grepl("\\bsplit\\s*\\(", source_text))
+    expect_false(grepl("\\blapply\\s*\\(", source_text))
+    expect_false(grepl("\\bmerge\\s*\\(", source_text))
+  }
+})

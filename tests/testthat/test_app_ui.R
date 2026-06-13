@@ -39,13 +39,13 @@ test_that("each readout tab has only the controls it needs", {
   html <- htmltools::renderTags(ui)$html
 
   expect_true(grepl('data-value="QC"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_mode"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_sample_filter"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_metric"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_n_umi_cutoff"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_isotype_cutoff"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_filter_include_total"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_filter_y"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_mode"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_sample_filter"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_metric"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_n_umi_cutoff"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_isotype_cutoff"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_filter_include_total"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_filter_y"', html, fixed = TRUE))
   expect_false(grepl('id="pixelator_output_dir"', html, fixed = TRUE))
   expect_false(grepl('data-value="Sequencing"', html, fixed = TRUE))
   expect_false(grepl('data-value="Cell Recovery"', html, fixed = TRUE))
@@ -57,33 +57,33 @@ test_that("each readout tab has only the controls it needs", {
   expect_false(grepl('id="qc_graph_metrics_plot"', html, fixed = TRUE))
   expect_false(grepl('id="qc_control_markers_plot"', html, fixed = TRUE))
 
-  expect_true(grepl('id="abundance_embedding"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_color_by"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_distribution_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_distribution_columns"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_distribution_width"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_distribution_height"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_distribution_show_jitter"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_split_by"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_point_size"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_heatmap_marker_count"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_per_marker_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_summary_heatmap"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_heatmap_markers"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_heatmap_display"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_heatmap_preset"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_coloc_scope"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_celltype_focus"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_marker_selection_mode"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_top_marker_count"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_min_pct_detected"', html, fixed = TRUE))
-  expect_true(grepl('id="spatial_min_log2_range"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_reference_condition"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_clustering_method"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_legend_min"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_legend_max"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_embedding"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_color_by"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_distribution_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_distribution_columns"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_distribution_width"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_distribution_height"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_distribution_show_jitter"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_split_by"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_point_size"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_heatmap_marker_count"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_per_marker_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_summary_heatmap"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_markers"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_display"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_preset"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_coloc_scope"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_celltype_focus"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_marker_selection_mode"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_top_marker_count"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_min_pct_detected"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-spatial_min_log2_range"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_reference_condition"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_clustering_method"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_legend_min"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_legend_max"', html, fixed = TRUE))
 
   expect_false(grepl('id="anchor_marker"', html, fixed = TRUE))
   expect_false(grepl('id="colocalization_anchor_marker"', html, fixed = TRUE))
@@ -106,80 +106,82 @@ test_that("spatial metrics tab wires PixelatorES-style heatmap controls", {
   expect_true(grepl('data-value="Spatial Metrics"', html, fixed = TRUE))
   expect_false(grepl('fillable = c("QC", "Abundance", "Clustering", "Spatial Metrics", "Environment")', app_source, fixed = TRUE))
   expect_true(grepl('id = "spatial_metric_readout"', app_source, fixed = TRUE))
-  expect_true(grepl('nav_panel\\(\\s*"Clustering"', app_source, perl = TRUE))
-  expect_true(grepl('nav_panel\\(\\s*"Colocalization"', app_source, perl = TRUE))
+  clustering_module_source <- paste(readLines(file.path(APP_DIR, "R", "clustering_module.R"), warn = FALSE), collapse = "\n")
+  expect_true(grepl('nav_panel\\(\\s*"Clustering"', clustering_module_source, perl = TRUE))
+  colocalization_module_source <- paste(readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE), collapse = "\n")
+  expect_true(grepl('nav_panel\\(\\s*"Colocalization"', colocalization_module_source, perl = TRUE))
   expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "spatial_metrics\\.R"\\)\\)')
   expect_true(grepl("summarize_spatial_heatmap_by_sample", app_source, fixed = TRUE))
   expect_true(grepl("summarize_spatial_heatmap_by_celltype", app_source, fixed = TRUE))
   expect_true(grepl("select_spatial_heatmap_markers", app_source, fixed = TRUE))
-  expect_true(grepl("complete_spatial_marker_pairs", app_source, fixed = TRUE))
-  expect_true(grepl('else "sample_alias"', app_source, fixed = TRUE))
+  expect_true(grepl("complete_spatial_marker_pairs", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl('else "sample_alias"', colocalization_module_source, fixed = TRUE))
 })
 
 test_that("each readout exposes observed and differential modes", {
   html <- htmltools::renderTags(ui)$html
 
-  expect_true(grepl('id="abundance_mode"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_mode"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_mode"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_mode"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_mode"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_mode"', html, fixed = TRUE))
   expect_true(grepl('data-value="Marker Distributions"', html, fixed = TRUE))
   expect_true(grepl('data-value="Cell Annotation"', html, fixed = TRUE))
   expect_true(grepl('data-value="Per Marker"', html, fixed = TRUE))
   expect_true(grepl('data-value="Summary Heatmap"', html, fixed = TRUE))
 
-  expect_true(grepl('id="abundance_diff_group_a"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_group_b"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_group_a"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_group_b"', html, fixed = TRUE))
   expect_true(grepl("Group B (reference)", html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_fdr"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_effect"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_stratify_celltype"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_run_differential"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_fdr"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_effect"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_stratify_celltype"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_run_differential"', html, fixed = TRUE))
 
-  expect_true(grepl('id="clustering_diff_group_a"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_group_b"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_fdr"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_effect"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_stratify_celltype"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_run_differential"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_group_a"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_group_b"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_fdr"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_effect"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_stratify_celltype"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_run_differential"', html, fixed = TRUE))
 
-  expect_true(grepl('id="colocalization_diff_group_a"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_group_b"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_fdr"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_effect"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_anchor_marker"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_pair"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_stratify_celltype"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_run_differential"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_group_a"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_group_b"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_fdr"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_effect"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_anchor_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_pair"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_stratify_celltype"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_run_differential"', html, fixed = TRUE))
 })
 
 test_that("differential views include plot, detail, and table outputs", {
   html <- htmltools::renderTags(ui)$html
 
-  expect_true(grepl('id="qc_filter_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_molecule_rank_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_distribution_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_filter_table"', html, fixed = TRUE))
-  expect_true(grepl('id="qc_origin_metadata_table"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_filter_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_molecule_rank_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_distribution_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_filter_table"', html, fixed = TRUE))
+  expect_true(grepl('id="qc-qc_origin_metadata_table"', html, fixed = TRUE))
 
-  expect_true(grepl('id="abundance_marker_distribution_plot_ui"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_celltype_composition_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_annotation_heatmap"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_volcano"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_detail"', html, fixed = TRUE))
-  expect_true(grepl('id="abundance_diff_table"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_marker_distribution_plot_ui"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_celltype_composition_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_annotation_heatmap"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_volcano"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_detail"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_diff_table"', html, fixed = TRUE))
 
-  expect_true(grepl('id="clustering_per_marker_plot"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_summary_heatmap"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_volcano"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_detail"', html, fixed = TRUE))
-  expect_true(grepl('id="clustering_diff_table"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_per_marker_plot"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_summary_heatmap"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_volcano"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_detail"', html, fixed = TRUE))
+  expect_true(grepl('id="clustering-clustering_diff_table"', html, fixed = TRUE))
   expect_false(grepl('id="clustering_diff_rank"', html, fixed = TRUE))
 
-  expect_true(grepl('id="colocalization_diff_volcano"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_detail"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_diff_table"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_volcano"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_detail"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_table"', html, fixed = TRUE))
   expect_false(grepl('id="colocalization_diff_heatmap"', html, fixed = TRUE))
 })
 
@@ -192,30 +194,33 @@ test_that("differential volcano and box plots share a side-by-side row", {
   expect_true(grepl("grid-template-columns: max-content max-content;", app_source, fixed = TRUE))
   expect_true(grepl("overflow-x: auto;", app_source, fixed = TRUE))
   expect_true(grepl("@media (max-width: 1100px)", app_source, fixed = TRUE))
-  expect_true(grepl('differential_plot_row("abundance_diff_volcano", "abundance_diff_detail")', app_source, fixed = TRUE))
-  expect_true(grepl('differential_plot_row("clustering_diff_volcano", "clustering_diff_detail")', app_source, fixed = TRUE))
-  expect_true(grepl('differential_plot_row("colocalization_diff_volcano", "colocalization_diff_detail")', app_source, fixed = TRUE))
+  abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
+  expect_true(grepl('differential_plot_row(ns("abundance_diff_volcano"), ns("abundance_diff_detail"))', abundance_module_source, fixed = TRUE))
+  clustering_module_source <- paste(readLines(file.path(APP_DIR, "R", "clustering_module.R"), warn = FALSE), collapse = "\n")
+  expect_true(grepl('differential_plot_row(ns("clustering_diff_volcano"), ns("clustering_diff_detail"))', clustering_module_source, fixed = TRUE))
+  colocalization_module_source <- paste(readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE), collapse = "\n")
+  expect_true(grepl('differential_plot_row(ns("colocalization_diff_volcano"), ns("colocalization_diff_detail"))', colocalization_module_source, fixed = TRUE))
 })
 
 test_that("plot outputs are wrapped in readable width classes", {
   html <- htmltools::renderTags(ui)$html
 
   compact_outputs <- c(
-    "qc_filter_plot",
-    "qc_distribution_plot",
-    "abundance_diff_volcano",
-    "clustering_diff_volcano",
-    "colocalization_diff_volcano"
+    "qc-qc_filter_plot",
+    "qc-qc_distribution_plot",
+    "abundance-abundance_diff_volcano",
+    "clustering-clustering_diff_volcano",
+    "colocalization-colocalization_diff_volcano"
   )
   standard_outputs <- c(
-    "abundance_umap",
-    "clustering_plot",
-    "abundance_diff_detail",
-    "clustering_diff_detail",
-    "colocalization_diff_detail"
+    "abundance-abundance_umap",
+    "clustering-clustering_plot",
+    "abundance-abundance_diff_detail",
+    "clustering-clustering_diff_detail",
+    "colocalization-colocalization_diff_detail"
   )
-  wide_outputs <- c("qc_molecule_rank_plot")
-  scroll_outputs <- c("abundance_marker_distribution_plot_ui", "colocalization_heatmap_interactive", "colocalization_heatmap_original")
+  wide_outputs <- c("qc-qc_molecule_rank_plot")
+  scroll_outputs <- c("abundance-abundance_marker_distribution_plot_ui", "colocalization-colocalization_heatmap_interactive", "colocalization-colocalization_heatmap_original")
 
   for (output_id in compact_outputs) {
     expect_output_wrapped_with(html, output_id, "plot-pane-compact")
@@ -237,6 +242,96 @@ test_that("app uses a bslib navbar page instead of custom top chrome", {
   expect_true(grepl("navbar", html, fixed = TRUE))
   expect_true(grepl("navbar-brand", html, fixed = TRUE))
   expect_false(grepl("app-topbar", html, fixed = TRUE))
+})
+
+test_that("data loading is isolated behind the Data Source module", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "data_source_module.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "data_source_module\\.R"\\), local = TRUE\\)')
+  expect_true(grepl('data_source_module_ui("data_source")', app_source, fixed = TRUE))
+  expect_true(grepl('data_source <- data_source_module_server("data_source", app_dir = APP_DIR)', app_source, fixed = TRUE))
+  expect_true(grepl("demo_data <- data_source$data", app_source, fixed = TRUE))
+  expect_false(grepl("send_rds_load_state <- function", app_source, fixed = TRUE))
+  expect_false(grepl("load_demo_into_app <- function", app_source, fixed = TRUE))
+})
+
+test_that("QC readout is isolated behind the QC module", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "qc_module.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "qc_module\\.R"\\), local = TRUE\\)')
+  expect_true(grepl('qc_module_ui("qc")', app_source, fixed = TRUE))
+  expect_true(grepl('qc_module_server("qc", data = demo_data)', app_source, fixed = TRUE))
+  expect_false(grepl("qc_sidebar <- function", app_source, fixed = TRUE))
+  expect_false(grepl("output$qc_", app_source, fixed = TRUE))
+  expect_false(grepl("qc_sample_choices <- function", app_source, fixed = TRUE))
+  expect_false(grepl("qc_molecule_rank_plotly <- function", app_source, fixed = TRUE))
+})
+
+test_that("Abundance readout is isolated behind the Abundance module", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "abundance_module.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "abundance_module\\.R"\\), local = TRUE\\)')
+  expect_true(grepl('abundance_module_ui("abundance")', app_source, fixed = TRUE))
+  expect_true(grepl('abundance_module_server("abundance", data = demo_data)', app_source, fixed = TRUE))
+  expect_false(grepl("abundance_sidebar <- function", app_source, fixed = TRUE))
+  expect_false(grepl("abundance_diff_config <- reactiveVal", app_source, fixed = TRUE))
+  expect_false(grepl("output$abundance_", app_source, fixed = TRUE))
+  expect_false(grepl("output$metric_row", app_source, fixed = TRUE))
+  expect_false(grepl("abundance_points <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("abundance_distribution_data <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("plot_abundance_marker_distribution <- function", app_source, fixed = TRUE))
+})
+
+test_that("Clustering readout is isolated behind the Clustering module", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "clustering_module.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "clustering_module\\.R"\\), local = TRUE\\)')
+  expect_true(grepl('clustering_module_ui("clustering")', app_source, fixed = TRUE))
+  expect_true(grepl('clustering_module_server("clustering", data = demo_data)', app_source, fixed = TRUE))
+  expect_false(grepl("clustering_sidebar <- function", app_source, fixed = TRUE))
+  expect_false(grepl("clustering_diff_config <- reactiveVal", app_source, fixed = TRUE))
+  expect_false(grepl("output$clustering_", app_source, fixed = TRUE))
+  expect_false(grepl("clustering_points <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("clustering_heatmap_summary <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("plot_clustering_per_marker <- function", app_source, fixed = TRUE))
+  expect_false(grepl("plot_clustering_summary_heatmap <- function", app_source, fixed = TRUE))
+})
+
+test_that("Colocalization readout is isolated behind the Colocalization module", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "colocalization_module.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "colocalization_module\\.R"\\), local = TRUE\\)')
+  expect_true(grepl('colocalization_module_ui("colocalization")', app_source, fixed = TRUE))
+  expect_true(grepl('colocalization_module_server("colocalization", data = demo_data)', app_source, fixed = TRUE))
+  expect_false(grepl("colocalization_sidebar <- function", app_source, fixed = TRUE))
+  expect_false(grepl("colocalization_diff_config <- reactiveVal", app_source, fixed = TRUE))
+  expect_false(grepl("output$colocalization_", app_source, fixed = TRUE))
+  expect_false(grepl("colocalization_metadata <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("colocalization_heatmap_result <- reactive", app_source, fixed = TRUE))
+  expect_false(grepl("colocalization_diff_results <- reactive", app_source, fixed = TRUE))
+})
+
+test_that("Differential helpers are shared outside app.R", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  helper_source <- paste(readLines(file.path(APP_DIR, "R", "differential_helpers.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(file.exists(file.path(APP_DIR, "R", "differential_helpers.R")))
+  expect_match(app_source, 'source\\(file\\.path\\(APP_DIR, "R", "differential_helpers\\.R"\\), local = TRUE\\)')
+  expect_true(grepl("differential_plot_row <- function", helper_source, fixed = TRUE))
+  expect_true(grepl("make_differential_config <- function", helper_source, fixed = TRUE))
+  expect_true(grepl("default_differential_config <- function", helper_source, fixed = TRUE))
+  expect_true(grepl("differential_volcano_plot <- function", helper_source, fixed = TRUE))
+  expect_true(grepl("format_differential_table <- function", helper_source, fixed = TRUE))
+  expect_false(grepl("differential_plot_row <- function", app_source, fixed = TRUE))
+  expect_false(grepl("make_differential_config <- function", app_source, fixed = TRUE))
+  expect_false(grepl("default_differential_config <- function", app_source, fixed = TRUE))
+  expect_false(grepl("differential_volcano_plot <- function", app_source, fixed = TRUE))
+  expect_false(grepl("format_differential_table <- function", app_source, fixed = TRUE))
 })
 
 test_that("project includes renv deployment infrastructure", {
@@ -262,7 +357,7 @@ test_that("project includes renv deployment infrastructure", {
 
   lock <- jsonlite::fromJSON(lock_path, simplifyVector = FALSE)
   expect_true("Packages" %in% names(lock))
-  expect_true(all(c("shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "Seurat", "SeuratObject", "pixelatorR", "callr") %in% names(lock$Packages)))
+  expect_true(all(c("shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "data.table", "Seurat", "SeuratObject", "pixelatorR", "callr") %in% names(lock$Packages)))
   expect_true("renv" %in% names(lock$Packages))
 })
 
@@ -313,13 +408,13 @@ test_that("portable runtimes can use installed packages when app renv is absent"
   libs <- activate_project_renv(project_root, platform = "portable")
 
   expect_true(length(libs) > 0)
-  expect_true(all(c("shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang") %in% rownames(installed.packages(lib.loc = libs))))
+  expect_true(all(c("shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "data.table") %in% rownames(installed.packages(lib.loc = libs))))
 })
 
 test_that("renv restored library detection supports platform library layouts", {
   library_root <- file.path(tempdir(), "renv-library-layout")
   package_root <- file.path(library_root, "linux-ol-8.10", paste0("R-", current_r_minor_version()), "x86_64-redhat-linux-gnu")
-  packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang")
+  packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "data.table")
   vapply(packages, function(package) {
     dir.create(file.path(package_root, package), recursive = TRUE, showWarnings = FALSE)
   }, logical(1))
@@ -332,7 +427,7 @@ test_that("renv restored library resolution ignores incomplete platform librarie
   library_root <- file.path(project_root, "renv", "library")
   complete_root <- file.path(library_root, "linux-ol-8.10", paste0("R-", current_r_minor_version()), "x86_64-pc-linux-gnu")
   incomplete_root <- file.path(library_root, "linux-ol-8.10", paste0("R-", current_r_minor_version()), "x86_64-redhat-linux-gnu")
-  packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang")
+  packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "data.table")
 
   vapply(packages, function(package) {
     dir.create(file.path(complete_root, package), recursive = TRUE, showWarnings = FALSE)
@@ -411,37 +506,39 @@ test_that("environment package diagnostics include the app renv library explicit
 test_that("navbar exposes server-side RDS path loading on HPC and desktop only", {
   html <- htmltools::renderTags(ui)$html
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
 
   expect_true(user_rds_path_loading_enabled("ccrsf_hpc"))
   expect_true(user_rds_path_loading_enabled("biowulf_hpc"))
   expect_true(user_rds_path_loading_enabled("portable"))
   expect_false(user_rds_path_loading_enabled("shinyapps"))
 
-  expect_true(grepl('id="data_source_menu"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-data_source_menu"', html, fixed = TRUE))
   expect_false(grepl('id="upload_rds"', html, fixed = TRUE))
-  expect_true(grepl('id="rds_server_path"', html, fixed = TRUE))
-  expect_true(grepl('id="load_rds_path"', html, fixed = TRUE))
-  expect_true(grepl('id="use_demo_data"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_server_path"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-load_rds_path"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-use_demo_data"', html, fixed = TRUE))
   expect_false(grepl("Upload RDS", html, fixed = TRUE))
   expect_true(grepl("RDS path", html, fixed = TRUE))
   expect_true(grepl("Load Data", html, fixed = TRUE))
   expect_true(grepl("Use demo data", html, fixed = TRUE))
-  expect_true(grepl('id="source_summary"', html, fixed = TRUE))
-  expect_true(grepl('id="rds_load_status"', html, fixed = TRUE))
-  expect_true(grepl('id="rds_load_progress"', html, fixed = TRUE))
-  expect_true(grepl('id="rds_load_progress_bar"', html, fixed = TRUE))
-  expect_true(grepl('id="rds_load_elapsed"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-source_summary"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_load_status"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_load_progress"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_load_progress_bar"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-rds_load_elapsed"', html, fixed = TRUE))
   expect_true(grepl("rds-load-status idle", html, fixed = TRUE))
   expect_true(grepl("rds-load-progress idle", html, fixed = TRUE))
   expect_true(grepl("Enter an RDS path, then click Load Data.", html, fixed = TRUE))
 
   expect_false(grepl("observeEvent(input$upload_rds", app_source, fixed = TRUE))
-  expect_true(grepl("observeEvent(input$load_rds_path", app_source, fixed = TRUE))
+  expect_false(grepl("observeEvent(input$load_rds_path", app_source, fixed = TRUE))
+  expect_true(grepl("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE))
   expect_false(grepl("observeEvent(input$upload_rds_too_large", app_source, fixed = TRUE))
 })
 
 test_that("server RDS path loading can be disabled for hosted runtimes", {
-  html <- htmltools::renderTags(data_source_controls(platform = "shinyapps"))$html
+  html <- htmltools::renderTags(data_source_controls("data_source", platform = "shinyapps"))$html
 
   expect_false(grepl('id="upload_rds"', html, fixed = TRUE))
   expect_false(grepl('id="rds_server_path"', html, fixed = TRUE))
@@ -573,23 +670,24 @@ test_that("server RDS path loading refreshes app-local libraries before reading"
 
 test_that("server RDS path loading is delegated to an async task", {
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
-  load_observer_start <- regexpr("observeEvent(input$load_rds_path", app_source, fixed = TRUE)[[1]]
+  data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
+  load_observer_start <- regexpr("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE)[[1]]
   expect_gt(load_observer_start, 0)
-  load_observer <- substr(app_source, load_observer_start, load_observer_start + 1800)
+  load_observer <- substr(data_source_source, load_observer_start, load_observer_start + 1800)
 
-  expect_true(grepl("create_user_rds_load_task", app_source, fixed = TRUE))
-  expect_true(grepl("ExtendedTask$new", app_source, fixed = TRUE))
-  expect_true(grepl("promises::future_promise", app_source, fixed = TRUE))
-  expect_false(grepl("future::future", app_source, fixed = TRUE))
-  expect_true(grepl("future::plan(future::multisession", app_source, fixed = TRUE))
-  expect_true(grepl("rds_load_message <- reactiveVal", app_source, fixed = TRUE))
-  expect_true(grepl('rds_load_state <- reactiveVal("idle")', app_source, fixed = TRUE))
-  expect_true(grepl("rds_load_progress_path <- reactiveVal", app_source, fixed = TRUE))
-  expect_true(grepl("send_rds_load_state <- function", app_source, fixed = TRUE))
-  expect_true(grepl("write_rds_load_progress", app_source, fixed = TRUE))
-  expect_true(grepl("read_rds_load_progress", app_source, fixed = TRUE))
-  expect_true(grepl("invalidateLater(1000", app_source, fixed = TRUE))
-  expect_true(grepl('session$sendCustomMessage("proxiome-rds-load-state"', app_source, fixed = TRUE))
+  expect_true(grepl("create_user_rds_load_task", data_source_source, fixed = TRUE))
+  expect_true(grepl("ExtendedTask$new", data_source_source, fixed = TRUE))
+  expect_true(grepl("promises::future_promise", data_source_source, fixed = TRUE))
+  expect_false(grepl("future::future", data_source_source, fixed = TRUE))
+  expect_true(grepl("future::plan(future::multisession", data_source_source, fixed = TRUE))
+  expect_true(grepl("rds_load_message <- reactiveVal", data_source_source, fixed = TRUE))
+  expect_true(grepl('rds_load_state <- reactiveVal("idle")', data_source_source, fixed = TRUE))
+  expect_true(grepl("rds_load_progress_path <- reactiveVal", data_source_source, fixed = TRUE))
+  expect_true(grepl("send_rds_load_state <- function", data_source_source, fixed = TRUE))
+  expect_true(grepl("write_rds_load_progress", data_source_source, fixed = TRUE))
+  expect_true(grepl("read_rds_load_progress", data_source_source, fixed = TRUE))
+  expect_true(grepl("invalidateLater(1000", data_source_source, fixed = TRUE))
+  expect_true(grepl('session$sendCustomMessage("proxiome-rds-load-state"', data_source_source, fixed = TRUE))
   expect_true(grepl("Shiny.addCustomMessageHandler('proxiome-rds-load-state'", app_source, fixed = TRUE))
   expect_true(grepl("rds_load_progress_bar", app_source, fixed = TRUE))
   expect_true(grepl("current_status <- isolate(user_rds_load_task$status())", load_observer, fixed = TRUE))
@@ -599,8 +697,8 @@ test_that("server RDS path loading is delegated to an async task", {
   expect_false(grepl("validate_optional_pixelator_dir", load_observer, fixed = TRUE))
   expect_true(grepl("user_rds_load_task$invoke(input$rds_server_path, progress_path)", load_observer, fixed = TRUE))
   expect_false(grepl("load_user_proxiome_data(", load_observer, fixed = TRUE))
-  expect_true(grepl("user_rds_load_task$result()", app_source, fixed = TRUE))
-  expect_true(grepl('identical(rds_load_state(), "running")', app_source, fixed = TRUE))
+  expect_true(grepl("user_rds_load_task$result()", data_source_source, fixed = TRUE))
+  expect_true(grepl('identical(rds_load_state(), "running")', data_source_source, fixed = TRUE))
 })
 
 test_that("ProxiomeVis writable directory defaults under user home", {
@@ -841,22 +939,22 @@ test_that("colocalization heatmap Plotly output displays a pct_detected size leg
 
 test_that("colocalization observed heatmap has interactive and original R plot renderers", {
   html <- htmltools::renderTags(ui)$html
-  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
-  result_start <- regexpr("colocalization_heatmap_result <- reactive", app_source, fixed = TRUE)[[1]]
-  interactive_start <- regexpr("output$colocalization_heatmap_interactive <- renderPlotly", app_source, fixed = TRUE)[[1]]
-  original_start <- regexpr("output$colocalization_heatmap_original <- renderPlot", app_source, fixed = TRUE)[[1]]
+  colocalization_module_source <- paste(readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE), collapse = "\n")
+  result_start <- regexpr("colocalization_heatmap_result <- reactive", colocalization_module_source, fixed = TRUE)[[1]]
+  interactive_start <- regexpr("output$colocalization_heatmap_interactive <- renderPlotly", colocalization_module_source, fixed = TRUE)[[1]]
+  original_start <- regexpr("output$colocalization_heatmap_original <- renderPlot", colocalization_module_source, fixed = TRUE)[[1]]
 
-  expect_true(grepl('id="colocalization_heatmap_display"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_heatmap_interactive"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization_heatmap_original"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_display"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_interactive"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_original"', html, fixed = TRUE))
   expect_gt(result_start, 0)
   expect_gt(interactive_start, 0)
   expect_gt(original_start, 0)
   expect_lt(result_start, interactive_start)
   expect_lt(result_start, original_start)
-  expect_true(grepl("colocalization_heatmap_result()", app_source, fixed = TRUE))
-  expect_true(grepl("coloc_heatmap_plotly(colocalization_heatmap_result())", app_source, fixed = TRUE))
-  expect_true(grepl("print(colocalization_heatmap_result()$plot)", app_source, fixed = TRUE))
+  expect_true(grepl("colocalization_heatmap_result()", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("coloc_heatmap_plotly(colocalization_heatmap_result())", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("print(colocalization_heatmap_result()$plot)", colocalization_module_source, fixed = TRUE))
 })
 
 test_that("colocalization heatmap Plotly output preserves square heatmap panels", {
@@ -1025,7 +1123,7 @@ test_that("Open OnDemand template launches the app with the shared renv environm
     regexpr("shiny::runApp", script, fixed = TRUE)[[1]]
   )
   expect_true(grepl('SHINY_HOST="${SHINY_HOST:-0.0.0.0}"', script, fixed = TRUE))
-  expect_true(grepl("for required_package in renv shiny bslib ggplot2 plotly future promises rlang", script, fixed = TRUE))
+  expect_true(grepl("for required_package in renv shiny bslib ggplot2 plotly future promises rlang data.table", script, fixed = TRUE))
   expect_false(grepl(".pixi/envs/r/bin/Rscript", script, fixed = TRUE))
   expect_false(grepl(".pixi/envs/r/lib/R/library", script, fixed = TRUE))
   expect_false(grepl('APP_ROOT="/mnt/ccrsf-static/illumina/RnD_pixelgen_CAR-T_datasets"', script, fixed = TRUE))
@@ -1094,13 +1192,13 @@ test_that("abundance marker distribution plot keeps violin groups valid for Plot
 })
 
 test_that("abundance marker distribution controls include visible defaults", {
-  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
 
-  expect_true(grepl('numericInput("abundance_distribution_columns", "Facet columns", value = 3', app_source, fixed = TRUE))
-  expect_true(grepl('numericInput("abundance_distribution_width", "Plot width (px)", value = 832', app_source, fixed = TRUE))
-  expect_true(grepl('numericInput("abundance_distribution_height", "Plot height (px)", value = 678', app_source, fixed = TRUE))
-  expect_true(grepl("update_abundance_distribution_size_controls", app_source, fixed = TRUE))
-  expect_true(grepl('checkboxInput("abundance_distribution_show_jitter", "Show jitter dots", value = TRUE)', app_source, fixed = TRUE))
+  expect_true(grepl('numericInput(ns("abundance_distribution_columns"), "Facet columns", value = 3', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('numericInput(ns("abundance_distribution_width"), "Plot width (px)", value = 832', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('numericInput(ns("abundance_distribution_height"), "Plot height (px)", value = 678', abundance_module_source, fixed = TRUE))
+  expect_true(grepl("update_abundance_distribution_size_controls", abundance_module_source, fixed = TRUE))
+  expect_true(grepl('checkboxInput(ns("abundance_distribution_show_jitter"), "Show jitter dots", value = TRUE)', abundance_module_source, fixed = TRUE))
 })
 
 test_that("abundance marker distribution dimensions scale and accept user overrides", {

@@ -41,13 +41,13 @@ summarize_spatial_heatmap <- function(
   }
 
   selected_markers <- as.character(selected_markers)
-  rows <- proximity[
-    proximity[[marker1_col]] %in% selected_markers &
-      proximity[[marker2_col]] %in% selected_markers &
-      proximity[[marker1_col]] != proximity[[marker2_col]] &
-      is.finite(as.numeric(proximity[[value_col]])),
-    ,
-    drop = FALSE
+  require_spatial_namespace("data.table")
+  proximity_dt <- data.table::as.data.table(proximity)
+  rows <- proximity_dt[
+    get(marker1_col) %in% selected_markers &
+      get(marker2_col) %in% selected_markers &
+      get(marker1_col) != get(marker2_col) &
+      is.finite(as.numeric(get(value_col)))
   ]
 
   if (nrow(rows) == 0) {
@@ -55,36 +55,19 @@ summarize_spatial_heatmap <- function(
   }
 
   split_cols <- unique(c(group_cols, marker1_col, marker2_col))
-  row_groups <- split(
-    seq_len(nrow(rows)),
-    interaction(rows[split_cols], drop = TRUE, lex.order = TRUE)
-  )
+  result <- rows[, .(
+    mean_log2_ratio = mean(as.numeric(get(value_col)), na.rm = TRUE),
+    n_detected = data.table::uniqueN(get(component_col))
+  ), keyby = split_cols]
+  totals <- rows[, .(
+    n_total = data.table::uniqueN(get(component_col))
+  ), keyby = group_cols]
 
-  result <- do.call(rbind, lapply(row_groups, function(row_index) {
-    chunk <- rows[row_index, , drop = FALSE]
-    out <- chunk[1, split_cols, drop = FALSE]
-    out$mean_log2_ratio <- mean(as.numeric(chunk[[value_col]]), na.rm = TRUE)
-    out$n_detected <- length(unique(chunk[[component_col]]))
-    out
-  }))
-  rownames(result) <- NULL
-
-  total_groups <- split(
-    seq_len(nrow(rows)),
-    interaction(rows[group_cols], drop = TRUE, lex.order = TRUE)
-  )
-  totals <- do.call(rbind, lapply(total_groups, function(row_index) {
-    chunk <- rows[row_index, , drop = FALSE]
-    out <- chunk[1, group_cols, drop = FALSE]
-    out$n_total <- length(unique(chunk[[component_col]]))
-    out
-  }))
-  rownames(totals) <- NULL
-
-  result <- merge(result, totals, by = group_cols, all.x = TRUE, sort = FALSE)
-  result <- result[result$n_detected >= min_cells_detected, , drop = FALSE]
-  result$pct_detected <- ifelse(result$n_total > 0, result$n_detected / result$n_total, NA_real_)
-  result
+  result <- totals[result, on = group_cols]
+  result <- result[n_detected >= min_cells_detected]
+  result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
+  output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
+  as.data.frame(result[, ..output_cols])
 }
 
 complete_spatial_marker_pairs <- function(
@@ -97,28 +80,28 @@ complete_spatial_marker_pairs <- function(
   }
 
   selected_markers <- as.character(selected_markers)
-  pair_grid <- expand.grid(
+  require_spatial_namespace("data.table")
+  summary_dt <- data.table::as.data.table(summary)
+  pair_grid <- data.table::CJ(
     marker_1 = selected_markers,
     marker_2 = selected_markers,
-    stringsAsFactors = FALSE
+    unique = FALSE
   )
-  pair_grid <- pair_grid[pair_grid$marker_1 != pair_grid$marker_2, , drop = FALSE]
+  pair_grid <- pair_grid[marker_1 != marker_2]
 
-  group_grid <- unique(summary[group_cols])
-  grid <- merge(group_grid, pair_grid, all = TRUE)
+  group_grid <- unique(summary_dt[, ..group_cols])
+  group_grid[, proxiome_cross_key := 1L]
+  pair_grid[, proxiome_cross_key := 1L]
+  grid <- pair_grid[group_grid, on = "proxiome_cross_key", allow.cartesian = TRUE]
+  grid[, proxiome_cross_key := NULL]
+  grid <- grid[, c(group_cols, "marker_1", "marker_2"), with = FALSE]
 
-  completed <- merge(
-    grid,
-    summary,
-    by = c(group_cols, "marker_1", "marker_2"),
-    all.x = TRUE,
-    sort = FALSE
-  )
+  completed <- summary_dt[grid, on = c(group_cols, "marker_1", "marker_2")]
   completed$mean_log2_ratio[is.na(completed$mean_log2_ratio)] <- 0
   completed$pct_detected[is.na(completed$pct_detected)] <- 0
   completed$n_detected[is.na(completed$n_detected)] <- 0L
   completed$n_total[is.na(completed$n_total)] <- 0L
-  completed
+  as.data.frame(completed)
 }
 
 select_spatial_heatmap_markers <- function(
@@ -203,11 +186,11 @@ summarize_clustering_heatmap <- function(
   }
 
   selected_markers <- unique(as.character(selected_markers))
-  rows <- clustering[
-    as.character(clustering[[marker_col]]) %in% selected_markers &
-      is.finite(as.numeric(clustering[[value_col]])),
-    ,
-    drop = FALSE
+  require_spatial_namespace("data.table")
+  clustering_dt <- data.table::as.data.table(clustering)
+  rows <- clustering_dt[
+    as.character(get(marker_col)) %in% selected_markers &
+      is.finite(as.numeric(get(value_col)))
   ]
 
   if (nrow(rows) == 0) {
@@ -215,25 +198,21 @@ summarize_clustering_heatmap <- function(
   }
 
   split_cols <- unique(c(marker_col, group_cols))
-  row_groups <- split(
-    seq_len(nrow(rows)),
-    interaction(rows[split_cols], drop = TRUE, lex.order = TRUE)
-  )
+  if (component_col %in% names(rows)) {
+    result <- rows[, .(
+      mean_log2_ratio = mean(as.numeric(get(value_col)), na.rm = TRUE),
+      median_log2_ratio = stats::median(as.numeric(get(value_col)), na.rm = TRUE),
+      n_cells = data.table::uniqueN(get(component_col))
+    ), keyby = split_cols]
+  } else {
+    result <- rows[, .(
+      mean_log2_ratio = mean(as.numeric(get(value_col)), na.rm = TRUE),
+      median_log2_ratio = stats::median(as.numeric(get(value_col)), na.rm = TRUE),
+      n_cells = .N
+    ), keyby = split_cols]
+  }
 
-  result <- do.call(rbind, lapply(row_groups, function(row_index) {
-    chunk <- rows[row_index, , drop = FALSE]
-    out <- chunk[1, split_cols, drop = FALSE]
-    out$mean_log2_ratio <- mean(as.numeric(chunk[[value_col]]), na.rm = TRUE)
-    out$median_log2_ratio <- stats::median(as.numeric(chunk[[value_col]]), na.rm = TRUE)
-    out$n_cells <- if (component_col %in% names(chunk)) {
-      length(unique(chunk[[component_col]]))
-    } else {
-      nrow(chunk)
-    }
-    out
-  }))
-  rownames(result) <- NULL
-  result
+  as.data.frame(result)
 }
 
 empty_clustering_heatmap_summary <- function(group_cols, marker_col = "marker") {
@@ -279,4 +258,10 @@ select_clustering_heatmap_markers <- function(summary, n_markers = 20L, marker_c
 
   scores <- scores[order(scores$range, scores$sd, scores$max_abs, decreasing = TRUE), , drop = FALSE]
   head(scores$marker, min(n_markers, nrow(scores)))
+}
+
+require_spatial_namespace <- function(package) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    stop("Required R package is not installed: ", package, call. = FALSE)
+  }
 }

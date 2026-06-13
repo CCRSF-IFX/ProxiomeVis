@@ -11,6 +11,7 @@ DEFAULT_DEMO_MARKERS <- c(
 )
 
 DEMO_CACHE_SCHEMA_VERSION <- 3L
+ABUNDANCE_LONG_MAX_BLOCK_ENTRIES <- 500000L
 
 default_demo_rds_path <- function(repo_root = NULL, must_work = TRUE) {
   configured_rds <- Sys.getenv("PROXIOME_DEMO_RDS", unset = "")
@@ -504,66 +505,141 @@ build_abundance_long <- function(object, markers, assay = Seurat::DefaultAssay(o
   counts_layer <- SeuratObject::LayerData(object, assay = assay, layer = "counts")
   markers <- markers[markers %in% rownames(data_layer)]
 
-  abundance <- matrix_to_long(
+  matrix_layers_to_long(
     data_layer[markers, , drop = FALSE],
-    value_name = "abundance"
-  )
-  counts <- matrix_to_long(
     counts_layer[markers, , drop = FALSE],
-    value_name = "count"
   )
-
-  merge(abundance, counts, by = c("marker", "component"), all.x = TRUE, sort = FALSE)
 }
 
-matrix_to_long <- function(matrix, value_name) {
-  dense <- as.matrix(matrix)
+matrix_layers_to_long <- function(
+  data_layer,
+  counts_layer,
+  max_block_entries = ABUNDANCE_LONG_MAX_BLOCK_ENTRIES
+) {
+  layer_dim <- dim(data_layer)
+  if (!identical(layer_dim, dim(counts_layer))) {
+    stop("Abundance data and count layers must have the same dimensions.", call. = FALSE)
+  }
+
+  n_markers <- layer_dim[1]
+  n_components <- layer_dim[2]
+  markers <- rownames(data_layer) %||% as.character(seq_len(n_markers))
+  components <- colnames(data_layer) %||% as.character(seq_len(n_components))
+  total_values <- n_markers * n_components
+  abundance <- numeric(total_values)
+  count <- numeric(total_values)
+
+  for (columns in matrix_column_chunks(n_components, n_markers, max_block_entries)) {
+    value_index <- ((columns[1] - 1L) * n_markers + 1L):(tail(columns, 1) * n_markers)
+    abundance[value_index] <- matrix_block_values(
+      data_layer[, columns, drop = FALSE],
+      n_rows = n_markers,
+      n_columns = length(columns)
+    )
+    count[value_index] <- matrix_block_values(
+      counts_layer[, columns, drop = FALSE],
+      n_rows = n_markers,
+      n_columns = length(columns)
+    )
+  }
+
   data.frame(
-    marker = rep(rownames(dense), times = ncol(dense)),
-    component = rep(colnames(dense), each = nrow(dense)),
-    value = as.numeric(dense),
+    marker = rep(markers, times = n_components),
+    component = rep(components, each = n_markers),
+    abundance = abundance,
+    count = count,
     stringsAsFactors = FALSE
-  ) |>
-    stats::setNames(c("marker", "component", value_name))
+  )
+}
+
+matrix_to_long <- function(
+  x,
+  value_name,
+  max_block_entries = ABUNDANCE_LONG_MAX_BLOCK_ENTRIES
+) {
+  x_dim <- dim(x)
+  n_markers <- x_dim[1]
+  n_components <- x_dim[2]
+  markers <- rownames(x) %||% as.character(seq_len(n_markers))
+  components <- colnames(x) %||% as.character(seq_len(n_components))
+  values <- numeric(n_markers * n_components)
+
+  for (columns in matrix_column_chunks(n_components, n_markers, max_block_entries)) {
+    value_index <- ((columns[1] - 1L) * n_markers + 1L):(tail(columns, 1) * n_markers)
+    values[value_index] <- matrix_block_values(
+      x[, columns, drop = FALSE],
+      n_rows = n_markers,
+      n_columns = length(columns)
+    )
+  }
+
+  result <- data.frame(
+    marker = rep(markers, times = n_components),
+    component = rep(components, each = n_markers),
+    value = values,
+    stringsAsFactors = FALSE
+  )
+  names(result) <- c("marker", "component", value_name)
+  result
+}
+
+matrix_column_chunks <- function(
+  n_columns,
+  n_rows,
+  max_block_entries = ABUNDANCE_LONG_MAX_BLOCK_ENTRIES
+) {
+  if (n_columns == 0 || n_rows == 0) {
+    return(list())
+  }
+
+  max_block_entries <- suppressWarnings(as.integer(max_block_entries[1]))
+  if (!is.finite(max_block_entries) || max_block_entries < 1) {
+    max_block_entries <- ABUNDANCE_LONG_MAX_BLOCK_ENTRIES
+  }
+
+  columns_per_chunk <- max(1L, floor(max_block_entries / max(1L, n_rows)))
+  split(seq_len(n_columns), ceiling(seq_len(n_columns) / columns_per_chunk))
+}
+
+matrix_block_values <- function(block, n_rows = nrow(block), n_columns = ncol(block)) {
+  if (inherits(block, "sparseMatrix")) {
+    require_namespace("Matrix")
+    values <- numeric(n_rows * n_columns)
+    triplet <- methods::as(block, "TsparseMatrix")
+    if (length(triplet@x) > 0) {
+      values[(triplet@i + 1L) + triplet@j * n_rows] <- triplet@x
+    }
+    return(values)
+  }
+
+  as.numeric(block)
 }
 
 summarize_abundance <- function(abundance, metadata) {
-  merged <- merge(
+  joined <- join_metadata_by_component(
     abundance,
-    metadata[, intersect(c("component", "condition", "celltype_manual"), names(metadata)), drop = FALSE],
-    by = "component",
-    all.x = TRUE,
-    sort = FALSE
+    metadata,
+    metadata_cols = c("component", "condition", "celltype_manual")
   )
 
   aggregate_numeric_readout(
-    merged,
+    joined,
     group_cols = c("marker", "condition", "celltype_manual"),
     value_col = "abundance"
   )
 }
 
 summarize_proximity_readouts <- function(proximity, metadata) {
-  proximity <- merge(
+  proximity <- join_metadata_by_component(
     proximity,
-    metadata[, intersect(c("component", "condition", "celltype_manual", "sample_alias"), names(metadata)), drop = FALSE],
-    by = "component",
-    all.x = TRUE,
-    sort = FALSE,
-    suffixes = c("", "_metadata")
+    metadata,
+    metadata_cols = c("component", "condition", "celltype_manual", "sample_alias")
   )
 
-  if ("condition_metadata" %in% names(proximity)) {
-    proximity$condition <- proximity$condition %||% proximity$condition_metadata
-    proximity$condition_metadata <- NULL
-  }
-  if ("celltype_manual_metadata" %in% names(proximity)) {
-    proximity$celltype_manual <- proximity$celltype_manual %||% proximity$celltype_manual_metadata
-    proximity$celltype_manual_metadata <- NULL
-  }
-  if ("sample_alias_metadata" %in% names(proximity)) {
-    proximity$sample_alias <- proximity$sample_alias %||% proximity$sample_alias_metadata
-    proximity$sample_alias_metadata <- NULL
+  for (metadata_col in c("condition_metadata", "celltype_manual_metadata", "sample_alias_metadata")) {
+    if (metadata_col %in% names(proximity)) {
+      proximity[[metadata_col]] <- NULL
+    }
   }
 
   clustering <- proximity[
@@ -581,13 +657,13 @@ summarize_proximity_readouts <- function(proximity, metadata) {
   colocalization$marker_pair <- paste(colocalization$marker_1, "/", colocalization$marker_2)
 
   list(
-    clustering = clustering,
+    clustering = as.data.frame(clustering),
     clustering_summary = aggregate_numeric_readout(
       clustering,
       group_cols = c("marker", "condition", "celltype_manual"),
       value_col = "log2_ratio"
     ),
-    colocalization = colocalization,
+    colocalization = as.data.frame(colocalization),
     colocalization_summary = aggregate_numeric_readout(
       colocalization,
       group_cols = c("marker_pair", "marker_1", "marker_2", "condition", "celltype_manual"),
@@ -596,36 +672,47 @@ summarize_proximity_readouts <- function(proximity, metadata) {
   )
 }
 
+join_metadata_by_component <- function(data, metadata, metadata_cols) {
+  require_namespace("data.table")
+  data_dt <- data.table::as.data.table(data)
+  metadata_cols <- intersect(metadata_cols, names(metadata))
+  if (!"component" %in% names(data_dt) || !"component" %in% metadata_cols) {
+    return(data_dt)
+  }
+
+  metadata_dt <- data.table::as.data.table(metadata[, metadata_cols, drop = FALSE])
+  conflicting_cols <- setdiff(intersect(names(metadata_dt), names(data_dt)), "component")
+  if (length(conflicting_cols) > 0) {
+    data.table::setnames(metadata_dt, conflicting_cols, paste0(conflicting_cols, "_metadata"))
+  }
+
+  metadata_dt[data_dt, on = "component"]
+}
+
 aggregate_numeric_readout <- function(data, group_cols, value_col) {
+  require_namespace("data.table")
   group_cols <- group_cols[group_cols %in% names(data)]
 
   if (nrow(data) == 0) {
     return(data.frame())
   }
 
-  means <- aggregate(
-    data[[value_col]],
-    data[group_cols],
-    function(values) mean(values, na.rm = TRUE)
-  )
-  names(means)[ncol(means)] <- "mean_value"
+  data_dt <- data.table::as.data.table(data)
+  if ("component" %in% names(data_dt)) {
+    result <- data_dt[, .(
+      mean_value = mean(as.numeric(get(value_col)), na.rm = TRUE),
+      median_value = stats::median(as.numeric(get(value_col)), na.rm = TRUE),
+      n_cells = data.table::uniqueN(get("component"))
+    ), keyby = group_cols]
+  } else {
+    result <- data_dt[, .(
+      mean_value = mean(as.numeric(get(value_col)), na.rm = TRUE),
+      median_value = stats::median(as.numeric(get(value_col)), na.rm = TRUE),
+      n_cells = .N
+    ), keyby = group_cols]
+  }
 
-  medians <- aggregate(
-    data[[value_col]],
-    data[group_cols],
-    function(values) stats::median(values, na.rm = TRUE)
-  )
-  names(medians)[ncol(medians)] <- "median_value"
-
-  n_cells <- aggregate(
-    data$component,
-    data[group_cols],
-    function(values) length(unique(values))
-  )
-  names(n_cells)[ncol(n_cells)] <- "n_cells"
-
-  merged <- merge(means, medians, by = group_cols, all.x = TRUE, sort = FALSE)
-  merge(merged, n_cells, by = group_cols, all.x = TRUE, sort = FALSE)
+  as.data.frame(result)
 }
 
 calculate_differential_readout <- function(

@@ -68,7 +68,7 @@ if [[ ! -f "${APP_DIR}/renv.lock" ]]; then
   exit 1
 fi
 
-for required_package in renv shiny bslib ggplot2 plotly future promises rlang; do
+for required_package in renv shiny bslib ggplot2 plotly future promises rlang data.table; do
   if [[ ! -d "${RENV_PATHS_LIBRARY}" ]] || ! find -L "${RENV_PATHS_LIBRARY}" -maxdepth 4 -type d -name "${required_package}" | grep -q .; then
     echo "renv project library is not restored in ${RENV_PATHS_LIBRARY}" >&2
     echo "Missing package: ${required_package}" >&2
@@ -82,7 +82,7 @@ cat > "${LAUNCHER_R}" <<'RSCRIPT'
 app_dir <- Sys.getenv("SHINY_APP_DIR")
 source(file.path(app_dir, "renv", "activate.R"))
 
-required_packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang")
+required_packages <- c("renv", "shiny", "bslib", "ggplot2", "plotly", "future", "promises", "rlang", "data.table")
 library_root <- file.path(app_dir, "renv", "library")
 candidate_libraries <- unique(c(
   Sys.getenv("RENV_PATHS_LIBRARY", unset = ""),
