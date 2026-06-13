@@ -1,49 +1,83 @@
-# Pixelgen Proxiome Shiny Demo
+# ProxiomeVis
 
-This Shiny app uses the Pixelator v4.1.1 Seurat object at:
+ProxiomeVis is an interactive Shiny application for exploring Pixelator-derived
+single-cell protein spatial data. It focuses on marker abundance, cell
+annotation, differential readouts, self-clustering, and marker-pair
+colocalization from Pixelator v4.1.1 Seurat objects.
 
-`RnD_CS041188_BaoTran_XiaolinWu_3_Pixelgen_042126/notebooks/r/pg_data_combined_fil.pixelator_v4.1.1.rds`
+## Features
 
-The app organizes the demo around Abundance and Spatial Metrics:
+- **QC**: cell filtering summaries, cell-calling rank plots, QC metric
+  distributions, and original metadata inspection.
+- **Abundance**: UMAP marker abundance views, marker distribution plots,
+  cell-type composition, annotation heatmaps, and differential abundance.
+- **Spatial Metrics**: clustering and colocalization readouts from stored
+  proximity scores, including observed views, summary heatmaps, and
+  differential analyses.
+- **PixelatorES-style heatmaps**: condition, sample, and cell-type focused
+  colocalization heatmaps with marker selection and legend controls.
+- **Server-side RDS loading**: users on supported desktop or HPC runtimes can
+  load an `.rds` file by path, with background progress reporting and
+  processed app-data caching.
 
-- `Abundance`: per-cell PNA marker abundance on the Seurat UMAP embeddings.
-- `Spatial Metrics`: proximity readouts, with `Clustering` for marker self-proximity (`marker_1 == marker_2`) and `Colocalization` for marker-pair proximity (`marker_1 != marker_2`).
+## Data Model
 
-RDS loading reads proximity values from the stored assay proximity slot. It does
-not rerun `pixelatorR::ProximityScores()`.
+The app expects a Pixelator-compatible Seurat object with metadata, embeddings,
+PNA assay abundance layers, and a stored assay `proximity` slot. RDS loading
+reads proximity values from that stored slot. It does **not** rerun
+`pixelatorR::ProximityScores()`.
 
-The Spatial Metrics > Colocalization observed view uses a PixelatorES-style heatmap strategy:
+The default demo data path used in the CCRSF deployment is:
 
-- `Condition summary` keeps the original condition-level colocalization heatmap.
-- `Sample summary` groups mean marker-pair `log2_ratio` by sample alias and condition.
-- `Cell type focus` filters to one cell type, then groups sample-level marker-pair summaries.
-- `Variable detected markers` ranks markers by variable mean `log2_ratio` among detectable pairs, capped at 40 markers for readable heatmaps.
+```text
+RnD_CS041188_BaoTran_XiaolinWu_3_Pixelgen_042126/notebooks/r/pg_data_combined_fil.pixelator_v4.1.1.rds
+```
 
-Run from the repository root:
+## Run The App
+
+From the parent analysis repository:
 
 ```bash
 pixi run -e r serve-shiny-proxiome
 ```
 
-The first launch loads the full RDS and writes a compact cache. If a bundled
-`cache/demo_proxiome_data.rds` exists, the app uses it. Otherwise it writes the
-cache under the user's hidden writable directory at
-`$HOME/.ProxiomeVis/cache/demo_proxiome_data.rds`.
+From this Shiny app directory with a restored R environment:
 
-Run the app tests:
+```bash
+Rscript -e "shiny::runApp('.')"
+```
+
+The first load of a new RDS can take several minutes because the app builds
+compact tables for interactive use. Processed app data are cached under:
+
+```text
+$HOME/.ProxiomeVis/cache
+```
+
+If a bundled `cache/demo_proxiome_data.rds` exists, the app uses it for the
+demo dataset. Otherwise it writes a user-local cache under `$HOME/.ProxiomeVis`.
+
+## Tests
+
+From the parent analysis repository:
 
 ```bash
 pixi run -e r test-shiny-proxiome
 ```
 
-## Shared Open OnDemand Deployment
+From this Shiny app directory with dependencies restored:
 
-The Open OnDemand deployment uses this app folder as a shared renv project. The
-`proxiome_demo` directory can be copied to a shared app location and restored
-there; it is not copied into user home directories at launch time.
+```bash
+Rscript -e 'testthat::test_dir("tests/testthat")'
+```
 
-The launcher keeps the current CCRSF path as the default, but supports
-site-specific overrides for other HPC systems such as Biowulf:
+## Open OnDemand Deployment
+
+The Open OnDemand deployment uses this app folder as a shared `renv` project.
+The app directory can be copied to a shared location and restored there; it is
+not copied into user home directories at launch time.
+
+Common deployment overrides:
 
 ```bash
 export PROXIOME_APP_DIR=/path/to/shared/proxiome_demo
@@ -53,23 +87,14 @@ export PROXIOMEVIS_HOME=$HOME/.ProxiomeVis
 ```
 
 Runtime cache and diagnostics use `$HOME/.ProxiomeVis`, not the shared
-application directory. Browser file upload is disabled because of Open OnDemand
-proxy limits. Users can load their own data by entering an `.rds` path that is
-already visible on the HPC filesystem or local desktop filesystem.
+application directory. Browser file upload is disabled because of Open
+OnDemand proxy limits. Users can load their own data by entering an `.rds`
+path that is visible on the HPC or desktop filesystem.
 
-Developers update dependencies in the shared project lockfile when package
-requirements change:
-
-```r
-renv::snapshot()
-```
-
-Maintainers restore the project library during deployment or application
-updates:
+Maintainers restore the project library during deployment or app updates:
 
 ```bash
-cd /mnt/ccrsf-static/illumina/RnD_pixelgen_CAR-T_datasets
-cd shiny/proxiome_demo
+cd /path/to/shared/proxiome_demo
 Rscript -e 'renv::restore(prompt = FALSE)'
 ```
 
@@ -83,4 +108,3 @@ Rscript -e 'renv::restore(prompt = FALSE)'
 
 The app startup only activates the restored project library. It does not run
 `renv::restore()` or install packages for end users.
-# ProxiomeVis

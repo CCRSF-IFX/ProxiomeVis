@@ -1207,7 +1207,7 @@ data_source_controls <- function(platform = APP_PLATFORM) {
 }
 
 ui <- page_navbar(
-  title = "Pixelgen Proxiome Explorer",
+  title = "ProxiomeVis",
   id = "readout_tab",
   fillable = c("QC", "Abundance", "Spatial Metrics", "Environment"),
   theme = bs_theme(

@@ -23,6 +23,18 @@ test_that("readout description cards are not shown in the app chrome", {
   expect_false(grepl("Marker-pair proximity between two different proteins", html, fixed = TRUE))
 })
 
+test_that("app name is consistent across UI and README", {
+  html <- htmltools::renderTags(ui)$html
+  readme_lines <- readLines(file.path(APP_DIR, "README.md"), warn = FALSE)
+  readme <- paste(readme_lines, collapse = "\n")
+
+  expect_true(grepl("ProxiomeVis", html, fixed = TRUE))
+  expect_true(startsWith(readme, "# ProxiomeVis"))
+  expect_false(grepl("Pixelgen Proxiome Explorer", html, fixed = TRUE))
+  expect_false(grepl("# Pixelgen Proxiome Shiny Demo", readme, fixed = TRUE))
+  expect_false(any(grepl("# ProxiomeVis", readme_lines[-1], fixed = TRUE)))
+})
+
 test_that("each readout tab has only the controls it needs", {
   html <- htmltools::renderTags(ui)$html
 
