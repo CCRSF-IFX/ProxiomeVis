@@ -23,8 +23,14 @@ runtime/
 *.sqlite
 *.sqlite3
 
-# Keep source-controlled dependency metadata, ignore installed libraries
-renv/
+# Keep source-controlled renv metadata, ignore generated environments
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
 
 # R package/build artifacts
 *.tar.gz

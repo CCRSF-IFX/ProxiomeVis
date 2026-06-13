@@ -91,7 +91,9 @@ application directory. Browser file upload is disabled because of Open
 OnDemand proxy limits. Users can load their own data by entering an `.rds`
 path that is visible on the HPC or desktop filesystem.
 
-Maintainers restore the project library during deployment or app updates:
+Git tracks `renv/activate.R`, `renv/settings.json`, and `renv.lock`; generated
+package libraries under `renv/library/` stay out of Git. Deployers restore the
+project library during deployment or app updates:
 
 ```bash
 cd /path/to/shared/proxiome_demo

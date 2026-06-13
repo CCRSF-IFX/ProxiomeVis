@@ -245,6 +245,7 @@ test_that("project includes renv deployment infrastructure", {
   settings_path <- file.path(app_renv_root, "renv", "settings.json")
   profile_path <- file.path(app_renv_root, ".Rprofile")
   renvignore_path <- file.path(app_renv_root, ".renvignore")
+  gitignore_path <- file.path(app_renv_root, ".gitignore")
 
   expect_true(file.exists(lock_path))
   expect_true(file.exists(activate_path))
@@ -252,6 +253,12 @@ test_that("project includes renv deployment infrastructure", {
   expect_true(file.exists(profile_path))
   expect_true(file.exists(renvignore_path))
   expect_false(file.exists(file.path(repo_root, "renv.lock")))
+
+  gitignore_entries <- trimws(readLines(gitignore_path, warn = FALSE))
+  expect_false("renv/" %in% gitignore_entries)
+  expect_true("renv/library/" %in% gitignore_entries)
+  expect_true("renv/local/" %in% gitignore_entries)
+  expect_true("renv/staging/" %in% gitignore_entries)
 
   lock <- jsonlite::fromJSON(lock_path, simplifyVector = FALSE)
   expect_true("Packages" %in% names(lock))
