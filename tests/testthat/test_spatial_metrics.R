@@ -54,7 +54,7 @@ test_that("per-cell-type spatial summary groups by sample and cell type", {
   )
 })
 
-test_that("spatial heatmap completion fills missing marker pairs with zero", {
+test_that("spatial heatmap completion mirrors observed marker pairs before filling missing pairs", {
   summary <- data.frame(
     sample_alias = "S1",
     condition = "UNT",
@@ -73,7 +73,12 @@ test_that("spatial heatmap completion fills missing marker pairs with zero", {
     group_cols = c("sample_alias", "condition")
   )
 
-  expect_true(any(completed$marker_1 == "CD4" & completed$marker_2 == "CD3e"))
+  reverse_pair <- completed[completed$marker_1 == "CD4" & completed$marker_2 == "CD3e", , drop = FALSE]
+  expect_equal(nrow(reverse_pair), 1L)
+  expect_equal(reverse_pair$mean_log2_ratio, 1.2)
+  expect_equal(reverse_pair$pct_detected, 0.5)
+  expect_equal(reverse_pair$n_detected, 3L)
+  expect_equal(reverse_pair$n_total, 6L)
   expect_true(any(completed$marker_1 == "CD3e" & completed$marker_2 == "CD8"))
   expect_equal(
     completed$mean_log2_ratio[completed$marker_1 == "CD3e" & completed$marker_2 == "CD8"],

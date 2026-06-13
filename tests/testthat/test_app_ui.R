@@ -939,7 +939,7 @@ test_that("colocalization heatmap helper follows the notebook shared-order contr
   expect_true(all(c("marker_1", "marker_2", "mean_log2_ratio", "pct_detected", "hover") %in% names(result$plot_data)))
 })
 
-test_that("colocalization heatmap mirrors one-direction marker pairs", {
+test_that("colocalization heatmap mirrors completed one-direction marker pairs", {
   coloc_summary <- data.frame(
     condition = "CD3CD28",
     marker_1 = c("CD3e", "CD3e", "CD4"),
@@ -950,9 +950,14 @@ test_that("colocalization heatmap mirrors one-direction marker pairs", {
     n_total = 10L,
     stringsAsFactors = FALSE
   )
+  completed_summary <- complete_spatial_marker_pairs(
+    coloc_summary,
+    selected_markers = c("CD3e", "CD4", "CD8"),
+    group_cols = "condition"
+  )
 
   result <- make_coloc_heatmaps(
-    data = coloc_summary,
+    data = completed_summary,
     selected_markers = c("CD3e", "CD4", "CD8"),
     cell_label = "CD8 T",
     conditions = "CD3CD28",

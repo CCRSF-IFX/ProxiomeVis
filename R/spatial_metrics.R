@@ -81,7 +81,7 @@ complete_spatial_marker_pairs <- function(
 
   selected_markers <- as.character(selected_markers)
   require_spatial_namespace("data.table")
-  summary_dt <- data.table::as.data.table(summary)
+  summary_dt <- symmetrize_spatial_marker_pair_summary(summary, group_cols = group_cols)
   pair_grid <- data.table::CJ(
     marker_1 = selected_markers,
     marker_2 = selected_markers,
@@ -102,6 +102,50 @@ complete_spatial_marker_pairs <- function(
   completed$n_detected[is.na(completed$n_detected)] <- 0L
   completed$n_total[is.na(completed$n_total)] <- 0L
   as.data.frame(completed)
+}
+
+symmetrize_spatial_marker_pair_summary <- function(summary, group_cols) {
+  require_spatial_namespace("data.table")
+  summary_dt <- data.table::as.data.table(summary)
+  if (nrow(summary_dt) == 0) {
+    return(summary_dt)
+  }
+
+  marker_cols <- c("marker_1", "marker_2")
+  key_cols <- unique(c(group_cols, marker_cols))
+  missing_cols <- setdiff(key_cols, names(summary_dt))
+  if (length(missing_cols) > 0) {
+    stop("Missing columns for spatial marker-pair symmetry: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+
+  reversed <- data.table::copy(summary_dt)
+  reversed_marker_1 <- reversed$marker_2
+  reversed_marker_2 <- reversed$marker_1
+  reversed[, marker_1 := reversed_marker_1]
+  reversed[, marker_2 := reversed_marker_2]
+
+  combined <- data.table::rbindlist(list(summary_dt, reversed), fill = TRUE)
+  value_cols <- setdiff(names(combined), key_cols)
+  if (length(value_cols) == 0) {
+    return(unique(combined[, ..key_cols]))
+  }
+
+  combined[, lapply(.SD, average_spatial_pair_values), by = key_cols, .SDcols = value_cols]
+}
+
+average_spatial_pair_values <- function(values) {
+  if (is.numeric(values)) {
+    if (all(is.na(values))) {
+      return(NA_real_)
+    }
+    return(mean(values, na.rm = TRUE))
+  }
+
+  values <- values[!is.na(values)]
+  if (length(values) == 0) {
+    return(NA)
+  }
+  values[1]
 }
 
 select_spatial_heatmap_markers <- function(
