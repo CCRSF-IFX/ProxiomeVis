@@ -6,6 +6,176 @@ proxiome_plot_height <- function() {
   "430px"
 }
 
+plot_download_controls <- function(ns, output_id) {
+  if (is.null(ns)) {
+    ns <- identity
+  }
+
+  div(
+    class = "plot-download-controls",
+    downloadButton(
+      ns(paste0(output_id, "_download_png")),
+      "PNG",
+      class = "btn btn-outline-secondary btn-sm plot-download-button"
+    ),
+    downloadButton(
+      ns(paste0(output_id, "_download_svg")),
+      "SVG",
+      class = "btn btn-outline-secondary btn-sm plot-download-button"
+    )
+  )
+}
+
+plot_download_filename <- function(prefix, format) {
+  prefix <- as.character(prefix)[1]
+  if (is.na(prefix) || !nzchar(prefix)) {
+    prefix <- "proxiomevis-plot"
+  }
+  prefix <- gsub("[^A-Za-z0-9._-]+", "-", prefix)
+  prefix <- gsub("^-+|-+$", "", prefix)
+  if (!nzchar(prefix)) {
+    prefix <- "proxiomevis-plot"
+  }
+
+  paste0(prefix, ".", format)
+}
+
+plot_download_value <- function(value, default) {
+  if (is.function(value)) {
+    value <- value()
+  }
+  value <- suppressWarnings(as.numeric(value[1]))
+  if (!is.finite(value) || value <= 0) {
+    return(default)
+  }
+
+  value
+}
+
+plot_download_inches_from_px <- function(value, default, pixels_per_inch = 96) {
+  value <- plot_download_value(value, default * pixels_per_inch)
+  value / pixels_per_inch
+}
+
+plot_download_size_from_dimensions <- function(
+  dimensions,
+  default_width = 8,
+  default_height = 5,
+  pixels_per_inch = 96
+) {
+  if (is.function(dimensions)) {
+    dimensions <- dimensions()
+  }
+  if (is.null(dimensions)) {
+    return(list(width = default_width, height = default_height))
+  }
+
+  list(
+    width = plot_download_inches_from_px(dimensions$width, default_width, pixels_per_inch = pixels_per_inch),
+    height = plot_download_inches_from_px(dimensions$height, default_height, pixels_per_inch = pixels_per_inch)
+  )
+}
+
+save_ggplot_download <- function(
+  plot,
+  file,
+  format = c("png", "svg"),
+  width = 8,
+  height = 5,
+  dpi = 300
+) {
+  format <- match.arg(format)
+  if (!inherits(plot, "ggplot")) {
+    stop("Plot download requires a ggplot object.", call. = FALSE)
+  }
+
+  if (identical(format, "svg")) {
+    svg_device <- if (requireNamespace("svglite", quietly = TRUE)) svglite::svglite else grDevices::svg
+    ggplot2::ggsave(
+      filename = file,
+      plot = plot,
+      device = svg_device,
+      width = width,
+      height = height,
+      units = "in",
+      dpi = dpi,
+      limitsize = FALSE
+    )
+    return(invisible(file))
+  }
+
+  png_device <- if (requireNamespace("ragg", quietly = TRUE)) {
+    ragg::agg_png
+  } else {
+    "png"
+  }
+  ggplot2::ggsave(
+    filename = file,
+    plot = plot,
+    device = png_device,
+    width = width,
+    height = height,
+    units = "in",
+    dpi = dpi,
+    limitsize = FALSE
+  )
+  invisible(file)
+}
+
+register_ggplot_downloads <- function(
+  output,
+  output_id,
+  plot,
+  filename_prefix = output_id,
+  width = 8,
+  height = 5,
+  dpi = 300
+) {
+  if (!is.function(plot)) {
+    stop("plot must be a function or reactive expression.", call. = FALSE)
+  }
+
+  resolved_filename <- function(format) {
+    prefix <- if (is.function(filename_prefix)) filename_prefix() else filename_prefix
+    plot_download_filename(prefix, format)
+  }
+  resolved_width <- function() plot_download_value(width, 8)
+  resolved_height <- function() plot_download_value(height, 5)
+  resolved_dpi <- function() plot_download_value(dpi, 300)
+
+  output[[paste0(output_id, "_download_png")]] <- downloadHandler(
+    filename = function() resolved_filename("png"),
+    content = function(file) {
+      save_ggplot_download(
+        plot(),
+        file,
+        format = "png",
+        width = resolved_width(),
+        height = resolved_height(),
+        dpi = resolved_dpi()
+      )
+    },
+    contentType = "image/png"
+  )
+
+  output[[paste0(output_id, "_download_svg")]] <- downloadHandler(
+    filename = function() resolved_filename("svg"),
+    content = function(file) {
+      save_ggplot_download(
+        plot(),
+        file,
+        format = "svg",
+        width = resolved_width(),
+        height = resolved_height(),
+        dpi = resolved_dpi()
+      )
+    },
+    contentType = "image/svg+xml"
+  )
+
+  invisible(output)
+}
+
 coloc_heatmap_plot_margins <- function() {
   list(l = 104, r = 184, t = 72, b = 126)
 }

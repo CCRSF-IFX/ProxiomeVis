@@ -50,16 +50,31 @@ qc_module_ui <- function(id) {
         nav_panel(
           "Filtering",
           uiOutput(ns("qc_metric_row")),
-          plot_pane(size = "compact", plotlyOutput(ns("qc_filter_plot"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "compact",
+            download_id = "qc_filter_plot",
+            ns = ns,
+            plotlyOutput(ns("qc_filter_plot"), height = proxiome_plot_height())
+          ),
           div(class = "table-pane", tableOutput(ns("qc_filter_table")))
         ),
         nav_panel(
           "Cell Calling",
-          plot_pane(size = "wide", plotlyOutput(ns("qc_molecule_rank_plot"), height = proxiome_plot_height()))
+          plot_pane(
+            size = "wide",
+            download_id = "qc_molecule_rank_plot",
+            ns = ns,
+            plotlyOutput(ns("qc_molecule_rank_plot"), height = proxiome_plot_height())
+          )
         ),
         nav_panel(
           "Distributions",
-          plot_pane(size = "compact", plotlyOutput(ns("qc_distribution_plot"), height = proxiome_plot_height()))
+          plot_pane(
+            size = "compact",
+            download_id = "qc_distribution_plot",
+            ns = ns,
+            plotlyOutput(ns("qc_distribution_plot"), height = proxiome_plot_height())
+          )
         ),
         nav_panel(
           "Metadata",
@@ -133,23 +148,44 @@ qc_module_server <- function(id, data) {
       )
     })
 
-    output$qc_filter_plot <- renderPlotly({
+    qc_filter_ggplot <- reactive({
       counts <- qc_filter_counts()
       validate(need(nrow(counts) > 0, "No QC filter counts are available."))
 
-      p <- plot_filter_cell_counts(
+      plot_filter_cell_counts(
         counts,
         include_total = isTRUE(input$qc_filter_include_total),
         y = input$qc_filter_y %||% "count"
       )
+    })
 
-      ggplotly(p, tooltip = "text") |>
+    output$qc_filter_plot <- renderPlotly({
+      ggplotly(qc_filter_ggplot(), tooltip = "text") |>
         apply_proxiome_plot_frame()
     })
+    register_ggplot_downloads(
+      output,
+      "qc_filter_plot",
+      qc_filter_ggplot,
+      filename_prefix = function() paste("qc-filtering", input$qc_filter_y %||% "count", sep = "-"),
+      width = 7,
+      height = 5
+    )
 
     output$qc_filter_table <- renderTable({
       format_qc_filter_table(qc_filter_counts())
     }, striped = TRUE, bordered = FALSE, width = "100%")
+
+    qc_molecule_rank_ggplot <- reactive({
+      metadata <- qc_origin_metadata()
+      validate(need("n_umi" %in% names(metadata), "The original metadata does not include n_umi."))
+      validate(need(any(is.finite(metadata$n_umi) & metadata$n_umi > 0), "No positive n_umi values are available."))
+
+      plot_qc_molecule_rank(
+        metadata,
+        cutoff = numeric_input_value(input$qc_n_umi_cutoff, 10000)
+      )
+    })
 
     output$qc_molecule_rank_plot <- renderPlotly({
       metadata <- qc_origin_metadata()
@@ -159,6 +195,26 @@ qc_module_server <- function(id, data) {
       qc_molecule_rank_plotly(
         metadata,
         cutoff = numeric_input_value(input$qc_n_umi_cutoff, 10000)
+      )
+    })
+    register_ggplot_downloads(
+      output,
+      "qc_molecule_rank_plot",
+      qc_molecule_rank_ggplot,
+      filename_prefix = "qc-cell-calling-rank",
+      width = 9,
+      height = 5
+    )
+
+    qc_distribution_ggplot <- reactive({
+      metadata <- qc_metadata()
+      req(input$qc_metric)
+      validate(need(input$qc_metric %in% names(metadata), "Selected QC metric is not available."))
+
+      plot_qc_distribution(
+        metadata,
+        metric = input$qc_metric,
+        isotype_cutoff = numeric_input_value(input$qc_isotype_cutoff, 0.001)
       )
     })
 
@@ -173,6 +229,14 @@ qc_module_server <- function(id, data) {
         isotype_cutoff = numeric_input_value(input$qc_isotype_cutoff, 0.001)
       )
     })
+    register_ggplot_downloads(
+      output,
+      "qc_distribution_plot",
+      qc_distribution_ggplot,
+      filename_prefix = function() paste("qc-distribution", input$qc_metric, sep = "-"),
+      width = 7,
+      height = 5
+    )
 
     output$qc_origin_metadata_table <- renderTable({
       head(qc_origin_metadata(), 200)
@@ -383,6 +447,37 @@ rank_qc_metadata <- function(metadata, value_col) {
   result
 }
 
+plot_qc_molecule_rank <- function(metadata, cutoff = 10000) {
+  if (!"n_umi" %in% names(metadata)) {
+    stop("The metadata does not include n_umi.", call. = FALSE)
+  }
+
+  ranked <- rank_qc_metadata(metadata, value_col = "n_umi")
+  ranked <- ranked[is.finite(ranked$rank) & is.finite(ranked$n_umi) & ranked$rank > 0 & ranked$n_umi > 0, , drop = FALSE]
+  ranked$hover <- paste0(
+    "Cell: ", ranked$component,
+    "<br>Sample: ", ranked$sample,
+    "<br>Rank: ", format(ranked$rank, big.mark = ","),
+    "<br>n_umi: ", format(round(ranked$n_umi, 1), big.mark = ",")
+  )
+
+  p <- ggplot(ranked, aes(rank, n_umi, color = sample, text = hover)) +
+    geom_line(linewidth = 0.7, na.rm = TRUE) +
+    geom_point(size = 1.6, alpha = 0.72, na.rm = TRUE) +
+    scale_x_log10(labels = qc_count_axis_labels) +
+    scale_y_log10(labels = qc_count_axis_labels) +
+    labs(x = "Cell rank", y = "n_umi", color = "Sample") +
+    theme_bw(base_size = 12) +
+    theme(panel.grid.minor = element_blank())
+
+  cutoff <- numeric_input_value(cutoff, 10000)
+  if (is.finite(cutoff) && cutoff > 0) {
+    p <- p + geom_hline(yintercept = cutoff, color = "#c7503e", linetype = "dashed", linewidth = 0.6)
+  }
+
+  p
+}
+
 qc_molecule_rank_plotly <- function(metadata, cutoff = 10000) {
   if (!"n_umi" %in% names(metadata)) {
     stop("The metadata does not include n_umi.", call. = FALSE)
@@ -444,6 +539,33 @@ qc_molecule_rank_plotly <- function(metadata, cutoff = 10000) {
     legend = list(title = list(text = "Sample"))
   ) |>
     apply_proxiome_plot_frame()
+}
+
+plot_qc_distribution <- function(metadata, metric, isotype_cutoff = 0.001) {
+  metric <- as.character(metric)[1]
+  plot_data <- qc_distribution_plot_data(metadata, metric)
+  metric_label <- qc_metric_label(metric)
+
+  p <- ggplot(plot_data, aes(sample, metric_value, fill = sample, text = hover)) +
+    geom_violin(scale = "width", alpha = 0.82, color = NA, na.rm = TRUE) +
+    geom_boxplot(width = 0.14, outlier.shape = NA, alpha = 0.25, na.rm = TRUE) +
+    geom_jitter(width = 0.12, height = 0, alpha = 0.32, size = 0.7, na.rm = TRUE) +
+    labs(x = NULL, y = metric_label, fill = "Sample") +
+    theme_bw(base_size = 12) +
+    theme(
+      panel.grid.minor = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "none"
+    )
+
+  if (is_qc_log_metric(metric)) {
+    p <- p + scale_y_log10(labels = qc_count_axis_labels)
+  }
+  if (identical(metric, "isotype_fraction") && is.finite(isotype_cutoff)) {
+    p <- p + geom_hline(yintercept = isotype_cutoff, color = "#c7503e", linetype = "dashed", linewidth = 0.6)
+  }
+
+  p
 }
 
 qc_distribution_plotly <- function(metadata, metric, isotype_cutoff = 0.001) {

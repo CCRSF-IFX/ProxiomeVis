@@ -85,7 +85,12 @@ abundance_module_ui <- function(id) {
         nav_panel(
           "Observed",
           uiOutput(ns("metric_row")),
-          plot_pane(size = "standard", plotlyOutput(ns("abundance_umap"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "standard",
+            download_id = "abundance_umap",
+            ns = ns,
+            plotlyOutput(ns("abundance_umap"), height = proxiome_plot_height())
+          ),
           conditionalPanel(
             condition = "input.abundance_color_by == 'abundance'",
             ns = ns,
@@ -97,14 +102,26 @@ abundance_module_ui <- function(id) {
           plot_pane(
             size = "scroll",
             extra_class = "distribution-plot-pane",
+            download_id = "abundance_marker_distribution_plot",
+            ns = ns,
             uiOutput(ns("abundance_marker_distribution_plot_ui"))
           ),
           div(class = "table-pane", tableOutput(ns("abundance_marker_distribution_table")))
         ),
         nav_panel(
           "Cell Annotation",
-          plot_pane(size = "compact", plotlyOutput(ns("abundance_celltype_composition_plot"), height = proxiome_plot_height())),
-          plot_pane(size = "wide", plotlyOutput(ns("abundance_annotation_heatmap"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "compact",
+            download_id = "abundance_celltype_composition_plot",
+            ns = ns,
+            plotlyOutput(ns("abundance_celltype_composition_plot"), height = proxiome_plot_height())
+          ),
+          plot_pane(
+            size = "wide",
+            download_id = "abundance_annotation_heatmap",
+            ns = ns,
+            plotlyOutput(ns("abundance_annotation_heatmap"), height = proxiome_plot_height())
+          ),
           div(class = "table-pane", tableOutput(ns("abundance_celltype_composition_table")))
         ),
         nav_panel(
@@ -266,7 +283,7 @@ abundance_module_server <- function(id, data) {
       add_embedding_columns(plot_data, input$abundance_embedding)
     })
 
-    output$abundance_umap <- renderPlotly({
+    abundance_umap_ggplot <- reactive({
       plot_data <- abundance_points()
       validate(need(nrow(plot_data) > 0, "No cells match the selected filters."))
 
@@ -292,8 +309,6 @@ abundance_module_server <- function(id, data) {
           labs(x = "Embedding 1", y = "Embedding 2") +
           theme_minimal(base_size = 12) +
           theme(panel.grid = element_blank())
-
-        colorbar_title <- paste(input$abundance_marker, "abundance")
       } else {
         color_label <- abundance_color_label(color_by)
         plot_data$color_group <- as.factor(plot_data[[color_by]])
@@ -310,8 +325,6 @@ abundance_module_server <- function(id, data) {
           labs(x = "Embedding 1", y = "Embedding 2", color = color_label) +
           theme_minimal(base_size = 12) +
           theme(panel.grid = element_blank())
-
-        colorbar_title <- NULL
       }
 
       split_col <- selected_split_column(input$abundance_split_by, plot_data)
@@ -321,9 +334,26 @@ abundance_module_server <- function(id, data) {
           facet_wrap(~split_group)
       }
 
-      ggplotly(p, tooltip = "text") |>
+      p
+    })
+
+    output$abundance_umap <- renderPlotly({
+      plot_data <- abundance_points()
+      color_by <- unique(plot_data$abundance_color_by)
+      color_by <- color_by[1] %||% "abundance"
+      colorbar_title <- if (identical(color_by, "abundance")) paste(input$abundance_marker, "abundance") else NULL
+
+      ggplotly(abundance_umap_ggplot(), tooltip = "text") |>
         apply_proxiome_plot_frame(colorbar_title = colorbar_title)
     })
+    register_ggplot_downloads(
+      output,
+      "abundance_umap",
+      abundance_umap_ggplot,
+      filename_prefix = function() paste("abundance-umap", input$abundance_color_by %||% "abundance", input$abundance_marker %||% "", sep = "-"),
+      width = 8,
+      height = 5
+    )
 
     output$abundance_table <- renderTable({
       current_data <- data()
@@ -395,24 +425,37 @@ abundance_module_server <- function(id, data) {
       )
     })
 
-    output$abundance_marker_distribution_plot <- renderPlotly({
+    abundance_marker_distribution_ggplot <- reactive({
       plot_data <- abundance_distribution_data()
       validate(need(nrow(plot_data) > 0, "No abundance rows are available for the selected marker."))
 
       dimensions <- abundance_distribution_dimensions()
+      plot_abundance_marker_distribution(
+        plot_data,
+        input$abundance_distribution_marker,
+        facet_cols = dimensions$facet_cols,
+        show_jitter = !identical(input$abundance_distribution_show_jitter, FALSE)
+      )
+    })
+
+    output$abundance_marker_distribution_plot <- renderPlotly({
+      dimensions <- abundance_distribution_dimensions()
       ggplotly(
-        plot_abundance_marker_distribution(
-          plot_data,
-          input$abundance_distribution_marker,
-          facet_cols = dimensions$facet_cols,
-          show_jitter = !identical(input$abundance_distribution_show_jitter, FALSE)
-        ),
+        abundance_marker_distribution_ggplot(),
         tooltip = c("x", "y", "fill"),
         width = dimensions$width,
         height = dimensions$height
       ) |>
         apply_proxiome_plot_frame()
     })
+    register_ggplot_downloads(
+      output,
+      "abundance_marker_distribution_plot",
+      abundance_marker_distribution_ggplot,
+      filename_prefix = function() paste("abundance-marker-distribution", input$abundance_distribution_marker %||% "marker", sep = "-"),
+      width = function() plot_download_size_from_dimensions(abundance_distribution_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(abundance_distribution_dimensions())$height
+    )
 
     output$abundance_marker_distribution_table <- renderTable({
       plot_data <- abundance_distribution_data()
@@ -426,25 +469,49 @@ abundance_module_server <- function(id, data) {
       format_summary_table(summary, value_label = "mean_abundance")
     }, striped = TRUE, bordered = FALSE, width = "100%")
 
-    output$abundance_celltype_composition_plot <- renderPlotly({
+    abundance_celltype_composition_ggplot <- reactive({
       current_data <- data()
       req(current_data)
       plot_data <- celltype_composition_data(current_data$metadata)
       validate(need(nrow(plot_data) > 0, "No cell annotation rows are available."))
 
-      ggplotly(plot_celltype_composition(plot_data), tooltip = "text") |>
-        apply_proxiome_plot_frame()
+      plot_celltype_composition(plot_data)
     })
 
-    output$abundance_annotation_heatmap <- renderPlotly({
+    output$abundance_celltype_composition_plot <- renderPlotly({
+      ggplotly(abundance_celltype_composition_ggplot(), tooltip = "text") |>
+        apply_proxiome_plot_frame()
+    })
+    register_ggplot_downloads(
+      output,
+      "abundance_celltype_composition_plot",
+      abundance_celltype_composition_ggplot,
+      filename_prefix = "abundance-celltype-composition",
+      width = 7,
+      height = 5
+    )
+
+    abundance_annotation_heatmap_ggplot <- reactive({
       current_data <- data()
       req(current_data)
       plot_data <- annotation_heatmap_data(current_data$abundance, current_data$metadata)
       validate(need(nrow(plot_data) > 0, "No abundance rows are available for annotation heatmap."))
 
-      ggplotly(plot_annotation_heatmap(plot_data), tooltip = "text") |>
+      plot_annotation_heatmap(plot_data)
+    })
+
+    output$abundance_annotation_heatmap <- renderPlotly({
+      ggplotly(abundance_annotation_heatmap_ggplot(), tooltip = "text") |>
         apply_proxiome_plot_frame(colorbar_title = "Median abundance")
     })
+    register_ggplot_downloads(
+      output,
+      "abundance_annotation_heatmap",
+      abundance_annotation_heatmap_ggplot,
+      filename_prefix = "abundance-annotation-heatmap",
+      width = 10,
+      height = 5
+    )
 
     output$abundance_celltype_composition_table <- renderTable({
       current_data <- data()
@@ -465,23 +532,50 @@ abundance_module_server <- function(id, data) {
       )
     })
 
-    output$abundance_diff_volcano <- renderPlotly({
+    abundance_diff_volcano_x_label <- reactive({
+      config <- abundance_diff_config()
+      req(config)
+      paste("Abundance effect:", config$group_a, "minus", config$group_b, "(reference)")
+    })
+
+    abundance_diff_volcano_dimensions <- reactive({
+      differential_volcano_dimensions(abundance_diff_volcano_x_label())
+    })
+
+    abundance_diff_volcano_ggplot <- reactive({
       config <- abundance_diff_config()
       req(config)
       result <- abundance_diff_results()
       validate(need(nrow(result) > 0, "Choose two different groups with enough abundance data."))
 
-      x_label <- paste("Abundance effect:", config$group_a, "minus", config$group_b, "(reference)")
-      differential_volcano_plot(
+      differential_volcano_ggplot(
         result,
         label_col = "marker",
-        x_label = x_label,
+        x_label = abundance_diff_volcano_x_label(),
         fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff,
-        source = "abundance_diff",
-        dimensions = differential_volcano_dimensions(x_label)
+        effect_cutoff = config$effect_cutoff
       )
     })
+
+    output$abundance_diff_volcano <- renderPlotly({
+      dimensions <- abundance_diff_volcano_dimensions()
+      ggplotly(
+        abundance_diff_volcano_ggplot(),
+        tooltip = "text",
+        source = "abundance_diff",
+        width = dimensions$width,
+        height = dimensions$height
+      ) |>
+        apply_differential_plot_frame(dimensions = dimensions)
+    })
+    register_ggplot_downloads(
+      output,
+      "abundance_diff_volcano",
+      abundance_diff_volcano_ggplot,
+      filename_prefix = function() paste("abundance-differential-volcano", abundance_diff_volcano_x_label(), sep = "-"),
+      width = function() plot_download_size_from_dimensions(abundance_diff_volcano_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(abundance_diff_volcano_dimensions())$height
+    )
 
     observeEvent(plotly::event_data("plotly_click", source = "abundance_diff"), {
       event <- plotly::event_data("plotly_click", source = "abundance_diff")
@@ -490,10 +584,9 @@ abundance_module_server <- function(id, data) {
       }
     })
 
-    output$abundance_diff_detail <- renderPlotly({
-      current_data <- data()
+    abundance_diff_detail_data <- reactive({
       config <- abundance_diff_config()
-      req(current_data, config, input$abundance_diff_marker, config$group_a, config$group_b)
+      req(config, input$abundance_diff_marker, config$group_a, config$group_b)
 
       plot_data <- abundance_readout_with_metadata()
       plot_data <- plot_data[
@@ -513,10 +606,29 @@ abundance_module_server <- function(id, data) {
       )
 
       y_label <- paste(input$abundance_diff_marker, "abundance")
+      dimensions <- differential_detail_dimensions(
+        plot_data,
+        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
+        y_label = y_label
+      )
+
+      list(
+        config = config,
+        plot_data = plot_data,
+        y_label = y_label,
+        dimensions = dimensions
+      )
+    })
+
+    abundance_diff_detail_ggplot <- reactive({
+      detail <- abundance_diff_detail_data()
+      plot_data <- detail$plot_data
+      config <- detail$config
+
       p <- ggplot(plot_data, aes(condition, abundance, color = condition, text = hover)) +
         geom_boxplot(outlier.shape = NA, alpha = 0.18, linewidth = 0.5) +
         geom_jitter(width = 0.18, height = 0, alpha = 0.5, size = 1.4) +
-        labs(x = NULL, y = y_label) +
+        labs(x = NULL, y = detail$y_label) +
         theme_minimal(base_size = 12) +
         theme(panel.grid.minor = element_blank(), legend.position = "none")
 
@@ -524,14 +636,22 @@ abundance_module_server <- function(id, data) {
         p <- p + facet_wrap(~celltype_manual, scales = "free_y")
       }
 
-      dimensions <- differential_detail_dimensions(
-        plot_data,
-        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
-        y_label = y_label
-      )
-      ggplotly(p, tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+      p
+    })
+
+    output$abundance_diff_detail <- renderPlotly({
+      dimensions <- abundance_diff_detail_data()$dimensions
+      ggplotly(abundance_diff_detail_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
         apply_proxiome_plot_frame(dimensions = dimensions)
     })
+    register_ggplot_downloads(
+      output,
+      "abundance_diff_detail",
+      abundance_diff_detail_ggplot,
+      filename_prefix = function() paste("abundance-differential-detail", input$abundance_diff_marker %||% "marker", sep = "-"),
+      width = function() plot_download_size_from_dimensions(abundance_diff_detail_data()$dimensions)$width,
+      height = function() plot_download_size_from_dimensions(abundance_diff_detail_data()$dimensions)$height
+    )
 
     output$abundance_diff_table <- renderTable({
       config <- abundance_diff_config()

@@ -117,6 +117,8 @@ colocalization_module_ui <- function(id) {
           plot_pane(
             size = "scroll",
             extra_class = "coloc-heatmap-pane",
+            download_id = "colocalization_heatmap",
+            ns = ns,
             conditionalPanel(
               condition = "input.colocalization_heatmap_display == 'interactive'",
               ns = ns,
@@ -420,6 +422,21 @@ colocalization_module_server <- function(id, data) {
       coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)$height
     })
 
+    colocalization_heatmap_ggplot <- reactive({
+      colocalization_heatmap_result()$plot
+    })
+    colocalization_heatmap_dimensions <- reactive({
+      coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
+    })
+    register_ggplot_downloads(
+      output,
+      "colocalization_heatmap",
+      colocalization_heatmap_ggplot,
+      filename_prefix = "colocalization-heatmap",
+      width = function() plot_download_size_from_dimensions(colocalization_heatmap_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(colocalization_heatmap_dimensions())$height
+    )
+
     output$colocalization_table <- renderTable({
       summary <- colocalization_heatmap_result()$summary
       validate(need(nrow(summary) > 0, "No spatial metric rows to summarize."))
@@ -438,23 +455,50 @@ colocalization_module_server <- function(id, data) {
       )
     })
 
-    output$colocalization_diff_volcano <- renderPlotly({
+    colocalization_diff_volcano_x_label <- reactive({
+      config <- colocalization_diff_config()
+      req(config)
+      paste("Difference in medians:", config$group_a, "minus", config$group_b, "(reference)")
+    })
+
+    colocalization_diff_volcano_dimensions <- reactive({
+      differential_volcano_dimensions(colocalization_diff_volcano_x_label())
+    })
+
+    colocalization_diff_volcano_ggplot <- reactive({
       config <- colocalization_diff_config()
       req(config)
       result <- colocalization_diff_anchor_results()
       validate(need(nrow(result) > 0, "Choose two different groups with enough colocalization data."))
 
-      x_label <- paste("Difference in medians:", config$group_a, "minus", config$group_b, "(reference)")
-      differential_volcano_plot(
+      differential_volcano_ggplot(
         result,
         label_col = "marker_pair",
-        x_label = x_label,
+        x_label = colocalization_diff_volcano_x_label(),
         fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff,
-        source = "colocalization_diff",
-        dimensions = differential_volcano_dimensions(x_label)
+        effect_cutoff = config$effect_cutoff
       )
     })
+
+    output$colocalization_diff_volcano <- renderPlotly({
+      dimensions <- colocalization_diff_volcano_dimensions()
+      ggplotly(
+        colocalization_diff_volcano_ggplot(),
+        tooltip = "text",
+        source = "colocalization_diff",
+        width = dimensions$width,
+        height = dimensions$height
+      ) |>
+        apply_differential_plot_frame(dimensions = dimensions)
+    })
+    register_ggplot_downloads(
+      output,
+      "colocalization_diff_volcano",
+      colocalization_diff_volcano_ggplot,
+      filename_prefix = function() paste("colocalization-differential-volcano", colocalization_diff_volcano_x_label(), sep = "-"),
+      width = function() plot_download_size_from_dimensions(colocalization_diff_volcano_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(colocalization_diff_volcano_dimensions())$height
+    )
 
     observeEvent(plotly::event_data("plotly_click", source = "colocalization_diff"), {
       event <- plotly::event_data("plotly_click", source = "colocalization_diff")
@@ -463,7 +507,7 @@ colocalization_module_server <- function(id, data) {
       }
     })
 
-    output$colocalization_diff_detail <- renderPlotly({
+    colocalization_diff_detail_data <- reactive({
       current_data <- data()
       config <- colocalization_diff_config()
       req(current_data, config, input$colocalization_diff_pair, config$group_a, config$group_b)
@@ -485,11 +529,30 @@ colocalization_module_server <- function(id, data) {
       )
 
       y_label <- paste(input$colocalization_diff_pair, "colocalization log2 ratio")
+      dimensions <- differential_detail_dimensions(
+        plot_data,
+        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
+        y_label = y_label
+      )
+
+      list(
+        config = config,
+        plot_data = plot_data,
+        y_label = y_label,
+        dimensions = dimensions
+      )
+    })
+
+    colocalization_diff_detail_ggplot <- reactive({
+      detail <- colocalization_diff_detail_data()
+      plot_data <- detail$plot_data
+      config <- detail$config
+
       p <- ggplot(plot_data, aes(condition, log2_ratio, color = condition, text = hover)) +
         geom_hline(yintercept = 0, color = "#8a9699", linewidth = 0.5) +
         geom_boxplot(outlier.shape = NA, alpha = 0.18, linewidth = 0.5) +
         geom_jitter(width = 0.18, height = 0, alpha = 0.5, size = 1.4) +
-        labs(x = NULL, y = y_label) +
+        labs(x = NULL, y = detail$y_label) +
         theme_minimal(base_size = 12) +
         theme(panel.grid.minor = element_blank(), legend.position = "none")
 
@@ -497,14 +560,22 @@ colocalization_module_server <- function(id, data) {
         p <- p + facet_wrap(~celltype_manual, scales = "free_y")
       }
 
-      dimensions <- differential_detail_dimensions(
-        plot_data,
-        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
-        y_label = y_label
-      )
-      ggplotly(p, tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+      p
+    })
+
+    output$colocalization_diff_detail <- renderPlotly({
+      dimensions <- colocalization_diff_detail_data()$dimensions
+      ggplotly(colocalization_diff_detail_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
         apply_proxiome_plot_frame(dimensions = dimensions)
     })
+    register_ggplot_downloads(
+      output,
+      "colocalization_diff_detail",
+      colocalization_diff_detail_ggplot,
+      filename_prefix = function() paste("colocalization-differential-detail", input$colocalization_diff_pair %||% "pair", sep = "-"),
+      width = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$dimensions)$width,
+      height = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$dimensions)$height
+    )
 
     output$colocalization_diff_table <- renderTable({
       config <- colocalization_diff_config()

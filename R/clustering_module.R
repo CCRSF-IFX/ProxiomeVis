@@ -77,17 +77,32 @@ clustering_module_ui <- function(id) {
         full_screen = TRUE,
         nav_panel(
           "Observed",
-          plot_pane(size = "standard", plotlyOutput(ns("clustering_plot"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "standard",
+            download_id = "clustering_plot",
+            ns = ns,
+            plotlyOutput(ns("clustering_plot"), height = proxiome_plot_height())
+          ),
           div(class = "table-pane", tableOutput(ns("clustering_table")))
         ),
         nav_panel(
           "Per Marker",
-          plot_pane(size = "compact", plotlyOutput(ns("clustering_per_marker_plot"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "compact",
+            download_id = "clustering_per_marker_plot",
+            ns = ns,
+            plotlyOutput(ns("clustering_per_marker_plot"), height = proxiome_plot_height())
+          ),
           div(class = "table-pane", tableOutput(ns("clustering_per_marker_table")))
         ),
         nav_panel(
           "Summary Heatmap",
-          plot_pane(size = "scroll", plotlyOutput(ns("clustering_summary_heatmap"), height = proxiome_plot_height())),
+          plot_pane(
+            size = "scroll",
+            download_id = "clustering_summary_heatmap",
+            ns = ns,
+            plotlyOutput(ns("clustering_summary_heatmap"), height = proxiome_plot_height())
+          ),
           div(class = "table-pane", tableOutput(ns("clustering_summary_heatmap_table")))
         ),
         nav_panel(
@@ -197,7 +212,7 @@ clustering_module_server <- function(id, data) {
       merge(clustering, abundance, by = c("component", "marker"), all.x = TRUE, sort = FALSE)
     })
 
-    output$clustering_plot <- renderPlotly({
+    clustering_plot_ggplot <- reactive({
       plot_data <- clustering_points()
       validate(need(nrow(plot_data) > 0, "No self-clustering scores are available for the selected marker and filters."))
 
@@ -216,9 +231,21 @@ clustering_module_server <- function(id, data) {
         theme_minimal(base_size = 12) +
         theme(panel.grid.minor = element_blank())
 
-      ggplotly(p, tooltip = "text") |>
+      p
+    })
+
+    output$clustering_plot <- renderPlotly({
+      ggplotly(clustering_plot_ggplot(), tooltip = "text") |>
         apply_proxiome_plot_frame()
     })
+    register_ggplot_downloads(
+      output,
+      "clustering_plot",
+      clustering_plot_ggplot,
+      filename_prefix = function() paste("clustering-observed", input$clustering_marker %||% "marker", sep = "-"),
+      width = 7,
+      height = 5
+    )
 
     output$clustering_table <- renderTable({
       plot_data <- clustering_points()
@@ -232,13 +259,25 @@ clustering_module_server <- function(id, data) {
       format_summary_table(summary, value_label = "mean_log2_ratio")
     }, striped = TRUE, bordered = FALSE, width = "100%")
 
-    output$clustering_per_marker_plot <- renderPlotly({
+    clustering_per_marker_ggplot <- reactive({
       plot_data <- clustering_points()
       validate(need(nrow(plot_data) > 0, "No self-clustering scores are available for the selected marker and filters."))
 
-      ggplotly(plot_clustering_per_marker(plot_data, input$clustering_marker), tooltip = c("x", "y", "fill")) |>
+      plot_clustering_per_marker(plot_data, input$clustering_marker)
+    })
+
+    output$clustering_per_marker_plot <- renderPlotly({
+      ggplotly(clustering_per_marker_ggplot(), tooltip = c("x", "y", "fill")) |>
         apply_proxiome_plot_frame()
     })
+    register_ggplot_downloads(
+      output,
+      "clustering_per_marker_plot",
+      clustering_per_marker_ggplot,
+      filename_prefix = function() paste("clustering-per-marker", input$clustering_marker %||% "marker", sep = "-"),
+      width = 8,
+      height = 5
+    )
 
     output$clustering_per_marker_table <- renderTable({
       plot_data <- clustering_points()
@@ -277,13 +316,25 @@ clustering_module_server <- function(id, data) {
       summarize_clustering_heatmap(clustering, selected_markers = selected_markers)
     })
 
-    output$clustering_summary_heatmap <- renderPlotly({
+    clustering_summary_heatmap_ggplot <- reactive({
       summary <- clustering_heatmap_summary()
       validate(need(nrow(summary) > 0, "No clustering rows are available for the selected heatmap filters."))
 
-      ggplotly(plot_clustering_summary_heatmap(summary), tooltip = "text") |>
+      plot_clustering_summary_heatmap(summary)
+    })
+
+    output$clustering_summary_heatmap <- renderPlotly({
+      ggplotly(clustering_summary_heatmap_ggplot(), tooltip = "text") |>
         apply_proxiome_plot_frame(colorbar_title = "Mean log2 ratio")
     })
+    register_ggplot_downloads(
+      output,
+      "clustering_summary_heatmap",
+      clustering_summary_heatmap_ggplot,
+      filename_prefix = "clustering-summary-heatmap",
+      width = 10,
+      height = 5
+    )
 
     output$clustering_summary_heatmap_table <- renderTable({
       summary <- clustering_heatmap_summary()
@@ -302,23 +353,50 @@ clustering_module_server <- function(id, data) {
       )
     })
 
-    output$clustering_diff_volcano <- renderPlotly({
+    clustering_diff_volcano_x_label <- reactive({
+      config <- clustering_diff_config()
+      req(config)
+      paste("Difference in medians:", config$group_a, "minus", config$group_b, "(reference)")
+    })
+
+    clustering_diff_volcano_dimensions <- reactive({
+      differential_volcano_dimensions(clustering_diff_volcano_x_label())
+    })
+
+    clustering_diff_volcano_ggplot <- reactive({
       config <- clustering_diff_config()
       req(config)
       result <- clustering_diff_results()
       validate(need(nrow(result) > 0, "Choose two different groups with enough self-clustering data."))
 
-      x_label <- paste("Difference in medians:", config$group_a, "minus", config$group_b, "(reference)")
-      differential_volcano_plot(
+      differential_volcano_ggplot(
         result,
         label_col = "marker",
-        x_label = x_label,
+        x_label = clustering_diff_volcano_x_label(),
         fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff,
-        source = "clustering_diff",
-        dimensions = differential_volcano_dimensions(x_label)
+        effect_cutoff = config$effect_cutoff
       )
     })
+
+    output$clustering_diff_volcano <- renderPlotly({
+      dimensions <- clustering_diff_volcano_dimensions()
+      ggplotly(
+        clustering_diff_volcano_ggplot(),
+        tooltip = "text",
+        source = "clustering_diff",
+        width = dimensions$width,
+        height = dimensions$height
+      ) |>
+        apply_differential_plot_frame(dimensions = dimensions)
+    })
+    register_ggplot_downloads(
+      output,
+      "clustering_diff_volcano",
+      clustering_diff_volcano_ggplot,
+      filename_prefix = function() paste("clustering-differential-volcano", clustering_diff_volcano_x_label(), sep = "-"),
+      width = function() plot_download_size_from_dimensions(clustering_diff_volcano_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(clustering_diff_volcano_dimensions())$height
+    )
 
     observeEvent(plotly::event_data("plotly_click", source = "clustering_diff"), {
       event <- plotly::event_data("plotly_click", source = "clustering_diff")
@@ -327,7 +405,7 @@ clustering_module_server <- function(id, data) {
       }
     })
 
-    output$clustering_diff_detail <- renderPlotly({
+    clustering_diff_detail_data <- reactive({
       current_data <- data()
       config <- clustering_diff_config()
       req(current_data, config, input$clustering_diff_marker, config$group_a, config$group_b)
@@ -349,11 +427,30 @@ clustering_module_server <- function(id, data) {
       )
 
       y_label <- paste(input$clustering_diff_marker, "self-clustering log2 ratio")
+      dimensions <- differential_detail_dimensions(
+        plot_data,
+        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
+        y_label = y_label
+      )
+
+      list(
+        config = config,
+        plot_data = plot_data,
+        y_label = y_label,
+        dimensions = dimensions
+      )
+    })
+
+    clustering_diff_detail_ggplot <- reactive({
+      detail <- clustering_diff_detail_data()
+      plot_data <- detail$plot_data
+      config <- detail$config
+
       p <- ggplot(plot_data, aes(condition, log2_ratio, color = condition, text = hover)) +
         geom_hline(yintercept = 0, color = "#8a9699", linewidth = 0.5) +
         geom_boxplot(outlier.shape = NA, alpha = 0.18, linewidth = 0.5) +
         geom_jitter(width = 0.18, height = 0, alpha = 0.5, size = 1.4) +
-        labs(x = NULL, y = y_label) +
+        labs(x = NULL, y = detail$y_label) +
         theme_minimal(base_size = 12) +
         theme(panel.grid.minor = element_blank(), legend.position = "none")
 
@@ -361,14 +458,22 @@ clustering_module_server <- function(id, data) {
         p <- p + facet_wrap(~celltype_manual, scales = "free_y")
       }
 
-      dimensions <- differential_detail_dimensions(
-        plot_data,
-        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
-        y_label = y_label
-      )
-      ggplotly(p, tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+      p
+    })
+
+    output$clustering_diff_detail <- renderPlotly({
+      dimensions <- clustering_diff_detail_data()$dimensions
+      ggplotly(clustering_diff_detail_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
         apply_proxiome_plot_frame(dimensions = dimensions)
     })
+    register_ggplot_downloads(
+      output,
+      "clustering_diff_detail",
+      clustering_diff_detail_ggplot,
+      filename_prefix = function() paste("clustering-differential-detail", input$clustering_diff_marker %||% "marker", sep = "-"),
+      width = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$dimensions)$width,
+      height = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$dimensions)$height
+    )
 
     output$clustering_diff_table <- renderTable({
       config <- clustering_diff_config()

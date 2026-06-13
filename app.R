@@ -546,6 +546,20 @@ app_css <- function() {
       padding-bottom: 26px;
     }
 
+    .plot-download-controls {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .plot-download-button {
+      min-width: 58px;
+      padding: 3px 10px;
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
     .plot-pane-compact {
       width: 100%;
       max-width: 820px;
@@ -774,11 +788,25 @@ user_rds_path_loading_enabled <- function(platform = APP_PLATFORM) {
   platform %in% c("ccrsf_hpc", "biowulf_hpc", "portable") && !disabled
 }
 
-plot_pane <- function(..., size = c("standard", "compact", "wide", "scroll"), extra_class = NULL) {
+plot_pane <- function(
+  ...,
+  size = c("standard", "compact", "wide", "scroll"),
+  extra_class = NULL,
+  download_id = NULL,
+  ns = identity
+) {
   size <- match.arg(size)
-  div(
-    class = paste(c("plot-pane", paste0("plot-pane-", size), extra_class), collapse = " "),
-    ...
+  children <- list(...)
+  if (!is.null(download_id) && nzchar(download_id)) {
+    children <- c(list(plot_download_controls(ns, download_id)), children)
+  }
+
+  do.call(
+    div,
+    c(
+      list(class = paste(c("plot-pane", paste0("plot-pane-", size), extra_class), collapse = " ")),
+      children
+    )
   )
 }
 

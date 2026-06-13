@@ -4,11 +4,13 @@ differential_plot_row <- function(volcano_output_id, detail_output_id) {
     plot_pane(
       size = "compact",
       extra_class = "differential-plot-pane",
+      download_id = volcano_output_id,
       plotlyOutput(volcano_output_id, width = "auto", height = "auto")
     ),
     plot_pane(
       size = "standard",
       extra_class = "differential-plot-pane",
+      download_id = detail_output_id,
       plotlyOutput(detail_output_id, width = "auto", height = "auto")
     )
   )
@@ -139,10 +141,29 @@ differential_volcano_plot <- function(
   source = NULL,
   dimensions = differential_volcano_dimensions(x_label)
 ) {
+  p <- differential_volcano_ggplot(
+    result,
+    label_col = label_col,
+    x_label = x_label,
+    fdr_cutoff = fdr_cutoff,
+    effect_cutoff = effect_cutoff
+  )
+
+  ggplotly(p, tooltip = "text", source = source, width = dimensions$width, height = dimensions$height) |>
+    apply_differential_plot_frame(dimensions = dimensions)
+}
+
+differential_volcano_ggplot <- function(
+  result,
+  label_col,
+  x_label,
+  fdr_cutoff,
+  effect_cutoff
+) {
   plot_data <- prepare_differential_plot_data(result, label_col, fdr_cutoff, effect_cutoff)
   fdr_line <- -log10(max(fdr_cutoff, .Machine$double.xmin))
 
-  p <- ggplot(plot_data, aes(effect_size, neg_log10_fdr, color = threshold_status, text = hover, key = plot_key)) +
+  ggplot(plot_data, aes(effect_size, neg_log10_fdr, color = threshold_status, text = hover, key = plot_key)) +
     geom_vline(xintercept = c(-effect_cutoff, effect_cutoff), color = "#b3bdbf", linetype = "dashed", linewidth = 0.45) +
     geom_hline(yintercept = fdr_line, color = "#b3bdbf", linetype = "dashed", linewidth = 0.45) +
     geom_point(size = 2.3, alpha = 0.78) +
@@ -157,9 +178,6 @@ differential_volcano_plot <- function(
     labs(x = x_label, y = "-log10(FDR)") +
     theme_minimal(base_size = 12) +
     theme(panel.grid.minor = element_blank())
-
-  ggplotly(p, tooltip = "text", source = source, width = dimensions$width, height = dimensions$height) |>
-    apply_differential_plot_frame(dimensions = dimensions)
 }
 
 prepare_differential_plot_data <- function(result, label_col, fdr_cutoff, effect_cutoff) {

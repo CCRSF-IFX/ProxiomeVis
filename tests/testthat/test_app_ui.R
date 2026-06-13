@@ -9,7 +9,7 @@ expect_output_wrapped_with <- function(html, output_id, wrapper_class) {
   output_pos <- regexpr(output_marker, html, fixed = TRUE)[[1]]
   expect_true(output_pos > 0)
 
-  preceding_html <- substr(html, max(1, output_pos - 900), output_pos)
+  preceding_html <- substr(html, max(1, output_pos - 2400), output_pos)
   wrapper_pattern <- paste0('class="[^"]*\\b', wrapper_class, '\\b[^"]*"')
   expect_true(grepl(wrapper_pattern, preceding_html, perl = TRUE))
 }
@@ -234,6 +234,49 @@ test_that("plot outputs are wrapped in readable width classes", {
   for (output_id in scroll_outputs) {
     expect_output_wrapped_with(html, output_id, "plot-pane-scroll")
   }
+})
+
+test_that("figure panes expose PNG and SVG downloads", {
+  html <- htmltools::renderTags(ui)$html
+  downloadable_outputs <- c(
+    "qc-qc_filter_plot",
+    "qc-qc_molecule_rank_plot",
+    "qc-qc_distribution_plot",
+    "abundance-abundance_umap",
+    "abundance-abundance_marker_distribution_plot",
+    "abundance-abundance_celltype_composition_plot",
+    "abundance-abundance_annotation_heatmap",
+    "abundance-abundance_diff_volcano",
+    "abundance-abundance_diff_detail",
+    "clustering-clustering_plot",
+    "clustering-clustering_per_marker_plot",
+    "clustering-clustering_summary_heatmap",
+    "clustering-clustering_diff_volcano",
+    "clustering-clustering_diff_detail",
+    "colocalization-colocalization_heatmap",
+    "colocalization-colocalization_diff_volcano",
+    "colocalization-colocalization_diff_detail"
+  )
+
+  for (output_id in downloadable_outputs) {
+    expect_true(grepl(paste0('id="', output_id, '_download_png"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', output_id, '_download_svg"'), html, fixed = TRUE))
+  }
+})
+
+test_that("plot download helper writes PNG and SVG files from ggplot objects", {
+  plot <- ggplot(data.frame(x = 1:3, y = c(1, 4, 2)), aes(x, y)) +
+    geom_line()
+  png_path <- tempfile(fileext = ".png")
+  svg_path <- tempfile(fileext = ".svg")
+
+  save_ggplot_download(plot, png_path, format = "png", width = 3, height = 2, dpi = 96)
+  save_ggplot_download(plot, svg_path, format = "svg", width = 3, height = 2, dpi = 96)
+
+  expect_true(file.exists(png_path))
+  expect_true(file.exists(svg_path))
+  expect_gt(file.info(png_path)$size, 100)
+  expect_match(paste(readLines(svg_path, warn = FALSE), collapse = "\n"), "<svg", fixed = TRUE)
 })
 
 test_that("app uses a bslib navbar page instead of custom top chrome", {
