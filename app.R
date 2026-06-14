@@ -546,11 +546,38 @@ app_css <- function() {
       padding-bottom: 26px;
     }
 
-    .plot-download-controls {
+    .plot-pane-controls {
       display: flex;
       justify-content: flex-end;
+      align-items: flex-end;
       gap: 8px;
       margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .plot-download-controls,
+    .plot-resize-controls {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .plot-resize-controls .shiny-input-container {
+      width: 96px;
+      margin-bottom: 0;
+    }
+
+    .plot-resize-controls label {
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.1;
+    }
+
+    .plot-resize-controls input.form-control {
+      min-height: 31px;
+      padding: 3px 8px;
+      font-size: 0.78rem;
     }
 
     .plot-download-button {
@@ -802,12 +829,20 @@ plot_pane <- function(
   size = c("standard", "compact", "wide", "scroll"),
   extra_class = NULL,
   download_id = NULL,
-  ns = identity
+  ns = identity,
+  controls = NULL
 ) {
   size <- match.arg(size)
   children <- list(...)
+  pane_controls <- list()
   if (!is.null(download_id) && nzchar(download_id)) {
-    children <- c(list(plot_download_controls(ns, download_id)), children)
+    pane_controls <- c(pane_controls, list(plot_download_controls(ns, download_id)))
+  }
+  if (!is.null(controls)) {
+    pane_controls <- c(pane_controls, list(controls))
+  }
+  if (length(pane_controls) > 0) {
+    children <- c(list(do.call(div, c(list(class = "plot-pane-controls"), pane_controls))), children)
   }
 
   do.call(

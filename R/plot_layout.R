@@ -26,6 +26,28 @@ plot_download_controls <- function(ns, output_id) {
   )
 }
 
+plot_resize_controls <- function(
+  ns,
+  width_id,
+  height_id,
+  width_value,
+  height_value,
+  min_width = 420,
+  min_height = 320,
+  max_value = 2600,
+  step = 50
+) {
+  if (is.null(ns)) {
+    ns <- identity
+  }
+
+  div(
+    class = "plot-resize-controls",
+    numericInput(ns(width_id), "Plot width", value = width_value, min = min_width, max = max_value, step = step),
+    numericInput(ns(height_id), "Plot height", value = height_value, min = min_height, max = max_value, step = step)
+  )
+}
+
 plot_download_filename <- function(prefix, format) {
   prefix <- as.character(prefix)[1]
   if (is.na(prefix) || !nzchar(prefix)) {

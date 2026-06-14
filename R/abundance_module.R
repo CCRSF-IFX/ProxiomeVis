@@ -19,9 +19,7 @@ abundance_sidebar <- function(id) {
             selectInput(ns("abundance_marker"), "Marker", choices = character(0))
           ),
           selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0)),
-          sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6, step = 0.1),
-          numericInput(ns("abundance_umap_width"), "Plot width (px)", value = 832, min = 420, max = 2600, step = 50),
-          numericInput(ns("abundance_umap_height"), "Plot height (px)", value = 520, min = 320, max = 2600, step = 50)
+          sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6, step = 0.1)
         ),
         accordion_panel(
           "Filters",
@@ -39,8 +37,6 @@ abundance_sidebar <- function(id) {
           "Display",
           selectInput(ns("abundance_distribution_marker"), "Marker", choices = character(0)),
           numericInput(ns("abundance_distribution_columns"), "Facet columns", value = 3, min = 1, max = 12, step = 1),
-          numericInput(ns("abundance_distribution_width"), "Plot width (px)", value = 832, min = 420, max = 2600, step = 50),
-          numericInput(ns("abundance_distribution_height"), "Plot height (px)", value = 678, min = 320, max = 2600, step = 50),
           checkboxInput(ns("abundance_distribution_show_jitter"), "Show jitter dots", value = TRUE)
         )
       )
@@ -92,6 +88,7 @@ abundance_module_ui <- function(id) {
             extra_class = "umap-plot-pane",
             download_id = "abundance_umap",
             ns = ns,
+            controls = plot_resize_controls(ns, "abundance_umap_width", "abundance_umap_height", width_value = 832, height_value = 520),
             uiOutput(ns("abundance_umap_ui"))
           ),
           conditionalPanel(
@@ -107,6 +104,7 @@ abundance_module_ui <- function(id) {
             extra_class = "distribution-plot-pane",
             download_id = "abundance_marker_distribution_plot",
             ns = ns,
+            controls = plot_resize_controls(ns, "abundance_distribution_width", "abundance_distribution_height", width_value = 832, height_value = 678),
             uiOutput(ns("abundance_marker_distribution_plot_ui"))
           ),
           div(class = "table-pane", tableOutput(ns("abundance_marker_distribution_table")))

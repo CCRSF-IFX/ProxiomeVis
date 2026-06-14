@@ -266,6 +266,20 @@ test_that("figure panes expose PNG and SVG downloads", {
   }
 })
 
+test_that("resizable plots keep size controls with the plot pane controls", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  plot_layout_source <- paste(readLines(file.path(APP_DIR, "R", "plot_layout.R"), warn = FALSE), collapse = "\n")
+  abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(grepl("plot_resize_controls <- function", plot_layout_source, fixed = TRUE))
+  expect_true(grepl("plot-pane-controls", app_source, fixed = TRUE))
+  expect_true(grepl("plot-resize-controls", app_source, fixed = TRUE))
+  expect_true(grepl('controls = plot_resize_controls(ns, "abundance_umap_width", "abundance_umap_height"', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('controls = plot_resize_controls(ns, "abundance_distribution_width", "abundance_distribution_height"', abundance_module_source, fixed = TRUE))
+  expect_false(grepl('numericInput(ns("abundance_umap_width")', abundance_module_source, fixed = TRUE))
+  expect_false(grepl('numericInput(ns("abundance_distribution_width")', abundance_module_source, fixed = TRUE))
+})
+
 test_that("plot download helper writes PNG and SVG files from ggplot objects", {
   plot <- ggplot(data.frame(x = 1:3, y = c(1, 4, 2)), aes(x, y)) +
     geom_line()
@@ -1272,12 +1286,10 @@ test_that("abundance marker distribution plot keeps violin groups valid for Plot
 test_that("abundance marker distribution controls include visible defaults", {
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
 
-  expect_true(grepl('numericInput(ns("abundance_umap_width"), "Plot width (px)", value = 832', abundance_module_source, fixed = TRUE))
-  expect_true(grepl('numericInput(ns("abundance_umap_height"), "Plot height (px)", value = 520', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('plot_resize_controls(ns, "abundance_umap_width", "abundance_umap_height", width_value = 832, height_value = 520)', abundance_module_source, fixed = TRUE))
   expect_true(grepl('sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6', abundance_module_source, fixed = TRUE))
   expect_true(grepl('numericInput(ns("abundance_distribution_columns"), "Facet columns", value = 3', abundance_module_source, fixed = TRUE))
-  expect_true(grepl('numericInput(ns("abundance_distribution_width"), "Plot width (px)", value = 832', abundance_module_source, fixed = TRUE))
-  expect_true(grepl('numericInput(ns("abundance_distribution_height"), "Plot height (px)", value = 678', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('plot_resize_controls(ns, "abundance_distribution_width", "abundance_distribution_height", width_value = 832, height_value = 678)', abundance_module_source, fixed = TRUE))
   expect_true(grepl("update_abundance_distribution_size_controls", abundance_module_source, fixed = TRUE))
   expect_true(grepl('checkboxInput(ns("abundance_distribution_show_jitter"), "Show jitter dots", value = TRUE)', abundance_module_source, fixed = TRUE))
 })
