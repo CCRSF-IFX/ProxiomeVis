@@ -9,7 +9,7 @@ expect_output_wrapped_with <- function(html, output_id, wrapper_class) {
   output_pos <- regexpr(output_marker, html, fixed = TRUE)[[1]]
   expect_true(output_pos > 0)
 
-  preceding_html <- substr(html, max(1, output_pos - 2400), output_pos)
+  preceding_html <- substr(html, max(1, output_pos - 8000), output_pos)
   wrapper_pattern <- paste0('class="[^"]*\\b', wrapper_class, '\\b[^"]*"')
   expect_true(grepl(wrapper_pattern, preceding_html, perl = TRUE))
 }
@@ -271,13 +271,18 @@ test_that("resizable plots keep size controls with the plot pane controls", {
   plot_layout_source <- paste(readLines(file.path(APP_DIR, "R", "plot_layout.R"), warn = FALSE), collapse = "\n")
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
 
-  expect_true(grepl("plot_resize_controls <- function", plot_layout_source, fixed = TRUE))
+  expect_true(grepl("plot_options_controls <- function", plot_layout_source, fixed = TRUE))
   expect_true(grepl("plot-pane-controls", app_source, fixed = TRUE))
-  expect_true(grepl("plot-resize-controls", app_source, fixed = TRUE))
-  expect_true(grepl('controls = plot_resize_controls(ns, "abundance_umap_width", "abundance_umap_height"', abundance_module_source, fixed = TRUE))
-  expect_true(grepl('controls = plot_resize_controls(ns, "abundance_distribution_width", "abundance_distribution_height"', abundance_module_source, fixed = TRUE))
+  expect_true(grepl("plot-options-button", app_source, fixed = TRUE))
+  expect_true(grepl("plot-options-popover", app_source, fixed = TRUE))
+  expect_true(grepl('controls = plot_options_controls(ns, "abundance_umap_width", "abundance_umap_height"', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('controls = plot_options_controls(', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('point_controls = checkboxInput(ns("abundance_distribution_show_jitter"), "Show jitter dots", value = TRUE)', abundance_module_source, fixed = TRUE))
+  expect_false(grepl('plot_size_controls <- function', plot_layout_source, fixed = TRUE))
+  expect_false(grepl('class = "plot-resize-controls"', plot_layout_source, fixed = TRUE))
   expect_false(grepl('numericInput(ns("abundance_umap_width")', abundance_module_source, fixed = TRUE))
   expect_false(grepl('numericInput(ns("abundance_distribution_width")', abundance_module_source, fixed = TRUE))
+  expect_false(grepl('checkboxInput(ns("abundance_distribution_show_jitter")', sub(".*abundance_sidebar <- function", "", sub("abundance_module_ui <- function.*", "", abundance_module_source)), fixed = TRUE))
 })
 
 test_that("plot download helper writes PNG and SVG files from ggplot objects", {
@@ -1286,10 +1291,10 @@ test_that("abundance marker distribution plot keeps violin groups valid for Plot
 test_that("abundance marker distribution controls include visible defaults", {
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
 
-  expect_true(grepl('plot_resize_controls(ns, "abundance_umap_width", "abundance_umap_height", width_value = 832, height_value = 520)', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('plot_options_controls(ns, "abundance_umap_width", "abundance_umap_height", width_value = 832, height_value = 520)', abundance_module_source, fixed = TRUE))
   expect_true(grepl('sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6', abundance_module_source, fixed = TRUE))
   expect_true(grepl('numericInput(ns("abundance_distribution_columns"), "Facet columns", value = 3', abundance_module_source, fixed = TRUE))
-  expect_true(grepl('plot_resize_controls(ns, "abundance_distribution_width", "abundance_distribution_height", width_value = 832, height_value = 678)', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('plot_options_controls(\n              ns,\n              "abundance_distribution_width",\n              "abundance_distribution_height",', abundance_module_source, fixed = TRUE))
   expect_true(grepl("update_abundance_distribution_size_controls", abundance_module_source, fixed = TRUE))
   expect_true(grepl('checkboxInput(ns("abundance_distribution_show_jitter"), "Show jitter dots", value = TRUE)', abundance_module_source, fixed = TRUE))
 })

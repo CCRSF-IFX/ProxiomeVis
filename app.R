@@ -555,36 +555,77 @@ app_css <- function() {
       flex-wrap: wrap;
     }
 
-    .plot-download-controls,
-    .plot-resize-controls {
+    .plot-download-controls {
       display: flex;
       align-items: flex-end;
       gap: 8px;
     }
 
-    .plot-resize-controls .shiny-input-container {
-      width: 96px;
-      margin-bottom: 0;
-    }
-
-    .plot-resize-controls label {
-      margin-bottom: 2px;
-      color: var(--muted);
-      font-size: 0.72rem;
-      line-height: 1.1;
-    }
-
-    .plot-resize-controls input.form-control {
-      min-height: 31px;
-      padding: 3px 8px;
-      font-size: 0.78rem;
-    }
-
-    .plot-download-button {
+    .plot-download-button,
+    .plot-options-button {
       min-width: 58px;
       padding: 3px 10px;
       font-size: 0.78rem;
       line-height: 1.35;
+    }
+
+    .plot-options-popover {
+      display: grid;
+      gap: 10px;
+      width: 230px;
+    }
+
+    .plot-options-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .plot-options-section + .plot-options-section {
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    .plot-options-section-title {
+      color: var(--text);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .plot-options-field {
+      display: grid;
+      grid-template-columns: 170px auto;
+      justify-content: start;
+      align-items: end;
+      gap: 6px;
+    }
+
+    .plot-options-field .shiny-input-container,
+    .plot-options-section > .shiny-input-container {
+      width: 170px !important;
+      max-width: 100%;
+      min-width: 0;
+      margin-bottom: 0;
+    }
+
+    .plot-options-field label,
+    .plot-options-section > .shiny-input-container label {
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .plot-options-field input.form-control {
+      width: 100%;
+      max-width: 100%;
+      min-height: 32px;
+      padding: 3px 8px;
+      font-size: 0.82rem;
+    }
+
+    .plot-options-unit {
+      padding-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.75rem;
     }
 
     .plot-pane-compact {

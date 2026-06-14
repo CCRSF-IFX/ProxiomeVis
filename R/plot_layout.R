@@ -26,7 +26,7 @@ plot_download_controls <- function(ns, output_id) {
   )
 }
 
-plot_resize_controls <- function(
+plot_options_controls <- function(
   ns,
   width_id,
   height_id,
@@ -35,16 +35,51 @@ plot_resize_controls <- function(
   min_width = 420,
   min_height = 320,
   max_value = 2600,
-  step = 50
+  step = 50,
+  point_controls = NULL
 ) {
   if (is.null(ns)) {
     ns <- identity
   }
 
-  div(
-    class = "plot-resize-controls",
-    numericInput(ns(width_id), "Plot width", value = width_value, min = min_width, max = max_value, step = step),
-    numericInput(ns(height_id), "Plot height", value = height_value, min = min_height, max = max_value, step = step)
+  sections <- list(
+    div(
+      class = "plot-options-section",
+      div("Canvas", class = "plot-options-section-title"),
+      div(
+        class = "plot-options-field",
+        numericInput(ns(width_id), "Width", value = width_value, min = min_width, max = max_value, step = step, width = "170px"),
+        span("px", class = "plot-options-unit")
+      ),
+      div(
+        class = "plot-options-field",
+        numericInput(ns(height_id), "Height", value = height_value, min = min_height, max = max_value, step = step, width = "170px"),
+        span("px", class = "plot-options-unit")
+      )
+    )
+  )
+  if (!is.null(point_controls)) {
+    sections <- c(
+      sections,
+      list(
+        div(
+          class = "plot-options-section",
+          div("Points", class = "plot-options-section-title"),
+          point_controls
+        )
+      )
+    )
+  }
+
+  bslib::popover(
+    actionButton(
+      ns(paste0(width_id, "_options")),
+      "Options",
+      class = "btn btn-outline-secondary btn-sm plot-options-button"
+    ),
+    do.call(div, c(list(class = "plot-options-popover"), sections)),
+    title = "Options",
+    placement = "bottom"
   )
 }
 
