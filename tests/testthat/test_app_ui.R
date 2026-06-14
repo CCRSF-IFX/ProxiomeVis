@@ -60,6 +60,8 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="abundance-abundance_embedding"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_color_by"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_marker"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_umap_width"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_umap_height"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_distribution_marker"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_distribution_columns"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_distribution_width"', html, fixed = TRUE))
@@ -213,7 +215,7 @@ test_that("plot outputs are wrapped in readable width classes", {
     "colocalization-colocalization_diff_volcano"
   )
   standard_outputs <- c(
-    "abundance-abundance_umap",
+    "abundance-abundance_umap_ui",
     "clustering-clustering_plot",
     "abundance-abundance_diff_detail",
     "clustering-clustering_diff_detail",
@@ -1270,6 +1272,9 @@ test_that("abundance marker distribution plot keeps violin groups valid for Plot
 test_that("abundance marker distribution controls include visible defaults", {
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
 
+  expect_true(grepl('numericInput(ns("abundance_umap_width"), "Plot width (px)", value = 832', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('numericInput(ns("abundance_umap_height"), "Plot height (px)", value = 520', abundance_module_source, fixed = TRUE))
+  expect_true(grepl('sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6', abundance_module_source, fixed = TRUE))
   expect_true(grepl('numericInput(ns("abundance_distribution_columns"), "Facet columns", value = 3', abundance_module_source, fixed = TRUE))
   expect_true(grepl('numericInput(ns("abundance_distribution_width"), "Plot width (px)", value = 832', abundance_module_source, fixed = TRUE))
   expect_true(grepl('numericInput(ns("abundance_distribution_height"), "Plot height (px)", value = 678', abundance_module_source, fixed = TRUE))
@@ -1305,6 +1310,19 @@ test_that("abundance marker distribution dimensions scale and accept user overri
   expect_equal(four_column_dimensions$facet_rows, 2)
   expect_gt(four_column_dimensions$width, single_column_dimensions$width)
   expect_lt(four_column_dimensions$height, single_column_dimensions$height)
+})
+
+test_that("abundance UMAP dimensions accept user overrides", {
+  default_dimensions <- abundance_umap_widget_dimensions()
+  override_dimensions <- abundance_umap_widget_dimensions(width_px = 960, height_px = 720)
+  invalid_dimensions <- abundance_umap_widget_dimensions(width_px = -1, height_px = NA)
+
+  expect_equal(default_dimensions$width, 832)
+  expect_equal(default_dimensions$height, 520)
+  expect_equal(override_dimensions$width, 960)
+  expect_equal(override_dimensions$height, 720)
+  expect_equal(invalid_dimensions$width, default_dimensions$width)
+  expect_equal(invalid_dimensions$height, default_dimensions$height)
 })
 
 test_that("clustering per-marker distribution plot keeps violin groups valid for Plotly", {

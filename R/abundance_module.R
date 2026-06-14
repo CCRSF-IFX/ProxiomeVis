@@ -19,7 +19,9 @@ abundance_sidebar <- function(id) {
             selectInput(ns("abundance_marker"), "Marker", choices = character(0))
           ),
           selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0)),
-          sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 1.9, step = 0.1)
+          sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6, step = 0.1),
+          numericInput(ns("abundance_umap_width"), "Plot width (px)", value = 832, min = 420, max = 2600, step = 50),
+          numericInput(ns("abundance_umap_height"), "Plot height (px)", value = 520, min = 320, max = 2600, step = 50)
         ),
         accordion_panel(
           "Filters",
@@ -87,9 +89,10 @@ abundance_module_ui <- function(id) {
           uiOutput(ns("metric_row")),
           plot_pane(
             size = "standard",
+            extra_class = "umap-plot-pane",
             download_id = "abundance_umap",
             ns = ns,
-            plotlyOutput(ns("abundance_umap"), height = proxiome_plot_height())
+            uiOutput(ns("abundance_umap_ui"))
           ),
           conditionalPanel(
             condition = "input.abundance_color_by == 'abundance'",
@@ -289,7 +292,7 @@ abundance_module_server <- function(id, data) {
 
       color_by <- unique(plot_data$abundance_color_by)
       color_by <- color_by[1] %||% "abundance"
-      point_size <- numeric_input_value(input$abundance_point_size, 1.9)
+      point_size <- numeric_input_value(input$abundance_point_size, 0.6)
 
       if (identical(color_by, "abundance")) {
         plot_data$hover <- paste0(
@@ -337,13 +340,35 @@ abundance_module_server <- function(id, data) {
       p
     })
 
+    abundance_umap_dimensions <- reactive({
+      abundance_umap_widget_dimensions(
+        width_px = input$abundance_umap_width,
+        height_px = input$abundance_umap_height
+      )
+    })
+
+    output$abundance_umap_ui <- renderUI({
+      dimensions <- abundance_umap_dimensions()
+      div(
+        class = "umap-plot-shell",
+        style = paste0("width:", dimensions$width, "px;height:", dimensions$height, "px;"),
+        plotlyOutput(session$ns("abundance_umap"), width = "100%", height = "100%")
+      )
+    })
+
     output$abundance_umap <- renderPlotly({
       plot_data <- abundance_points()
       color_by <- unique(plot_data$abundance_color_by)
       color_by <- color_by[1] %||% "abundance"
       colorbar_title <- if (identical(color_by, "abundance")) paste(input$abundance_marker, "abundance") else NULL
+      dimensions <- abundance_umap_dimensions()
 
-      ggplotly(abundance_umap_ggplot(), tooltip = "text") |>
+      ggplotly(
+        abundance_umap_ggplot(),
+        tooltip = "text",
+        width = dimensions$width,
+        height = dimensions$height
+      ) |>
         apply_proxiome_plot_frame(colorbar_title = colorbar_title)
     })
     register_ggplot_downloads(
@@ -351,8 +376,8 @@ abundance_module_server <- function(id, data) {
       "abundance_umap",
       abundance_umap_ggplot,
       filename_prefix = function() paste("abundance-umap", input$abundance_color_by %||% "abundance", input$abundance_marker %||% "", sep = "-"),
-      width = 8,
-      height = 5
+      width = function() plot_download_size_from_dimensions(abundance_umap_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(abundance_umap_dimensions())$height
     )
 
     output$abundance_table <- renderTable({
@@ -751,6 +776,17 @@ selected_split_column <- function(selected, data) {
     return(NULL)
   }
   selected
+}
+
+abundance_umap_widget_dimensions <- function(width_px = NULL, height_px = NULL) {
+  width_override <- plot_dimension_override(width_px)
+  height_override <- plot_dimension_override(height_px)
+
+  list(
+    width = width_override %||% 832,
+    height = height_override %||% 520,
+    margin = proxiome_plot_margins()
+  )
 }
 
 abundance_distribution_widget_dimensions <- function(plot_data, facet_cols = NULL, width_px = NULL, height_px = NULL) {

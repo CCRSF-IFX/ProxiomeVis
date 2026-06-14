@@ -608,6 +608,15 @@ app_css <- function() {
       overflow-y: visible;
     }
 
+    .umap-plot-pane {
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+
+    .umap-plot-shell {
+      max-width: none;
+    }
+
     .distribution-plot-shell {
       max-width: none;
     }
