@@ -45,6 +45,7 @@ Rplots.pdf
 reports/
 output/
 exports/
+site/
 
 # Editor, OS, and temporary files
 .DS_Store
