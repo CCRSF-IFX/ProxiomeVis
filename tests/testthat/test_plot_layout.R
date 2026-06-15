@@ -26,6 +26,63 @@ test_that("plot option dimensions use defaults and valid overrides", {
   expect_equal(invalid$height, defaults$height)
 })
 
+test_that("plot option IDs keep view and export controls separate", {
+  ids <- plot_options_control_ids("example_width", "example_height")
+
+  expect_equal(ids$display, "example_display")
+  expect_equal(ids$view_width, "example_view_width")
+  expect_equal(ids$view_height, "example_view_height")
+  expect_equal(ids$export_width, "example_width")
+  expect_equal(ids$export_height, "example_height")
+  expect_equal(ids$options, "example_width_options")
+})
+
+test_that("plot options separate view display from export dimensions", {
+  input <- list(
+    example_display = "fit",
+    example_view_width = 1400,
+    example_view_height = 650,
+    example_width = 1200,
+    example_height = 800
+  )
+
+  view <- plot_options_view_dimensions(input, "example")
+  export <- plot_options_export_dimensions(input, "example")
+
+  expect_equal(view$display, "fit")
+  expect_equal(view$width, 1400)
+  expect_equal(view$height, 650)
+  expect_equal(export$width, 1200)
+  expect_equal(export$height, 800)
+
+  default_view <- plot_options_view_dimensions(list(), "example")
+  expect_equal(default_view$display, "fit")
+})
+
+test_that("Plotly display dimensions fit by default and scroll when requested", {
+  base_dimensions <- list(
+    width = 960,
+    height = 540,
+    margin = list(l = 90, r = 90, t = 56, b = 112)
+  )
+
+  fit_dimensions <- base_dimensions
+  fit_dimensions$display <- "fit"
+  fit_display <- plotly_display_dimensions(fit_dimensions)
+
+  expect_null(fit_display$width)
+  expect_equal(fit_display$height, base_dimensions$height)
+  expect_equal(fit_display$margin, base_dimensions$margin)
+
+  scroll_dimensions <- base_dimensions
+  scroll_dimensions$display <- "scroll"
+  scroll_display <- plotly_display_dimensions(scroll_dimensions)
+
+  expect_equal(scroll_display$width, base_dimensions$width)
+  expect_equal(scroll_display$height, base_dimensions$height)
+  expect_equal(base_dimensions$width, 960)
+})
+
 test_that("static downloads remove plotly-only aesthetics", {
   plot <- ggplot2::ggplot(
     data.frame(x = 1:3, y = 1:3, hover = letters[1:3], id = letters[1:3]),

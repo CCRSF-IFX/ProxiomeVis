@@ -473,25 +473,35 @@ colocalization_module_server <- function(id, data) {
     })
 
     output$colocalization_heatmap_interactive <- renderPlotly({
-      coloc_heatmap_plotly(colocalization_heatmap_result(), dimensions = colocalization_heatmap_dimensions())
+      coloc_heatmap_plotly(
+        colocalization_heatmap_result(),
+        dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())
+      )
     })
 
     output$colocalization_heatmap_original <- renderPlot({
       print(colocalization_heatmap_result()$plot)
     }, width = function() {
-      colocalization_heatmap_dimensions()$width
+      shiny_plot_display_width(colocalization_heatmap_dimensions())
     }, height = function() {
-      colocalization_heatmap_dimensions()$height
+      plotly_display_dimensions(colocalization_heatmap_dimensions())$height
     })
 
     colocalization_heatmap_ggplot <- reactive({
       colocalization_heatmap_result()$plot
     })
     colocalization_heatmap_dimensions <- reactive({
-      apply_plot_options_overrides(
-        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data),
-        width_px = input$colocalization_heatmap_width,
-        height_px = input$colocalization_heatmap_height
+      plot_options_view_overrides(
+        input,
+        "colocalization_heatmap",
+        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
+      )
+    })
+    colocalization_heatmap_export_dimensions <- reactive({
+      plot_options_export_overrides(
+        input,
+        "colocalization_heatmap",
+        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
       )
     })
     register_ggplot_downloads(
@@ -499,8 +509,8 @@ colocalization_module_server <- function(id, data) {
       "colocalization_heatmap",
       colocalization_heatmap_ggplot,
       filename_prefix = "colocalization-heatmap",
-      width = function() plot_download_size_from_dimensions(colocalization_heatmap_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(colocalization_heatmap_dimensions())$height
+      width = function() plot_download_size_from_dimensions(colocalization_heatmap_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(colocalization_heatmap_export_dimensions())$height
     )
 
     output$colocalization_table <- renderTable({
@@ -555,13 +565,14 @@ colocalization_module_server <- function(id, data) {
 
     output$colocalization_3d_layout <- renderPlotly({
       nodes <- colocalization_3d_nodes()
+      dimensions <- plotly_display_dimensions(colocalization_3d_dimensions())
       validate(need(nrow(nodes) > 0, "No 3D layout nodes are available for the selected component."))
 
       pixelator_3d_layout_plot(
         nodes,
         highlighted_markers = colocalization_3d_markers(),
         title = paste("3D layout:", input$colocalization_3d_component),
-        dimensions = colocalization_3d_dimensions()
+        dimensions = dimensions
       )
     })
 
@@ -593,11 +604,10 @@ colocalization_module_server <- function(id, data) {
     })
 
     colocalization_diff_volcano_dimensions <- reactive({
-      apply_plot_options_overrides(
-        differential_volcano_dimensions(colocalization_diff_volcano_x_label()),
-        width_px = input$colocalization_diff_volcano_width,
-        height_px = input$colocalization_diff_volcano_height
-      )
+      plot_options_view_overrides(input, "colocalization_diff_volcano", differential_volcano_dimensions(colocalization_diff_volcano_x_label()))
+    })
+    colocalization_diff_volcano_export_dimensions <- reactive({
+      plot_options_export_overrides(input, "colocalization_diff_volcano", differential_volcano_dimensions(colocalization_diff_volcano_x_label()))
     })
 
     colocalization_diff_volcano_ggplot <- reactive({
@@ -617,22 +627,23 @@ colocalization_module_server <- function(id, data) {
 
     output$colocalization_diff_volcano <- renderPlotly({
       dimensions <- colocalization_diff_volcano_dimensions()
+      display_dimensions <- responsive_plotly_dimensions(dimensions)
       ggplotly(
         colocalization_diff_volcano_ggplot(),
         tooltip = "text",
         source = "colocalization_diff",
-        width = dimensions$width,
-        height = dimensions$height
+        width = display_dimensions$width,
+        height = display_dimensions$height
       ) |>
-        apply_differential_plot_frame(dimensions = dimensions)
+        apply_differential_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "colocalization_diff_volcano",
       colocalization_diff_volcano_ggplot,
       filename_prefix = function() paste("colocalization-differential-volcano", colocalization_diff_volcano_x_label(), sep = "-"),
-      width = function() plot_download_size_from_dimensions(colocalization_diff_volcano_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(colocalization_diff_volcano_dimensions())$height
+      width = function() plot_download_size_from_dimensions(colocalization_diff_volcano_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(colocalization_diff_volcano_export_dimensions())$height
     )
 
     observeEvent(plotly::event_data("plotly_click", source = "colocalization_diff"), {
@@ -664,22 +675,20 @@ colocalization_module_server <- function(id, data) {
       )
 
       y_label <- paste(input$colocalization_diff_pair, "colocalization log2 ratio")
-      dimensions <- differential_detail_dimensions(
+      base_dimensions <- differential_detail_dimensions(
         plot_data,
         stratify_by_celltype = isTRUE(config$stratify_by_celltype),
         y_label = y_label
       )
-      dimensions <- apply_plot_options_overrides(
-        dimensions,
-        width_px = input$colocalization_diff_detail_width,
-        height_px = input$colocalization_diff_detail_height
-      )
+      dimensions <- plot_options_view_overrides(input, "colocalization_diff_detail", base_dimensions)
+      export_dimensions <- plot_options_export_overrides(input, "colocalization_diff_detail", base_dimensions)
 
       list(
         config = config,
         plot_data = plot_data,
         y_label = y_label,
-        dimensions = dimensions
+        dimensions = dimensions,
+        export_dimensions = export_dimensions
       )
     })
 
@@ -705,16 +714,17 @@ colocalization_module_server <- function(id, data) {
 
     output$colocalization_diff_detail <- renderPlotly({
       dimensions <- colocalization_diff_detail_data()$dimensions
-      ggplotly(colocalization_diff_detail_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(dimensions = dimensions)
+      display_dimensions <- responsive_plotly_dimensions(dimensions)
+      ggplotly(colocalization_diff_detail_ggplot(), tooltip = "text", width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "colocalization_diff_detail",
       colocalization_diff_detail_ggplot,
       filename_prefix = function() paste("colocalization-differential-detail", input$colocalization_diff_pair %||% "pair", sep = "-"),
-      width = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$dimensions)$width,
-      height = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$dimensions)$height
+      width = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$export_dimensions)$width,
+      height = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$export_dimensions)$height
     )
 
     output$colocalization_diff_table <- renderTable({

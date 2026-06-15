@@ -199,9 +199,11 @@ test_that("differential volcano and box plots share a side-by-side row", {
 
   expect_true(grepl("differential-plot-row", html, fixed = TRUE))
   expect_true(grepl(".differential-plot-row", app_source, fixed = TRUE))
-  expect_true(grepl("grid-template-columns: max-content max-content;", app_source, fixed = TRUE))
-  expect_true(grepl("overflow-x: auto;", app_source, fixed = TRUE))
-  expect_true(grepl("@media (max-width: 1100px)", app_source, fixed = TRUE))
+  expect_true(grepl("grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));", app_source, fixed = TRUE))
+  expect_true(grepl("min-width: 0;", app_source, fixed = TRUE))
+  expect_true(grepl("width: 100% !important;", app_source, fixed = TRUE))
+  expect_false(grepl("grid-template-columns: max-content max-content;", app_source, fixed = TRUE))
+  expect_false(grepl("@media (max-width: 1100px)", app_source, fixed = TRUE))
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
   expect_true(grepl('differential_plot_row(ns("abundance_diff_volcano"), ns("abundance_diff_detail"))', abundance_module_source, fixed = TRUE))
   clustering_module_source <- paste(readLines(file.path(APP_DIR, "R", "clustering_module.R"), warn = FALSE), collapse = "\n")
@@ -274,28 +276,39 @@ test_that("figure panes expose PNG and SVG downloads", {
 
 test_that("figure panes expose plot options next to downloads", {
   html <- htmltools::renderTags(ui)$html
-  option_ids <- c(
-    "qc-qc_filter_plot_width_options",
-    "qc-qc_molecule_rank_plot_width_options",
-    "qc-qc_distribution_plot_width_options",
-    "abundance-abundance_umap_width_options",
-    "abundance-abundance_distribution_width_options",
-    "abundance-abundance_celltype_composition_plot_width_options",
-    "abundance-abundance_annotation_heatmap_width_options",
-    "abundance-abundance_diff_volcano_width_options",
-    "abundance-abundance_diff_detail_width_options",
-    "clustering-clustering_plot_width_options",
-    "clustering-clustering_per_marker_plot_width_options",
-    "clustering-clustering_summary_heatmap_width_options",
-    "clustering-clustering_diff_volcano_width_options",
-    "clustering-clustering_diff_detail_width_options",
-    "colocalization-colocalization_heatmap_width_options",
-    "colocalization-colocalization_diff_volcano_width_options",
-    "colocalization-colocalization_diff_detail_width_options"
+  option_bases <- c(
+    "qc-qc_filter_plot",
+    "qc-qc_molecule_rank_plot",
+    "qc-qc_distribution_plot",
+    "abundance-abundance_umap",
+    "abundance-abundance_distribution",
+    "abundance-abundance_celltype_composition_plot",
+    "abundance-abundance_annotation_heatmap",
+    "abundance-abundance_diff_volcano",
+    "abundance-abundance_diff_detail",
+    "clustering-clustering_plot",
+    "clustering-clustering_per_marker_plot",
+    "clustering-clustering_summary_heatmap",
+    "clustering-clustering_diff_volcano",
+    "clustering-clustering_diff_detail",
+    "colocalization-colocalization_heatmap",
+    "colocalization-colocalization_diff_volcano",
+    "colocalization-colocalization_diff_detail",
+    "colocalization-colocalization_3d_layout"
   )
 
-  for (option_id in option_ids) {
-    expect_true(grepl(paste0('id="', option_id, '"'), html, fixed = TRUE))
+  expect_true(grepl(">View<", html, fixed = TRUE))
+  expect_true(grepl(">Export<", html, fixed = TRUE))
+  expect_true(grepl(">Points<", html, fixed = TRUE))
+  expect_true(grepl("Scroll canvas", html, fixed = TRUE))
+
+  for (base_id in option_bases) {
+    expect_true(grepl(paste0('id="', base_id, '_width_options"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', base_id, '_display"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', base_id, '_view_width"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', base_id, '_view_height"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', base_id, '_width"'), html, fixed = TRUE))
+    expect_true(grepl(paste0('id="', base_id, '_height"'), html, fixed = TRUE))
   }
 })
 
@@ -1086,7 +1099,7 @@ test_that("colocalization observed heatmap has interactive and original R plot r
   expect_lt(result_start, interactive_start)
   expect_lt(result_start, original_start)
   expect_true(grepl("colocalization_heatmap_result()", colocalization_module_source, fixed = TRUE))
-  expect_true(grepl("coloc_heatmap_plotly(colocalization_heatmap_result(), dimensions = colocalization_heatmap_dimensions())", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())", colocalization_module_source, fixed = TRUE))
   expect_true(grepl("print(colocalization_heatmap_result()$plot)", colocalization_module_source, fixed = TRUE))
 })
 

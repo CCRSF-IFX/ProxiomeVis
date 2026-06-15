@@ -237,19 +237,23 @@ clustering_module_server <- function(id, data) {
     clustering_plot_dimensions <- reactive({
       plot_options_input_dimensions(input, "clustering_plot")
     })
+    clustering_plot_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "clustering_plot")
+    })
 
     output$clustering_plot <- renderPlotly({
       dimensions <- clustering_plot_dimensions()
-      ggplotly(clustering_plot_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(dimensions = dimensions)
+      display_dimensions <- plotly_display_dimensions(dimensions)
+      ggplotly(clustering_plot_ggplot(), tooltip = "text", width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "clustering_plot",
       clustering_plot_ggplot,
       filename_prefix = function() paste("clustering-observed", input$clustering_marker %||% "marker", sep = "-"),
-      width = function() plot_download_size_from_dimensions(clustering_plot_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(clustering_plot_dimensions())$height
+      width = function() plot_download_size_from_dimensions(clustering_plot_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(clustering_plot_export_dimensions())$height
     )
 
     output$clustering_table <- renderTable({
@@ -274,19 +278,23 @@ clustering_module_server <- function(id, data) {
     clustering_per_marker_plot_dimensions <- reactive({
       plot_options_input_dimensions(input, "clustering_per_marker_plot")
     })
+    clustering_per_marker_plot_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "clustering_per_marker_plot")
+    })
 
     output$clustering_per_marker_plot <- renderPlotly({
       dimensions <- clustering_per_marker_plot_dimensions()
-      ggplotly(clustering_per_marker_ggplot(), tooltip = c("x", "y", "fill"), width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(dimensions = dimensions)
+      display_dimensions <- plotly_display_dimensions(dimensions)
+      ggplotly(clustering_per_marker_ggplot(), tooltip = c("x", "y", "fill"), width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "clustering_per_marker_plot",
       clustering_per_marker_ggplot,
       filename_prefix = function() paste("clustering-per-marker", input$clustering_marker %||% "marker", sep = "-"),
-      width = function() plot_download_size_from_dimensions(clustering_per_marker_plot_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(clustering_per_marker_plot_dimensions())$height
+      width = function() plot_download_size_from_dimensions(clustering_per_marker_plot_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(clustering_per_marker_plot_export_dimensions())$height
     )
 
     output$clustering_per_marker_table <- renderTable({
@@ -336,19 +344,23 @@ clustering_module_server <- function(id, data) {
     clustering_summary_heatmap_dimensions <- reactive({
       plot_options_input_dimensions(input, "clustering_summary_heatmap")
     })
+    clustering_summary_heatmap_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "clustering_summary_heatmap")
+    })
 
     output$clustering_summary_heatmap <- renderPlotly({
       dimensions <- clustering_summary_heatmap_dimensions()
-      ggplotly(clustering_summary_heatmap_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(colorbar_title = "Mean log2 ratio", dimensions = dimensions)
+      display_dimensions <- plotly_display_dimensions(dimensions)
+      ggplotly(clustering_summary_heatmap_ggplot(), tooltip = "text", width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(colorbar_title = "Mean log2 ratio", dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "clustering_summary_heatmap",
       clustering_summary_heatmap_ggplot,
       filename_prefix = "clustering-summary-heatmap",
-      width = function() plot_download_size_from_dimensions(clustering_summary_heatmap_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(clustering_summary_heatmap_dimensions())$height
+      width = function() plot_download_size_from_dimensions(clustering_summary_heatmap_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(clustering_summary_heatmap_export_dimensions())$height
     )
 
     output$clustering_summary_heatmap_table <- renderTable({
@@ -375,11 +387,10 @@ clustering_module_server <- function(id, data) {
     })
 
     clustering_diff_volcano_dimensions <- reactive({
-      apply_plot_options_overrides(
-        differential_volcano_dimensions(clustering_diff_volcano_x_label()),
-        width_px = input$clustering_diff_volcano_width,
-        height_px = input$clustering_diff_volcano_height
-      )
+      plot_options_view_overrides(input, "clustering_diff_volcano", differential_volcano_dimensions(clustering_diff_volcano_x_label()))
+    })
+    clustering_diff_volcano_export_dimensions <- reactive({
+      plot_options_export_overrides(input, "clustering_diff_volcano", differential_volcano_dimensions(clustering_diff_volcano_x_label()))
     })
 
     clustering_diff_volcano_ggplot <- reactive({
@@ -399,22 +410,23 @@ clustering_module_server <- function(id, data) {
 
     output$clustering_diff_volcano <- renderPlotly({
       dimensions <- clustering_diff_volcano_dimensions()
+      display_dimensions <- responsive_plotly_dimensions(dimensions)
       ggplotly(
         clustering_diff_volcano_ggplot(),
         tooltip = "text",
         source = "clustering_diff",
-        width = dimensions$width,
-        height = dimensions$height
+        width = display_dimensions$width,
+        height = display_dimensions$height
       ) |>
-        apply_differential_plot_frame(dimensions = dimensions)
+        apply_differential_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "clustering_diff_volcano",
       clustering_diff_volcano_ggplot,
       filename_prefix = function() paste("clustering-differential-volcano", clustering_diff_volcano_x_label(), sep = "-"),
-      width = function() plot_download_size_from_dimensions(clustering_diff_volcano_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(clustering_diff_volcano_dimensions())$height
+      width = function() plot_download_size_from_dimensions(clustering_diff_volcano_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(clustering_diff_volcano_export_dimensions())$height
     )
 
     observeEvent(plotly::event_data("plotly_click", source = "clustering_diff"), {
@@ -446,22 +458,20 @@ clustering_module_server <- function(id, data) {
       )
 
       y_label <- paste(input$clustering_diff_marker, "self-clustering log2 ratio")
-      dimensions <- differential_detail_dimensions(
+      base_dimensions <- differential_detail_dimensions(
         plot_data,
         stratify_by_celltype = isTRUE(config$stratify_by_celltype),
         y_label = y_label
       )
-      dimensions <- apply_plot_options_overrides(
-        dimensions,
-        width_px = input$clustering_diff_detail_width,
-        height_px = input$clustering_diff_detail_height
-      )
+      dimensions <- plot_options_view_overrides(input, "clustering_diff_detail", base_dimensions)
+      export_dimensions <- plot_options_export_overrides(input, "clustering_diff_detail", base_dimensions)
 
       list(
         config = config,
         plot_data = plot_data,
         y_label = y_label,
-        dimensions = dimensions
+        dimensions = dimensions,
+        export_dimensions = export_dimensions
       )
     })
 
@@ -487,16 +497,17 @@ clustering_module_server <- function(id, data) {
 
     output$clustering_diff_detail <- renderPlotly({
       dimensions <- clustering_diff_detail_data()$dimensions
-      ggplotly(clustering_diff_detail_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(dimensions = dimensions)
+      display_dimensions <- responsive_plotly_dimensions(dimensions)
+      ggplotly(clustering_diff_detail_ggplot(), tooltip = "text", width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "clustering_diff_detail",
       clustering_diff_detail_ggplot,
       filename_prefix = function() paste("clustering-differential-detail", input$clustering_diff_marker %||% "marker", sep = "-"),
-      width = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$dimensions)$width,
-      height = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$dimensions)$height
+      width = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$export_dimensions)$width,
+      height = function() plot_download_size_from_dimensions(clustering_diff_detail_data()$export_dimensions)$height
     )
 
     output$clustering_diff_table <- renderTable({

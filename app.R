@@ -544,6 +544,8 @@ app_css <- function() {
       min-height: 468px;
       padding-top: 12px;
       padding-bottom: 26px;
+      overflow-x: auto;
+      overflow-y: visible;
     }
 
     .plot-pane-controls {
@@ -572,7 +574,7 @@ app_css <- function() {
     .plot-options-popover {
       display: grid;
       gap: 10px;
-      width: 230px;
+      width: 250px;
     }
 
     .plot-options-section {
@@ -605,6 +607,16 @@ app_css <- function() {
       max-width: 100%;
       min-width: 0;
       margin-bottom: 0;
+    }
+
+    .plot-options-section > .shiny-input-radiogroup {
+      width: 100% !important;
+    }
+
+    .plot-options-section .shiny-options-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
     }
 
     .plot-options-field label,
@@ -703,20 +715,21 @@ app_css <- function() {
 
     .differential-plot-row {
       display: grid;
-      grid-template-columns: max-content max-content;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
       gap: 22px;
       align-items: start;
       width: 100%;
       max-width: 100%;
       margin-inline: 0;
-      overflow-x: auto;
+      overflow-x: visible;
       overflow-y: visible;
       padding-bottom: 8px;
     }
 
     .differential-plot-row .plot-pane {
-      width: max-content;
+      width: 100%;
       max-width: none;
+      min-width: 0;
       min-height: 0;
       margin-inline: 0;
       padding-bottom: 18px;
@@ -727,16 +740,11 @@ app_css <- function() {
       max-width: none;
     }
 
-    .differential-plot-row .html-widget {
-      width: auto !important;
-      max-width: none;
+    .differential-plot-row .html-widget,
+    .differential-plot-row .shiny-plot-output {
+      width: 100% !important;
+      max-width: 100%;
       height: auto !important;
-    }
-
-    @media (max-width: 1100px) {
-      .differential-plot-row {
-        grid-template-columns: max-content;
-      }
     }
 
     .tab-content,

@@ -162,19 +162,23 @@ qc_module_server <- function(id, data) {
     qc_filter_plot_dimensions <- reactive({
       plot_options_input_dimensions(input, "qc_filter_plot")
     })
+    qc_filter_plot_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "qc_filter_plot")
+    })
 
     output$qc_filter_plot <- renderPlotly({
       dimensions <- qc_filter_plot_dimensions()
-      ggplotly(qc_filter_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
-        apply_proxiome_plot_frame(dimensions = dimensions)
+      display_dimensions <- plotly_display_dimensions(dimensions)
+      ggplotly(qc_filter_ggplot(), tooltip = "text", width = display_dimensions$width, height = display_dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = display_dimensions)
     })
     register_ggplot_downloads(
       output,
       "qc_filter_plot",
       qc_filter_ggplot,
       filename_prefix = function() paste("qc-filtering", input$qc_filter_y %||% "count", sep = "-"),
-      width = function() plot_download_size_from_dimensions(qc_filter_plot_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(qc_filter_plot_dimensions())$height
+      width = function() plot_download_size_from_dimensions(qc_filter_plot_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_filter_plot_export_dimensions())$height
     )
 
     output$qc_filter_table <- renderTable({
@@ -195,6 +199,9 @@ qc_module_server <- function(id, data) {
     qc_molecule_rank_plot_dimensions <- reactive({
       plot_options_input_dimensions(input, "qc_molecule_rank_plot")
     })
+    qc_molecule_rank_plot_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "qc_molecule_rank_plot")
+    })
 
     output$qc_molecule_rank_plot <- renderPlotly({
       metadata <- qc_origin_metadata()
@@ -205,7 +212,7 @@ qc_module_server <- function(id, data) {
       qc_molecule_rank_plotly(
         metadata,
         cutoff = numeric_input_value(input$qc_n_umi_cutoff, 10000),
-        dimensions = dimensions
+        dimensions = plotly_display_dimensions(dimensions)
       )
     })
     register_ggplot_downloads(
@@ -213,8 +220,8 @@ qc_module_server <- function(id, data) {
       "qc_molecule_rank_plot",
       qc_molecule_rank_ggplot,
       filename_prefix = "qc-cell-calling-rank",
-      width = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_dimensions())$height
+      width = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_export_dimensions())$height
     )
 
     qc_distribution_ggplot <- reactive({
@@ -232,6 +239,9 @@ qc_module_server <- function(id, data) {
     qc_distribution_plot_dimensions <- reactive({
       plot_options_input_dimensions(input, "qc_distribution_plot")
     })
+    qc_distribution_plot_export_dimensions <- reactive({
+      plot_options_export_dimensions(input, "qc_distribution_plot")
+    })
 
     output$qc_distribution_plot <- renderPlotly({
       metadata <- qc_metadata()
@@ -243,7 +253,7 @@ qc_module_server <- function(id, data) {
         metadata,
         metric = input$qc_metric,
         isotype_cutoff = numeric_input_value(input$qc_isotype_cutoff, 0.001),
-        dimensions = dimensions
+        dimensions = plotly_display_dimensions(dimensions)
       )
     })
     register_ggplot_downloads(
@@ -251,8 +261,8 @@ qc_module_server <- function(id, data) {
       "qc_distribution_plot",
       qc_distribution_ggplot,
       filename_prefix = function() paste("qc-distribution", input$qc_metric, sep = "-"),
-      width = function() plot_download_size_from_dimensions(qc_distribution_plot_dimensions())$width,
-      height = function() plot_download_size_from_dimensions(qc_distribution_plot_dimensions())$height
+      width = function() plot_download_size_from_dimensions(qc_distribution_plot_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_distribution_plot_export_dimensions())$height
     )
 
     output$qc_origin_metadata_table <- renderTable({

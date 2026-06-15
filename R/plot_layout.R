@@ -26,12 +26,27 @@ plot_download_controls <- function(ns, output_id) {
   )
 }
 
+plot_options_control_ids <- function(width_id, height_id) {
+  base_id <- sub("_width$", "", width_id)
+  list(
+    display = paste0(base_id, "_display"),
+    view_width = paste0(base_id, "_view_width"),
+    view_height = paste0(base_id, "_view_height"),
+    export_width = width_id,
+    export_height = height_id,
+    options = paste0(width_id, "_options")
+  )
+}
+
 plot_options_controls <- function(
   ns,
   width_id,
   height_id,
   width_value,
   height_value,
+  view_width_value = width_value,
+  view_height_value = height_value,
+  display_value = "fit",
   min_width = 420,
   min_height = 320,
   max_value = 2600,
@@ -41,19 +56,42 @@ plot_options_controls <- function(
   if (is.null(ns)) {
     ns <- identity
   }
+  ids <- plot_options_control_ids(width_id, height_id)
+  display_value <- plot_options_display_value(display_value)
 
   sections <- list(
     div(
       class = "plot-options-section",
-      div("Canvas", class = "plot-options-section-title"),
+      div("View", class = "plot-options-section-title"),
+      radioButtons(
+        ns(ids$display),
+        "Display",
+        choices = c("Fit" = "fit", "Scroll canvas" = "scroll"),
+        selected = display_value,
+        inline = TRUE
+      ),
       div(
         class = "plot-options-field",
-        numericInput(ns(width_id), "Width", value = width_value, min = min_width, max = max_value, step = step, width = "170px"),
+        numericInput(ns(ids$view_width), "Width", value = view_width_value, min = min_width, max = max_value, step = step, width = "170px"),
         span("px", class = "plot-options-unit")
       ),
       div(
         class = "plot-options-field",
-        numericInput(ns(height_id), "Height", value = height_value, min = min_height, max = max_value, step = step, width = "170px"),
+        numericInput(ns(ids$view_height), "Height", value = view_height_value, min = min_height, max = max_value, step = step, width = "170px"),
+        span("px", class = "plot-options-unit")
+      )
+    ),
+    div(
+      class = "plot-options-section",
+      div("Export", class = "plot-options-section-title"),
+      div(
+        class = "plot-options-field",
+        numericInput(ns(ids$export_width), "Width", value = width_value, min = min_width, max = max_value, step = step, width = "170px"),
+        span("px", class = "plot-options-unit")
+      ),
+      div(
+        class = "plot-options-field",
+        numericInput(ns(ids$export_height), "Height", value = height_value, min = min_height, max = max_value, step = step, width = "170px"),
         span("px", class = "plot-options-unit")
       )
     )
@@ -73,7 +111,7 @@ plot_options_controls <- function(
 
   bslib::popover(
     actionButton(
-      ns(paste0(width_id, "_options")),
+      ns(ids$options),
       "Options",
       class = "btn btn-outline-secondary btn-sm plot-options-button"
     ),
@@ -81,6 +119,15 @@ plot_options_controls <- function(
     title = "Options",
     placement = "bottom"
   )
+}
+
+plot_options_display_value <- function(value) {
+  value <- as.character(value[1])
+  if (length(value) > 0 && !is.na(value) && identical(value, "scroll")) {
+    return("scroll")
+  }
+
+  "fit"
 }
 
 plot_options_dimension_value <- function(value, default, lower, upper) {
@@ -119,6 +166,41 @@ plot_options_input_dimensions <- function(
   default_height = 520,
   margin = proxiome_plot_margins()
 ) {
+  plot_options_view_dimensions(
+    input,
+    output_id,
+    default_width = default_width,
+    default_height = default_height,
+    margin = margin
+  )
+}
+
+plot_options_view_dimensions <- function(
+  input,
+  output_id,
+  default_width = 832,
+  default_height = 520,
+  margin = proxiome_plot_margins()
+) {
+  ids <- plot_options_control_ids(paste0(output_id, "_width"), paste0(output_id, "_height"))
+  dimensions <- plot_options_dimensions(
+    width_px = input[[ids$view_width]],
+    height_px = input[[ids$view_height]],
+    default_width = default_width,
+    default_height = default_height,
+    margin = margin
+  )
+  dimensions$display <- plot_options_display_value(input[[ids$display]])
+  dimensions
+}
+
+plot_options_export_dimensions <- function(
+  input,
+  output_id,
+  default_width = 832,
+  default_height = 520,
+  margin = proxiome_plot_margins()
+) {
   plot_options_dimensions(
     width_px = input[[paste0(output_id, "_width")]],
     height_px = input[[paste0(output_id, "_height")]],
@@ -128,7 +210,26 @@ plot_options_input_dimensions <- function(
   )
 }
 
-apply_plot_options_overrides <- function(dimensions, width_px = NULL, height_px = NULL) {
+plot_options_view_overrides <- function(input, output_id, dimensions) {
+  ids <- plot_options_control_ids(paste0(output_id, "_width"), paste0(output_id, "_height"))
+  apply_plot_options_overrides(
+    dimensions,
+    width_px = input[[ids$view_width]],
+    height_px = input[[ids$view_height]],
+    display = input[[ids$display]]
+  )
+}
+
+plot_options_export_overrides <- function(input, output_id, dimensions) {
+  ids <- plot_options_control_ids(paste0(output_id, "_width"), paste0(output_id, "_height"))
+  apply_plot_options_overrides(
+    dimensions,
+    width_px = input[[ids$export_width]],
+    height_px = input[[ids$export_height]]
+  )
+}
+
+apply_plot_options_overrides <- function(dimensions, width_px = NULL, height_px = NULL, display = NULL) {
   margin <- dimensions$margin
   if (is.null(margin)) {
     margin <- proxiome_plot_margins()
@@ -142,7 +243,39 @@ apply_plot_options_overrides <- function(dimensions, width_px = NULL, height_px 
   )
   dimensions$width <- overrides$width
   dimensions$height <- overrides$height
+  if (!is.null(display)) {
+    dimensions$display <- plot_options_display_value(display)
+  }
   dimensions
+}
+
+plotly_display_dimensions <- function(dimensions) {
+  if (is.null(dimensions)) {
+    return(NULL)
+  }
+
+  if (!identical(dimensions$display, "scroll")) {
+    dimensions$width <- NULL
+  }
+  dimensions$display <- NULL
+  dimensions
+}
+
+responsive_plotly_dimensions <- plotly_display_dimensions
+
+plot_shell_style <- function(dimensions) {
+  display_dimensions <- plotly_display_dimensions(dimensions)
+  width <- if (is.null(display_dimensions$width)) "100%" else paste0(display_dimensions$width, "px")
+  paste0("width:", width, ";height:", display_dimensions$height, "px;")
+}
+
+shiny_plot_display_width <- function(dimensions) {
+  display_dimensions <- plotly_display_dimensions(dimensions)
+  if (is.null(display_dimensions$width)) {
+    return("auto")
+  }
+
+  display_dimensions$width
 }
 
 plot_download_filename <- function(prefix, format) {
