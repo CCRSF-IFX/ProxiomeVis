@@ -18,8 +18,7 @@ abundance_sidebar <- function(id) {
             ns = ns,
             selectInput(ns("abundance_marker"), "Marker", choices = character(0))
           ),
-          selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0)),
-          sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6, step = 0.1)
+          selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0))
         ),
         accordion_panel(
           "Filters",
@@ -87,7 +86,14 @@ abundance_module_ui <- function(id) {
             extra_class = "umap-plot-pane",
             download_id = "abundance_umap",
             ns = ns,
-            controls = plot_options_controls(ns, "abundance_umap_width", "abundance_umap_height", width_value = 832, height_value = 520),
+            controls = plot_options_controls(
+              ns,
+              "abundance_umap_width",
+              "abundance_umap_height",
+              width_value = 832,
+              height_value = 520,
+              point_controls = sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6, step = 0.1)
+            ),
             uiOutput(ns("abundance_umap_ui"))
           ),
           conditionalPanel(
