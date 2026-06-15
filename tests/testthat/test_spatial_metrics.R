@@ -149,3 +149,80 @@ test_that("spatial heatmap summaries avoid base R split lapply and merge hot pat
     expect_false(grepl("\\bmerge\\s*\\(", source_text))
   }
 })
+
+test_that("Pixelator 3D layout reads marker-labeled nodes from layout pxl files", {
+  skip_if_not_installed("DBI")
+  skip_if_not_installed("duckdb")
+
+  pxl_path <- tempfile(fileext = ".layout.pxl")
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pxl_path)
+  on.exit(if (DBI::dbIsValid(con)) DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(con, 'create table layouts ("index" varchar, x double, y double, z double, component varchar, layout varchar)')
+  DBI::dbExecute(con, "create table edgelist (umi1 varchar, umi2 varchar, marker_1 varchar, marker_2 varchar, component varchar)")
+  DBI::dbWriteTable(con, "layouts", data.frame(
+    index = paste0("node-", 1:6),
+    x = c(-2, -1, 0, 1, 2, 3),
+    y = c(0, 1, 2, 3, 4, 5),
+    z = c(5, 4, 3, 2, 1, 0),
+    component = "raw-cell",
+    layout = "wpmds_3d",
+    stringsAsFactors = FALSE
+  ), append = TRUE)
+  DBI::dbWriteTable(con, "edgelist", data.frame(
+    umi1 = c("node-1", "node-3", "node-5"),
+    umi2 = c("node-2", "node-4", "node-6"),
+    marker_1 = c("CD3e", "CD8", "CD19"),
+    marker_2 = c("CD4", "CD8", "CD20"),
+    component = "raw-cell",
+    stringsAsFactors = FALSE
+  ), append = TRUE)
+  DBI::dbDisconnect(con, shutdown = TRUE)
+
+  layout <- read_pixelator_3d_layout(pxl_path, "raw-cell")
+
+  expect_equal(pixelator_raw_component_id("3_CD3CD28_raw-cell", "3_CD3CD28"), "raw-cell")
+  expect_equal(nrow(layout), 6L)
+  expect_true(all(c("node_id", "x", "y", "z", "marker") %in% names(layout)))
+  expect_equal(layout$marker[layout$node_id == "node-1"], "CD3e")
+  expect_equal(layout$marker[layout$node_id == "node-2"], "CD4")
+})
+
+test_that("Pixelator 3D layout keeps highlighted markers while sampling background", {
+  layout <- data.frame(
+    node_id = paste0("node-", 1:7),
+    x = c(-3, -2, -1, 0, 1, 2, 3),
+    y = c(0, 1, 0, 1, 0, 1, 0),
+    z = c(2, 1, 0, -1, 0, 1, 2),
+    marker = c("CD3e", "CD3e", "CD8", "CD19", "CD20", "CD4", "CD45"),
+    stringsAsFactors = FALSE
+  )
+
+  nodes <- prepare_pixelator_3d_layout(layout, highlighted_markers = "CD3e", max_background_nodes = 2, seed = 1)
+
+  expect_equal(sum(nodes$marker == "CD3e"), 2L)
+  expect_lte(sum(nodes$marker_group == "Other"), 2L)
+  expect_lte(max(abs(nodes$x_scaled)), 1)
+  expect_lte(max(abs(nodes$y_scaled)), 1)
+  expect_lte(max(abs(nodes$z_scaled)), 1)
+
+  plot <- pixelator_3d_layout_plot(nodes, highlighted_markers = "CD3e", dimensions = list(width = 500, height = 420))
+  expect_s3_class(plot, "plotly")
+  expect_equal(plot$width, 500)
+  expect_equal(plot$height, 420)
+})
+
+test_that("Pixelator layout path is inferred from the loaded RDS source", {
+  root <- tempfile()
+  layout_dir <- file.path(root, "results", "run_pixelator-4.1.1_merged_pixelator_v0.27.2", "pixelator")
+  dir.create(file.path(root, "notebooks", "r"), recursive = TRUE)
+  dir.create(layout_dir, recursive = TRUE)
+  layout_path <- file.path(layout_dir, "3_CD3CD28.layout.pxl")
+  file.create(layout_path)
+
+  inferred <- pixelator_layout_pxl_path(
+    "3_CD3CD28",
+    source = list(rds_path = file.path(root, "notebooks", "r", "demo.rds"))
+  )
+
+  expect_equal(inferred, layout_path)
+})

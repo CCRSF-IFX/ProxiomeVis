@@ -97,6 +97,24 @@ colocalization_sidebar <- function(id) {
           selectInput(ns("colocalization_diff_pair"), "Detail pair", choices = character(0))
         )
       )
+    ),
+    conditionalPanel(
+      condition = "input.colocalization_mode == '3D Layout'",
+      ns = ns,
+      accordion(
+        open = c("Cell", "Markers"),
+        accordion_panel(
+          "Cell",
+          selectInput(ns("colocalization_3d_sample"), "Sample", choices = character(0)),
+          selectizeInput(ns("colocalization_3d_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE),
+          selectInput(ns("colocalization_3d_component"), "Cell/component", choices = character(0)),
+          numericInput(ns("colocalization_3d_max_background"), "Max background nodes", value = 7000, min = 0, max = 50000, step = 500)
+        ),
+        accordion_panel(
+          "Markers",
+          selectizeInput(ns("colocalization_3d_markers"), "Highlighted markers", choices = character(0), multiple = TRUE)
+        )
+      )
     )
   )
 }
@@ -137,6 +155,22 @@ colocalization_module_ui <- function(id) {
           uiOutput(ns("colocalization_diff_summary")),
           differential_plot_row(ns("colocalization_diff_volcano"), ns("colocalization_diff_detail")),
           div(class = "table-pane", tableOutput(ns("colocalization_diff_table")))
+        ),
+        nav_panel(
+          "3D Layout",
+          plot_pane(
+            size = "wide",
+            controls = plot_options_controls(
+              ns,
+              "colocalization_3d_layout_width",
+              "colocalization_3d_layout_height",
+              width_value = 832,
+              height_value = 620,
+              min_height = 420
+            ),
+            plotlyOutput(ns("colocalization_3d_layout"), height = "auto")
+          ),
+          div(class = "table-pane", tableOutput(ns("colocalization_3d_component_table")))
         )
       )
     )
@@ -194,6 +228,22 @@ colocalization_module_server <- function(id, data) {
       updateSelectInput(session, "colocalization_diff_anchor_marker", choices = current_data$marker_options, selected = current_data$marker_options[1])
       updateSelectInput(session, "colocalization_diff_pair", choices = colocalization_pairs, selected = colocalization_pairs[1])
 
+      sample_col <- colocalization_3d_sample_column(current_data$metadata)
+      samples <- sort(unique(as.character(current_data$metadata[[sample_col]])))
+      default_sample <- if ("3_CD3CD28" %in% samples) "3_CD3CD28" else samples[1]
+      default_3d_markers <- intersect(c("ICAM-1", "CD54", "CD40", "CD8", "CD3e", "CD81", "CD82"), current_data$marker_options)
+      if (length(default_3d_markers) == 0) {
+        default_3d_markers <- head(current_data$marker_options, min(4L, length(current_data$marker_options)))
+      }
+      updateSelectInput(session, "colocalization_3d_sample", choices = samples, selected = default_sample)
+      updateSelectizeInput(
+        session,
+        "colocalization_3d_celltype_filter",
+        choices = cell_types,
+        selected = if ("CD8 T" %in% cell_types) "CD8 T" else cell_types[1]
+      )
+      updateSelectizeInput(session, "colocalization_3d_markers", choices = current_data$marker_options, selected = default_3d_markers)
+
       colocalization_diff_config(default_differential_config(
         conditions,
         cell_types,
@@ -239,6 +289,18 @@ colocalization_module_server <- function(id, data) {
       }
 
       updateSelectInput(session, "colocalization_diff_pair", choices = choices, selected = choices[1])
+    })
+
+    observe({
+      current_data <- data()
+      req(current_data)
+
+      choices <- colocalization_3d_component_choices(
+        current_data$metadata,
+        sample = input$colocalization_3d_sample,
+        cell_types = input$colocalization_3d_celltype_filter
+      )
+      updateSelectInput(session, "colocalization_3d_component", choices = choices, selected = unname(choices[1]))
     })
 
     filtered_metadata_for <- function(condition_filter, celltype_filter) {
@@ -448,6 +510,71 @@ colocalization_module_server <- function(id, data) {
       format_spatial_heatmap_table(summary)
     }, striped = TRUE, bordered = FALSE, width = "100%")
 
+    colocalization_3d_dimensions <- reactive({
+      plot_options_input_dimensions(
+        input,
+        "colocalization_3d_layout",
+        default_width = 832,
+        default_height = 620,
+        margin = list(l = 0, r = 0, t = 40, b = 0)
+      )
+    })
+
+    colocalization_3d_layout_raw <- reactive({
+      current_data <- data()
+      req(current_data, input$colocalization_3d_sample, input$colocalization_3d_component)
+
+      layout_path <- pixelator_layout_pxl_path(input$colocalization_3d_sample, source = current_data$source)
+      validate(need(nzchar(layout_path), paste("No Pixelator 3D layout file found for", input$colocalization_3d_sample)))
+
+      raw_component <- pixelator_raw_component_id(input$colocalization_3d_component, input$colocalization_3d_sample)
+      layout <- read_pixelator_3d_layout(layout_path, raw_component)
+      validate(need(nrow(layout) > 0, "No 3D layout nodes are available for the selected component."))
+      layout
+    })
+
+    colocalization_3d_markers <- reactive({
+      selected <- input$colocalization_3d_markers
+      selected <- as.character(selected)
+      selected <- selected[!is.na(selected) & nzchar(selected)]
+      if (length(selected) > 0) {
+        return(selected)
+      }
+
+      layout <- colocalization_3d_layout_raw()
+      head(sort(unique(layout$marker[layout$marker != "unlabeled"])), 4L)
+    })
+
+    colocalization_3d_nodes <- reactive({
+      prepare_pixelator_3d_layout(
+        colocalization_3d_layout_raw(),
+        highlighted_markers = colocalization_3d_markers(),
+        max_background_nodes = numeric_input_value(input$colocalization_3d_max_background, 7000)
+      )
+    })
+
+    output$colocalization_3d_layout <- renderPlotly({
+      nodes <- colocalization_3d_nodes()
+      validate(need(nrow(nodes) > 0, "No 3D layout nodes are available for the selected component."))
+
+      pixelator_3d_layout_plot(
+        nodes,
+        highlighted_markers = colocalization_3d_markers(),
+        title = paste("3D layout:", input$colocalization_3d_component),
+        dimensions = colocalization_3d_dimensions()
+      )
+    })
+
+    output$colocalization_3d_component_table <- renderTable({
+      current_data <- data()
+      req(current_data, input$colocalization_3d_component)
+
+      metadata <- current_data$metadata[current_data$metadata$component == input$colocalization_3d_component, , drop = FALSE]
+      validate(need(nrow(metadata) > 0, "No metadata are available for the selected component."))
+      cols <- intersect(c("sample", "sample_alias", "condition", "celltype_manual", "component", "n_umi", "n_edges"), names(metadata))
+      metadata[1, cols, drop = FALSE]
+    }, striped = TRUE, bordered = FALSE, width = "100%")
+
     output$colocalization_diff_summary <- renderUI({
       config <- colocalization_diff_config()
       req(config)
@@ -603,4 +730,50 @@ colocalization_module_server <- function(id, data) {
       format_differential_table(result, effect_label = "diff_median_vs_reference")
     }, striped = TRUE, bordered = FALSE, width = "100%")
   })
+}
+
+colocalization_3d_sample_column <- function(metadata) {
+  for (column in c("sample", "sample_id", "sample_alias")) {
+    if (column %in% names(metadata)) {
+      return(column)
+    }
+  }
+  "component"
+}
+
+colocalization_3d_component_choices <- function(metadata, sample, cell_types) {
+  if (!"component" %in% names(metadata) || nrow(metadata) == 0) {
+    return(character(0))
+  }
+
+  sample_col <- colocalization_3d_sample_column(metadata)
+  rows <- metadata
+  sample <- as.character(sample)[1]
+  if (!is.na(sample) && nzchar(sample) && sample_col %in% names(rows)) {
+    rows <- rows[as.character(rows[[sample_col]]) == sample, , drop = FALSE]
+  }
+
+  cell_types <- as.character(cell_types)
+  cell_types <- cell_types[!is.na(cell_types) & nzchar(cell_types)]
+  if (length(cell_types) > 0 && "celltype_manual" %in% names(rows)) {
+    rows <- rows[as.character(rows$celltype_manual) %in% cell_types, , drop = FALSE]
+  }
+  if (nrow(rows) == 0) {
+    return(character(0))
+  }
+
+  score_col <- if ("n_umi" %in% names(rows)) "n_umi" else if ("n_edges" %in% names(rows)) "n_edges" else NULL
+  if (!is.null(score_col)) {
+    rows <- rows[order(abs(as.numeric(rows[[score_col]]) - 10000)), , drop = FALSE]
+  }
+
+  labels <- as.character(rows$component)
+  if ("celltype_manual" %in% names(rows)) {
+    labels <- paste(rows$celltype_manual, labels, sep = " | ")
+  }
+  if (!is.null(score_col)) {
+    labels <- paste0(labels, " | ", score_col, ": ", format(as.numeric(rows[[score_col]]), big.mark = ",", trim = TRUE))
+  }
+
+  stats::setNames(as.character(rows$component), labels)
 }

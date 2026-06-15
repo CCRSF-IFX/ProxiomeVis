@@ -86,6 +86,12 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="colocalization-colocalization_clustering_method"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_legend_min"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_legend_max"', html, fixed = TRUE))
+  expect_true(grepl('data-value="3D Layout"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_3d_sample"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_3d_component"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_3d_markers"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_3d_layout_width"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_3d_layout_height"', html, fixed = TRUE))
 
   expect_false(grepl('id="anchor_marker"', html, fixed = TRUE))
   expect_false(grepl('id="colocalization_anchor_marker"', html, fixed = TRUE))
@@ -920,7 +926,7 @@ test_that("filter cell count plot follows the notebook helper interface", {
     stringsAsFactors = FALSE
   )
 
-  p <- plot_filter_cell_counts(filter_cell_counts, include_total = FALSE, y = "fraction_loaded")
+  p <- plot_filter_cell_counts(filter_cell_counts, include_total = TRUE, y = "fraction_loaded")
 
   expect_s3_class(p, "ggplot")
   expect_equal(unique(as.character(p$data$sample)), c("s1", "s2"))

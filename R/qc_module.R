@@ -29,7 +29,7 @@ qc_sidebar <- function(id) {
           choices = c("Number of cells" = "count", "Fraction of loaded cells" = "fraction_loaded"),
           selected = "count"
         ),
-        checkboxInput(ns("qc_filter_include_total"), "Include TOTAL trajectory", value = TRUE),
+        checkboxInput(ns("qc_filter_include_total"), "Include TOTAL rows in table", value = TRUE),
         selectInput(ns("qc_metric"), "Distribution metric", choices = character(0))
       )
     )
@@ -388,9 +388,7 @@ plot_filter_cell_counts <- function(
   plot_df$sample <- as.character(plot_df$sample)
   plot_df$condition <- as.character(plot_df$condition)
 
-  if (!include_total) {
-    plot_df <- plot_df[plot_df$sample != "TOTAL", , drop = FALSE]
-  }
+  plot_df <- plot_df[plot_df$sample != "TOTAL", , drop = FALSE]
 
   group_key <- interaction(plot_df$sample, plot_df$condition, drop = TRUE, lex.order = TRUE)
   loaded_cells <- ave(plot_df$n_cells, group_key, FUN = function(values) values[1])
