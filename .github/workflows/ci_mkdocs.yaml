@@ -6,22 +6,12 @@ on:
       - main
     paths:
       - "mkdocs.yaml"
-      - "pixi.toml"
-      - "pixi.lock"
       - "docs/**"
-      - "notebooks/**"
-      - "figures/**"
-      - "tables/**"
       - ".github/workflows/ci_mkdocs.yaml"
   pull_request:
     paths:
       - "mkdocs.yaml"
-      - "pixi.toml"
-      - "pixi.lock"
       - "docs/**"
-      - "notebooks/**"
-      - "figures/**"
-      - "tables/**"
       - ".github/workflows/ci_mkdocs.yaml"
 
 permissions:
@@ -36,12 +26,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: prefix-dev/setup-pixi@v0.8.8
+
+      - uses: actions/setup-python@v5
         with:
-          pixi-version: v0.66.0
-          cache: true
+          python-version: "3.x"
+
+      - name: Install MkDocs
+        run: pip install mkdocs
+
       - name: Build documentation
-        run: pixi run build-docs
+        run: mkdocs build --strict
+
       - name: Deploy documentation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: pixi run deploy-docs
+        run: mkdocs gh-deploy --force --remote-branch gh-pages
