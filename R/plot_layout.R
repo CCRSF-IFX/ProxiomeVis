@@ -195,6 +195,20 @@ plot_download_size_from_dimensions <- function(
   )
 }
 
+prepare_ggplot_download <- function(plot) {
+  plotly_aesthetics <- c("text", "key", "customdata")
+  plot$mapping[intersect(plotly_aesthetics, names(plot$mapping))] <- NULL
+  for (i in seq_along(plot$layers)) {
+    layer_mapping <- plot$layers[[i]]$mapping
+    if (!is.null(layer_mapping)) {
+      layer_mapping[intersect(plotly_aesthetics, names(layer_mapping))] <- NULL
+      plot$layers[[i]]$mapping <- layer_mapping
+    }
+  }
+
+  plot
+}
+
 save_ggplot_download <- function(
   plot,
   file,
@@ -207,6 +221,7 @@ save_ggplot_download <- function(
   if (!inherits(plot, "ggplot")) {
     stop("Plot download requires a ggplot object.", call. = FALSE)
   }
+  plot <- prepare_ggplot_download(plot)
 
   if (identical(format, "svg")) {
     svg_device <- if (requireNamespace("svglite", quietly = TRUE)) svglite::svglite else grDevices::svg

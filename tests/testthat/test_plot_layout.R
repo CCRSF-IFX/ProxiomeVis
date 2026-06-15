@@ -26,6 +26,20 @@ test_that("plot option dimensions use defaults and valid overrides", {
   expect_equal(invalid$height, defaults$height)
 })
 
+test_that("static downloads remove plotly-only aesthetics", {
+  plot <- ggplot2::ggplot(
+    data.frame(x = 1:3, y = 1:3, hover = letters[1:3], id = letters[1:3]),
+    ggplot2::aes(x, y, text = hover, key = id)
+  ) +
+    suppressWarnings(ggplot2::geom_point(ggplot2::aes(customdata = id)))
+
+  static_plot <- prepare_ggplot_download(plot)
+
+  expect_false("text" %in% names(static_plot$mapping))
+  expect_false("key" %in% names(static_plot$mapping))
+  expect_false("customdata" %in% names(static_plot$layers[[1]]$mapping))
+})
+
 test_that("Plotly frame helper applies margins and colorbar title", {
   widget <- plotly::plot_ly(
     x = c(1, 2),
