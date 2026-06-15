@@ -878,6 +878,15 @@ plot_pane <- function(
   pane_controls <- list()
   if (!is.null(download_id) && nzchar(download_id)) {
     pane_controls <- c(pane_controls, list(plot_download_controls(ns, download_id)))
+    if (is.null(controls)) {
+      controls <- plot_options_controls(
+        ns,
+        paste0(download_id, "_width"),
+        paste0(download_id, "_height"),
+        width_value = 832,
+        height_value = 520
+      )
+    }
   }
   if (!is.null(controls)) {
     pane_controls <- c(pane_controls, list(controls))
@@ -1466,8 +1475,8 @@ apply_coloc_heatmap_square_layout <- function(widget, dimensions) {
   widget
 }
 
-coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Mean log2 ratio") {
-  dimensions <- coloc_heatmap_widget_dimensions(coloc_result$plot_data)
+coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Mean log2 ratio", dimensions = NULL) {
+  dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(coloc_result$plot_data)
   widget <- ggplotly(
     coloc_result$plot,
     tooltip = "text",

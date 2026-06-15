@@ -122,12 +122,12 @@ colocalization_module_ui <- function(id) {
             conditionalPanel(
               condition = "input.colocalization_heatmap_display == 'interactive'",
               ns = ns,
-              plotlyOutput(ns("colocalization_heatmap_interactive"), height = coloc_heatmap_output_height())
+              plotlyOutput(ns("colocalization_heatmap_interactive"), height = "auto")
             ),
             conditionalPanel(
               condition = "input.colocalization_heatmap_display == 'original'",
               ns = ns,
-              plotOutput(ns("colocalization_heatmap_original"), height = coloc_heatmap_output_height())
+              plotOutput(ns("colocalization_heatmap_original"), height = "auto")
             )
           ),
           div(class = "table-pane", tableOutput(ns("colocalization_table")))
@@ -411,22 +411,26 @@ colocalization_module_server <- function(id, data) {
     })
 
     output$colocalization_heatmap_interactive <- renderPlotly({
-      coloc_heatmap_plotly(colocalization_heatmap_result())
+      coloc_heatmap_plotly(colocalization_heatmap_result(), dimensions = colocalization_heatmap_dimensions())
     })
 
     output$colocalization_heatmap_original <- renderPlot({
       print(colocalization_heatmap_result()$plot)
     }, width = function() {
-      coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)$width
+      colocalization_heatmap_dimensions()$width
     }, height = function() {
-      coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)$height
+      colocalization_heatmap_dimensions()$height
     })
 
     colocalization_heatmap_ggplot <- reactive({
       colocalization_heatmap_result()$plot
     })
     colocalization_heatmap_dimensions <- reactive({
-      coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
+      apply_plot_options_overrides(
+        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data),
+        width_px = input$colocalization_heatmap_width,
+        height_px = input$colocalization_heatmap_height
+      )
     })
     register_ggplot_downloads(
       output,
@@ -462,7 +466,11 @@ colocalization_module_server <- function(id, data) {
     })
 
     colocalization_diff_volcano_dimensions <- reactive({
-      differential_volcano_dimensions(colocalization_diff_volcano_x_label())
+      apply_plot_options_overrides(
+        differential_volcano_dimensions(colocalization_diff_volcano_x_label()),
+        width_px = input$colocalization_diff_volcano_width,
+        height_px = input$colocalization_diff_volcano_height
+      )
     })
 
     colocalization_diff_volcano_ggplot <- reactive({
@@ -533,6 +541,11 @@ colocalization_module_server <- function(id, data) {
         plot_data,
         stratify_by_celltype = isTRUE(config$stratify_by_celltype),
         y_label = y_label
+      )
+      dimensions <- apply_plot_options_overrides(
+        dimensions,
+        width_px = input$colocalization_diff_detail_width,
+        height_px = input$colocalization_diff_detail_height
       )
 
       list(

@@ -83,6 +83,68 @@ plot_options_controls <- function(
   )
 }
 
+plot_options_dimension_value <- function(value, default, lower, upper) {
+  value <- suppressWarnings(as.numeric(value[1]))
+  if (length(value) == 0) {
+    return(default)
+  }
+  if (!is.finite(value) || is.na(value) || value <= 0) {
+    return(default)
+  }
+
+  as.integer(round(min(max(value, lower), upper)))
+}
+
+plot_options_dimensions <- function(
+  width_px = NULL,
+  height_px = NULL,
+  default_width = 832,
+  default_height = 520,
+  margin = proxiome_plot_margins(),
+  min_width = 420,
+  min_height = 320,
+  max_value = 2600
+) {
+  list(
+    width = plot_options_dimension_value(width_px, default_width, lower = min_width, upper = max_value),
+    height = plot_options_dimension_value(height_px, default_height, lower = min_height, upper = max_value),
+    margin = margin
+  )
+}
+
+plot_options_input_dimensions <- function(
+  input,
+  output_id,
+  default_width = 832,
+  default_height = 520,
+  margin = proxiome_plot_margins()
+) {
+  plot_options_dimensions(
+    width_px = input[[paste0(output_id, "_width")]],
+    height_px = input[[paste0(output_id, "_height")]],
+    default_width = default_width,
+    default_height = default_height,
+    margin = margin
+  )
+}
+
+apply_plot_options_overrides <- function(dimensions, width_px = NULL, height_px = NULL) {
+  margin <- dimensions$margin
+  if (is.null(margin)) {
+    margin <- proxiome_plot_margins()
+  }
+  overrides <- plot_options_dimensions(
+    width_px = width_px,
+    height_px = height_px,
+    default_width = dimensions$width,
+    default_height = dimensions$height,
+    margin = margin
+  )
+  dimensions$width <- overrides$width
+  dimensions$height <- overrides$height
+  dimensions
+}
+
 plot_download_filename <- function(prefix, format) {
   prefix <- as.character(prefix)[1]
   if (is.na(prefix) || !nzchar(prefix)) {

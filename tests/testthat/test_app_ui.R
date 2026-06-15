@@ -266,6 +266,33 @@ test_that("figure panes expose PNG and SVG downloads", {
   }
 })
 
+test_that("figure panes expose plot options next to downloads", {
+  html <- htmltools::renderTags(ui)$html
+  option_ids <- c(
+    "qc-qc_filter_plot_width_options",
+    "qc-qc_molecule_rank_plot_width_options",
+    "qc-qc_distribution_plot_width_options",
+    "abundance-abundance_umap_width_options",
+    "abundance-abundance_distribution_width_options",
+    "abundance-abundance_celltype_composition_plot_width_options",
+    "abundance-abundance_annotation_heatmap_width_options",
+    "abundance-abundance_diff_volcano_width_options",
+    "abundance-abundance_diff_detail_width_options",
+    "clustering-clustering_plot_width_options",
+    "clustering-clustering_per_marker_plot_width_options",
+    "clustering-clustering_summary_heatmap_width_options",
+    "clustering-clustering_diff_volcano_width_options",
+    "clustering-clustering_diff_detail_width_options",
+    "colocalization-colocalization_heatmap_width_options",
+    "colocalization-colocalization_diff_volcano_width_options",
+    "colocalization-colocalization_diff_detail_width_options"
+  )
+
+  for (option_id in option_ids) {
+    expect_true(grepl(paste0('id="', option_id, '"'), html, fixed = TRUE))
+  }
+})
+
 test_that("resizable plots keep size controls with the plot pane controls", {
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
   plot_layout_source <- paste(readLines(file.path(APP_DIR, "R", "plot_layout.R"), warn = FALSE), collapse = "\n")
@@ -1050,7 +1077,7 @@ test_that("colocalization observed heatmap has interactive and original R plot r
   expect_lt(result_start, interactive_start)
   expect_lt(result_start, original_start)
   expect_true(grepl("colocalization_heatmap_result()", colocalization_module_source, fixed = TRUE))
-  expect_true(grepl("coloc_heatmap_plotly(colocalization_heatmap_result())", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("coloc_heatmap_plotly(colocalization_heatmap_result(), dimensions = colocalization_heatmap_dimensions())", colocalization_module_source, fixed = TRUE))
   expect_true(grepl("print(colocalization_heatmap_result()$plot)", colocalization_module_source, fixed = TRUE))
 })
 

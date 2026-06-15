@@ -54,7 +54,7 @@ qc_module_ui <- function(id) {
             size = "compact",
             download_id = "qc_filter_plot",
             ns = ns,
-            plotlyOutput(ns("qc_filter_plot"), height = proxiome_plot_height())
+            plotlyOutput(ns("qc_filter_plot"), height = "auto")
           ),
           div(class = "table-pane", tableOutput(ns("qc_filter_table")))
         ),
@@ -64,7 +64,7 @@ qc_module_ui <- function(id) {
             size = "wide",
             download_id = "qc_molecule_rank_plot",
             ns = ns,
-            plotlyOutput(ns("qc_molecule_rank_plot"), height = proxiome_plot_height())
+            plotlyOutput(ns("qc_molecule_rank_plot"), height = "auto")
           )
         ),
         nav_panel(
@@ -73,7 +73,7 @@ qc_module_ui <- function(id) {
             size = "compact",
             download_id = "qc_distribution_plot",
             ns = ns,
-            plotlyOutput(ns("qc_distribution_plot"), height = proxiome_plot_height())
+            plotlyOutput(ns("qc_distribution_plot"), height = "auto")
           )
         ),
         nav_panel(
@@ -159,17 +159,22 @@ qc_module_server <- function(id, data) {
       )
     })
 
+    qc_filter_plot_dimensions <- reactive({
+      plot_options_input_dimensions(input, "qc_filter_plot")
+    })
+
     output$qc_filter_plot <- renderPlotly({
-      ggplotly(qc_filter_ggplot(), tooltip = "text") |>
-        apply_proxiome_plot_frame()
+      dimensions <- qc_filter_plot_dimensions()
+      ggplotly(qc_filter_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = dimensions)
     })
     register_ggplot_downloads(
       output,
       "qc_filter_plot",
       qc_filter_ggplot,
       filename_prefix = function() paste("qc-filtering", input$qc_filter_y %||% "count", sep = "-"),
-      width = 7,
-      height = 5
+      width = function() plot_download_size_from_dimensions(qc_filter_plot_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_filter_plot_dimensions())$height
     )
 
     output$qc_filter_table <- renderTable({
@@ -187,14 +192,20 @@ qc_module_server <- function(id, data) {
       )
     })
 
+    qc_molecule_rank_plot_dimensions <- reactive({
+      plot_options_input_dimensions(input, "qc_molecule_rank_plot")
+    })
+
     output$qc_molecule_rank_plot <- renderPlotly({
       metadata <- qc_origin_metadata()
+      dimensions <- qc_molecule_rank_plot_dimensions()
       validate(need("n_umi" %in% names(metadata), "The original metadata does not include n_umi."))
       validate(need(any(is.finite(metadata$n_umi) & metadata$n_umi > 0), "No positive n_umi values are available."))
 
       qc_molecule_rank_plotly(
         metadata,
-        cutoff = numeric_input_value(input$qc_n_umi_cutoff, 10000)
+        cutoff = numeric_input_value(input$qc_n_umi_cutoff, 10000),
+        dimensions = dimensions
       )
     })
     register_ggplot_downloads(
@@ -202,8 +213,8 @@ qc_module_server <- function(id, data) {
       "qc_molecule_rank_plot",
       qc_molecule_rank_ggplot,
       filename_prefix = "qc-cell-calling-rank",
-      width = 9,
-      height = 5
+      width = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_molecule_rank_plot_dimensions())$height
     )
 
     qc_distribution_ggplot <- reactive({
@@ -218,15 +229,21 @@ qc_module_server <- function(id, data) {
       )
     })
 
+    qc_distribution_plot_dimensions <- reactive({
+      plot_options_input_dimensions(input, "qc_distribution_plot")
+    })
+
     output$qc_distribution_plot <- renderPlotly({
       metadata <- qc_metadata()
+      dimensions <- qc_distribution_plot_dimensions()
       req(input$qc_metric)
       validate(need(input$qc_metric %in% names(metadata), "Selected QC metric is not available."))
 
       qc_distribution_plotly(
         metadata,
         metric = input$qc_metric,
-        isotype_cutoff = numeric_input_value(input$qc_isotype_cutoff, 0.001)
+        isotype_cutoff = numeric_input_value(input$qc_isotype_cutoff, 0.001),
+        dimensions = dimensions
       )
     })
     register_ggplot_downloads(
@@ -234,8 +251,8 @@ qc_module_server <- function(id, data) {
       "qc_distribution_plot",
       qc_distribution_ggplot,
       filename_prefix = function() paste("qc-distribution", input$qc_metric, sep = "-"),
-      width = 7,
-      height = 5
+      width = function() plot_download_size_from_dimensions(qc_distribution_plot_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(qc_distribution_plot_dimensions())$height
     )
 
     output$qc_origin_metadata_table <- renderTable({
@@ -478,7 +495,7 @@ plot_qc_molecule_rank <- function(metadata, cutoff = 10000) {
   p
 }
 
-qc_molecule_rank_plotly <- function(metadata, cutoff = 10000) {
+qc_molecule_rank_plotly <- function(metadata, cutoff = 10000, dimensions = NULL) {
   if (!"n_umi" %in% names(metadata)) {
     stop("The metadata does not include n_umi.", call. = FALSE)
   }
@@ -486,7 +503,7 @@ qc_molecule_rank_plotly <- function(metadata, cutoff = 10000) {
   ranked <- rank_qc_metadata(metadata, value_col = "n_umi")
   ranked <- ranked[is.finite(ranked$rank) & is.finite(ranked$n_umi) & ranked$rank > 0 & ranked$n_umi > 0, , drop = FALSE]
   if (nrow(ranked) == 0) {
-    return(apply_proxiome_plot_frame(plotly::plot_ly()))
+    return(apply_proxiome_plot_frame(plotly::plot_ly(), dimensions = dimensions))
   }
 
   ranked$hover <- paste0(
@@ -538,7 +555,7 @@ qc_molecule_rank_plotly <- function(metadata, cutoff = 10000) {
     yaxis = list(title = "n_umi", type = "log"),
     legend = list(title = list(text = "Sample"))
   ) |>
-    apply_proxiome_plot_frame()
+    apply_proxiome_plot_frame(dimensions = dimensions)
 }
 
 plot_qc_distribution <- function(metadata, metric, isotype_cutoff = 0.001) {
@@ -568,7 +585,7 @@ plot_qc_distribution <- function(metadata, metric, isotype_cutoff = 0.001) {
   p
 }
 
-qc_distribution_plotly <- function(metadata, metric, isotype_cutoff = 0.001) {
+qc_distribution_plotly <- function(metadata, metric, isotype_cutoff = 0.001, dimensions = NULL) {
   metric <- as.character(metric)[1]
   plot_data <- qc_distribution_plot_data(metadata, metric)
   metric_label <- qc_metric_label(metric)
@@ -581,7 +598,7 @@ qc_distribution_plotly <- function(metadata, metric, isotype_cutoff = 0.001) {
         xaxis = list(title = ""),
         yaxis = list(title = metric_label)
       ) |>
-        apply_proxiome_plot_frame()
+        apply_proxiome_plot_frame(dimensions = dimensions)
     )
   }
 
@@ -632,7 +649,7 @@ qc_distribution_plotly <- function(metadata, metric, isotype_cutoff = 0.001) {
     showlegend = FALSE,
     shapes = shapes
   ) |>
-    apply_proxiome_plot_frame()
+    apply_proxiome_plot_frame(dimensions = dimensions)
 }
 
 qc_distribution_plot_data <- function(metadata, metric) {

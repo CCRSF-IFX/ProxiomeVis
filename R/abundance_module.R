@@ -121,13 +121,13 @@ abundance_module_ui <- function(id) {
             size = "compact",
             download_id = "abundance_celltype_composition_plot",
             ns = ns,
-            plotlyOutput(ns("abundance_celltype_composition_plot"), height = proxiome_plot_height())
+            plotlyOutput(ns("abundance_celltype_composition_plot"), height = "auto")
           ),
           plot_pane(
             size = "wide",
             download_id = "abundance_annotation_heatmap",
             ns = ns,
-            plotlyOutput(ns("abundance_annotation_heatmap"), height = proxiome_plot_height())
+            plotlyOutput(ns("abundance_annotation_heatmap"), height = "auto")
           ),
           div(class = "table-pane", tableOutput(ns("abundance_celltype_composition_table")))
         ),
@@ -507,17 +507,22 @@ abundance_module_server <- function(id, data) {
       plot_celltype_composition(plot_data)
     })
 
+    abundance_celltype_composition_dimensions <- reactive({
+      plot_options_input_dimensions(input, "abundance_celltype_composition_plot")
+    })
+
     output$abundance_celltype_composition_plot <- renderPlotly({
-      ggplotly(abundance_celltype_composition_ggplot(), tooltip = "text") |>
-        apply_proxiome_plot_frame()
+      dimensions <- abundance_celltype_composition_dimensions()
+      ggplotly(abundance_celltype_composition_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+        apply_proxiome_plot_frame(dimensions = dimensions)
     })
     register_ggplot_downloads(
       output,
       "abundance_celltype_composition_plot",
       abundance_celltype_composition_ggplot,
       filename_prefix = "abundance-celltype-composition",
-      width = 7,
-      height = 5
+      width = function() plot_download_size_from_dimensions(abundance_celltype_composition_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(abundance_celltype_composition_dimensions())$height
     )
 
     abundance_annotation_heatmap_ggplot <- reactive({
@@ -529,17 +534,22 @@ abundance_module_server <- function(id, data) {
       plot_annotation_heatmap(plot_data)
     })
 
+    abundance_annotation_heatmap_dimensions <- reactive({
+      plot_options_input_dimensions(input, "abundance_annotation_heatmap")
+    })
+
     output$abundance_annotation_heatmap <- renderPlotly({
-      ggplotly(abundance_annotation_heatmap_ggplot(), tooltip = "text") |>
-        apply_proxiome_plot_frame(colorbar_title = "Median abundance")
+      dimensions <- abundance_annotation_heatmap_dimensions()
+      ggplotly(abundance_annotation_heatmap_ggplot(), tooltip = "text", width = dimensions$width, height = dimensions$height) |>
+        apply_proxiome_plot_frame(colorbar_title = "Median abundance", dimensions = dimensions)
     })
     register_ggplot_downloads(
       output,
       "abundance_annotation_heatmap",
       abundance_annotation_heatmap_ggplot,
       filename_prefix = "abundance-annotation-heatmap",
-      width = 10,
-      height = 5
+      width = function() plot_download_size_from_dimensions(abundance_annotation_heatmap_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(abundance_annotation_heatmap_dimensions())$height
     )
 
     output$abundance_celltype_composition_table <- renderTable({
@@ -568,7 +578,11 @@ abundance_module_server <- function(id, data) {
     })
 
     abundance_diff_volcano_dimensions <- reactive({
-      differential_volcano_dimensions(abundance_diff_volcano_x_label())
+      apply_plot_options_overrides(
+        differential_volcano_dimensions(abundance_diff_volcano_x_label()),
+        width_px = input$abundance_diff_volcano_width,
+        height_px = input$abundance_diff_volcano_height
+      )
     })
 
     abundance_diff_volcano_ggplot <- reactive({
@@ -639,6 +653,11 @@ abundance_module_server <- function(id, data) {
         plot_data,
         stratify_by_celltype = isTRUE(config$stratify_by_celltype),
         y_label = y_label
+      )
+      dimensions <- apply_plot_options_overrides(
+        dimensions,
+        width_px = input$abundance_diff_detail_width,
+        height_px = input$abundance_diff_detail_height
       )
 
       list(

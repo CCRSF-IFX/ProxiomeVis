@@ -13,6 +13,19 @@ test_that("default Plotly height leaves room for the table below the plot", {
   expect_equal(proxiome_plot_height(), "430px")
 })
 
+test_that("plot option dimensions use defaults and valid overrides", {
+  defaults <- plot_options_dimensions(width_px = NULL, height_px = NULL)
+  overrides <- plot_options_dimensions(width_px = 960, height_px = 720)
+  invalid <- plot_options_dimensions(width_px = -1, height_px = NA)
+
+  expect_equal(defaults$width, 832)
+  expect_equal(defaults$height, 520)
+  expect_equal(overrides$width, 960)
+  expect_equal(overrides$height, 720)
+  expect_equal(invalid$width, defaults$width)
+  expect_equal(invalid$height, defaults$height)
+})
+
 test_that("Plotly frame helper applies margins and colorbar title", {
   widget <- plotly::plot_ly(
     x = c(1, 2),
