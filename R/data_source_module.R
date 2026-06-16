@@ -492,7 +492,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
     }
 
     observeEvent(TRUE, {
-      load_demo_into_app()
+      load_raji_demo_into_app()
     }, once = TRUE)
 
     observeEvent(input$use_demo_data, {

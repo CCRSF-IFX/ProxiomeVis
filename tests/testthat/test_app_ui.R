@@ -370,6 +370,16 @@ test_that("data loading is isolated behind the Data Source module", {
   expect_false(grepl("load_demo_into_app <- function", app_source, fixed = TRUE))
 })
 
+test_that("Raji/CAR-T demo is the startup default", {
+  data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
+  startup_observer_start <- regexpr("observeEvent(TRUE", data_source_source, fixed = TRUE)[[1]]
+  expect_gt(startup_observer_start, 0)
+  startup_observer <- substr(data_source_source, startup_observer_start, startup_observer_start + 140)
+
+  expect_true(grepl("load_raji_demo_into_app()", startup_observer, fixed = TRUE))
+  expect_false(grepl("load_demo_into_app()", startup_observer, fixed = TRUE))
+})
+
 test_that("QC readout is isolated behind the QC module", {
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
 
