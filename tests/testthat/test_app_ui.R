@@ -853,6 +853,19 @@ test_that("server RDS path loading is delegated to an async task", {
   expect_true(grepl('identical(rds_load_state(), "running")', data_source_source, fixed = TRUE))
 })
 
+test_that("RDS load elapsed display ticks in the browser while loading", {
+  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
+
+  expect_true(grepl("formatRdsLoadElapsedTime", app_source, fixed = TRUE))
+  expect_true(grepl("startRdsLoadElapsedTimer", app_source, fixed = TRUE))
+  expect_true(grepl("window.setInterval", app_source, fixed = TRUE))
+  expect_true(grepl("window.clearInterval", app_source, fixed = TRUE))
+  expect_true(grepl("startedAtMs", app_source, fixed = TRUE))
+  expect_true(grepl("startedAtMs = if (is_running)", data_source_source, fixed = TRUE))
+  expect_true(grepl("started_at = progress$started_at", data_source_source, fixed = TRUE))
+})
+
 test_that("ProxiomeVis writable directory defaults under user home", {
   home_dir <- tempfile("proxiomevis-home-")
   dir.create(home_dir, recursive = TRUE)

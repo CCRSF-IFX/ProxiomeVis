@@ -332,6 +332,19 @@ rds_load_elapsed_label <- function(progress, now = Sys.time()) {
   paste0(label, ": ", format_elapsed_time(rds_load_elapsed_seconds(progress, now = now)))
 }
 
+rds_load_started_at_ms <- function(started_at) {
+  if (is.null(started_at)) {
+    return(NULL)
+  }
+
+  started_at <- as.POSIXct(started_at, origin = "1970-01-01")
+  started_at_ms <- as.numeric(started_at) * 1000
+  if (!is.finite(started_at_ms)) {
+    return(NULL)
+  }
+  started_at_ms
+}
+
 make_rds_load_progress_callback <- function(progress_path, started_at = Sys.time()) {
   force(progress_path)
   force(started_at)
@@ -449,7 +462,8 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       message,
       button_label = "Load Data",
       progress = NULL,
-      elapsed_label = NULL
+      elapsed_label = NULL,
+      started_at = NULL
     ) {
       state <- state %||% "idle"
       message <- message %||% ""
@@ -463,6 +477,8 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
         disabled = is_running,
         buttonLabel = if (is_running) "Loading..." else button_label,
         progress = progress %||% if (identical(state, "success")) 100 else 0,
+        startedAtMs = if (is_running) rds_load_started_at_ms(started_at) else NULL,
+        elapsedPrefix = if (is_running) "Elapsed" else NULL,
         elapsedLabel = elapsed_label %||% ""
       ))
     }
@@ -577,6 +593,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
 
           rds_path <- normalizePath(trimws(as.character(input$rds_server_path)), mustWork = TRUE)
           progress_path <- rds_load_progress_file(session$token %||% paste0("session-", as.integer(Sys.time())))
+          started_at <- Sys.time()
           rds_load_progress_path(progress_path)
           write_rds_load_progress(
             progress_path,
@@ -584,14 +601,14 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
             stage = "start",
             message = paste0("Starting RDS load for ", basename(rds_path), "."),
             value = 0.03,
-            started_at = Sys.time()
+            started_at = started_at
           )
           rds_load_path_label(basename(rds_path))
           send_rds_load_state("running", paste0(
             "Loading ",
             basename(rds_path),
             " in the background. Large files can take several minutes."
-          ), progress = 3, elapsed_label = "Elapsed: 0s")
+          ), progress = 3, elapsed_label = "Elapsed: 0s", started_at = started_at)
           user_rds_load_task$invoke(input$rds_server_path, progress_path)
           showNotification(
             paste("Loading", basename(rds_path), "in the background."),
@@ -624,7 +641,8 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
         state = display_state,
         message = rds_load_progress_message(progress),
         progress = progress$percent %||% round((progress$value %||% 0) * 100),
-        elapsed_label = rds_load_elapsed_label(progress)
+        elapsed_label = rds_load_elapsed_label(progress),
+        started_at = progress$started_at
       )
     })
 

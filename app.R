@@ -784,6 +784,58 @@ app_js <- function() {
         return document.getElementById(id) || document.querySelector('[id$=\"' + id + '\"]');
       }
 
+      var rdsLoadElapsedTimer = null;
+      var rdsLoadStartedAtMs = null;
+      var rdsLoadElapsedPrefix = 'Elapsed';
+
+      function formatRdsLoadElapsedTime(seconds) {
+        seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+        var minutes = Math.floor(seconds / 60);
+        var remainingSeconds = seconds % 60;
+        var hours = Math.floor(minutes / 60);
+        var remainingMinutes = minutes % 60;
+
+        if (hours > 0) {
+          return hours + 'h ' + String(remainingMinutes).padStart(2, '0') + 'm ' + String(remainingSeconds).padStart(2, '0') + 's';
+        }
+        if (minutes > 0) {
+          return minutes + 'm ' + String(remainingSeconds).padStart(2, '0') + 's';
+        }
+        return seconds + 's';
+      }
+
+      function updateRdsLoadElapsedDisplay() {
+        var elapsed = byIdOrSuffix('rds_load_elapsed');
+        if (!elapsed || !rdsLoadStartedAtMs) {
+          return;
+        }
+        var seconds = (Date.now() - rdsLoadStartedAtMs) / 1000;
+        elapsed.textContent = rdsLoadElapsedPrefix + ': ' + formatRdsLoadElapsedTime(seconds);
+      }
+
+      function stopRdsLoadElapsedTimer() {
+        if (rdsLoadElapsedTimer) {
+          window.clearInterval(rdsLoadElapsedTimer);
+        }
+        rdsLoadElapsedTimer = null;
+        rdsLoadStartedAtMs = null;
+      }
+
+      function startRdsLoadElapsedTimer(startedAtMs, prefix) {
+        startedAtMs = Number(startedAtMs || 0);
+        if (!isFinite(startedAtMs) || startedAtMs <= 0) {
+          startedAtMs = rdsLoadStartedAtMs || Date.now();
+        }
+
+        rdsLoadStartedAtMs = startedAtMs;
+        rdsLoadElapsedPrefix = prefix || 'Elapsed';
+        if (rdsLoadElapsedTimer) {
+          window.clearInterval(rdsLoadElapsedTimer);
+        }
+        updateRdsLoadElapsedDisplay();
+        rdsLoadElapsedTimer = window.setInterval(updateRdsLoadElapsedDisplay, 1000);
+      }
+
       function setRdsLoadState(message) {
         message = message || {};
         var state = message.state || 'idle';
@@ -821,8 +873,13 @@ app_js <- function() {
           progressBar.setAttribute('aria-valuenow', String(Math.round(value)));
         }
 
-        if (elapsed) {
-          elapsed.textContent = message.elapsedLabel || '';
+        if (loading) {
+          startRdsLoadElapsedTimer(message.startedAtMs, message.elapsedPrefix || 'Elapsed');
+        } else {
+          stopRdsLoadElapsedTimer();
+          if (elapsed) {
+            elapsed.textContent = message.elapsedLabel || '';
+          }
         }
       }
 
@@ -860,6 +917,8 @@ app_js <- function() {
             buttonLabel: 'Loading...',
             message: 'Starting RDS load for ' + label + '.',
             progress: 3,
+            startedAtMs: Date.now(),
+            elapsedPrefix: 'Elapsed',
             elapsedLabel: 'Elapsed: 0s'
           });
         }, 0);
