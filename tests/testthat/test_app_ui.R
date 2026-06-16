@@ -68,6 +68,7 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="abundance-abundance_distribution_height"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_distribution_show_jitter"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_split_by"', html, fixed = TRUE))
+  expect_true(grepl('id="abundance-abundance_split_columns"', html, fixed = TRUE))
   expect_true(grepl('id="abundance-abundance_point_size"', html, fixed = TRUE))
   expect_true(grepl('id="clustering-clustering_marker"', html, fixed = TRUE))
   expect_true(grepl('id="clustering-clustering_heatmap_marker_count"', html, fixed = TRUE))
@@ -1299,6 +1300,16 @@ test_that("abundance UMAP can be split by condition or sample", {
 
   expect_named(choices, c("None", "Condition", "Sample"))
   expect_equal(unname(choices), c("", "condition", "sample"))
+})
+
+test_that("abundance UMAP split columns honor user override", {
+  split_values <- c("UNT", "UNT", "PHA", "Raji", "Raji")
+
+  expect_null(abundance_umap_split_columns(NULL, split_values, 2))
+  expect_null(abundance_umap_split_columns("", split_values, 2))
+  expect_equal(abundance_umap_split_columns("condition", split_values, 2), 2)
+  expect_equal(abundance_umap_split_columns("condition", split_values, 10), 3)
+  expect_equal(abundance_umap_split_columns("condition", split_values, 0), 1)
 })
 
 test_that("abundance UMAP can be colored by marker, cell type, condition, or sample", {

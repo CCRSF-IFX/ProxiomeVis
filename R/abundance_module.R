@@ -18,7 +18,12 @@ abundance_sidebar <- function(id) {
             ns = ns,
             selectInput(ns("abundance_marker"), "Marker", choices = character(0))
           ),
-          selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0))
+          selectInput(ns("abundance_split_by"), "Split UMAP by", choices = character(0)),
+          conditionalPanel(
+            condition = "input.abundance_split_by != ''",
+            ns = ns,
+            numericInput(ns("abundance_split_columns"), "Split columns", value = 2, min = 1, max = 12, step = 1)
+          )
         ),
         accordion_panel(
           "Filters",
@@ -343,8 +348,18 @@ abundance_module_server <- function(id, data) {
       split_col <- selected_split_column(input$abundance_split_by, plot_data)
       if (!is.null(split_col)) {
         plot_data$split_group <- plot_data[[split_col]]
-        p <- p %+% plot_data +
-          facet_wrap(~split_group)
+        split_columns <- abundance_umap_split_columns(
+          split_col,
+          plot_data$split_group,
+          input$abundance_split_columns
+        )
+        if (is.null(split_columns)) {
+          p <- p %+% plot_data +
+            facet_wrap(~split_group)
+        } else {
+          p <- p %+% plot_data +
+            facet_wrap(~split_group, ncol = split_columns)
+        }
       }
 
       p
@@ -822,6 +837,24 @@ selected_split_column <- function(selected, data) {
     return(NULL)
   }
   selected
+}
+
+abundance_umap_split_columns <- function(split_col, split_values, facet_cols = NULL) {
+  if (is.null(split_col) || length(split_col) == 0 || identical(split_col, "")) {
+    return(NULL)
+  }
+
+  if (is.null(facet_cols) || length(facet_cols) == 0) {
+    return(NULL)
+  }
+
+  facet_count <- count_observed_values(split_values)
+  column_count <- suppressWarnings(as.integer(round(as.numeric(facet_cols))))
+  if (length(column_count) == 0 || !is.finite(column_count[1]) || is.na(column_count[1]) || column_count[1] <= 0) {
+    return(1L)
+  }
+
+  max(1L, min(column_count[1], facet_count))
 }
 
 abundance_umap_widget_dimensions <- function(width_px = NULL, height_px = NULL) {
