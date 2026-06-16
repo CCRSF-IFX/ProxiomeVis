@@ -365,6 +365,7 @@ source(file.path(APP_DIR, "R", "qc_module.R"), local = TRUE)
 source(file.path(APP_DIR, "R", "abundance_module.R"), local = TRUE)
 source(file.path(APP_DIR, "R", "clustering_module.R"), local = TRUE)
 source(file.path(APP_DIR, "R", "colocalization_module.R"), local = TRUE)
+source(file.path(APP_DIR, "R", "patch_module.R"), local = TRUE)
 
 app_css <- function() {
   tags$style(
@@ -922,7 +923,7 @@ detail_pane <- function(..., size = c("standard", "compact", "wide")) {
 
 build_app_ui <- function(show_environment = environment_diagnostics_enabled()) {
   show_environment <- isTRUE(show_environment)
-  fillable_panels <- c("QC", "Abundance", "Spatial Metrics")
+  fillable_panels <- c("QC", "Abundance", "Spatial Metrics", "Patch Analysis")
   nav_items <- list(
     qc_module_ui("qc"),
     abundance_module_ui("abundance"),
@@ -933,7 +934,8 @@ build_app_ui <- function(show_environment = environment_diagnostics_enabled()) {
         clustering_module_ui("clustering"),
         colocalization_module_ui("colocalization")
       )
-    )
+    ),
+    patch_module_ui("patch")
   )
 
   if (show_environment) {
@@ -981,6 +983,7 @@ server <- function(input, output, session) {
   abundance_module_server("abundance", data = demo_data)
   clustering_module_server("clustering", data = demo_data)
   colocalization_module_server("colocalization", data = demo_data)
+  patch_module_server("patch", data = demo_data)
   if (environment_diagnostics_enabled()) {
     environment_module_server("environment", app_dir = APP_DIR)
   }

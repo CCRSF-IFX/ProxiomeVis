@@ -133,6 +133,11 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
         "Use demo data",
         class = "btn btn-outline-secondary btn-sm"
       ),
+      actionButton(
+        ns("use_raji_demo_data"),
+        "Use Raji/CAR-T data",
+        class = "btn btn-outline-secondary btn-sm"
+      ),
       uiOutput(ns("rds_schema_report")),
       div(
         id = ns("rds_load_status"),
@@ -474,6 +479,18 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       }
     }
 
+    load_raji_demo_into_app <- function(show_loaded_notification = FALSE) {
+      withProgress(message = "Loading Raji/CAR-T demo data", value = 0.1, {
+        data <- load_raji_demo_proxiome_data(app_dir)
+        incProgress(0.8)
+        demo_data(data)
+      })
+
+      if (isTRUE(show_loaded_notification)) {
+        showNotification("Raji/CAR-T demo data loaded.", type = "message")
+      }
+    }
+
     observeEvent(TRUE, {
       load_demo_into_app()
     }, once = TRUE)
@@ -485,6 +502,27 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       rds_load_path_label("")
       rds_load_progress_path(NULL)
       rds_schema(NULL)
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_raji_demo_data, {
+      req(user_rds_path_loading_enabled())
+      tryCatch(
+        {
+          load_raji_demo_into_app(show_loaded_notification = TRUE)
+          send_rds_load_state("success", "Raji/CAR-T demo data is active.", progress = 100)
+          rds_load_path_label("")
+          rds_load_progress_path(NULL)
+          rds_schema(NULL)
+        },
+        error = function(error) {
+          send_rds_load_state("error", paste("Could not load Raji/CAR-T demo data:", conditionMessage(error)), progress = 0)
+          showNotification(
+            paste("Could not load Raji/CAR-T demo data:", conditionMessage(error)),
+            type = "error",
+            duration = NULL
+          )
+        }
+      )
     }, ignoreInit = TRUE)
 
     observeEvent(input$validate_rds_path, {

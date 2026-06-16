@@ -5,9 +5,17 @@ DEFAULT_DEMO_RDS_RELATIVE <- file.path(
   "pg_data_combined_fil.pixelator_v4.1.1.rds"
 )
 
+DEFAULT_DEMO_CACHE_RELATIVE <- file.path("cache", "demo_proxiome_data.rds")
+RAJI_DEMO_CACHE_RELATIVE <- file.path("cache", "raji_cart_demo_data.rds")
+
 DEFAULT_DEMO_MARKERS <- c(
   "CD3e", "CD4", "CD8", "CD45", "CD81", "CD82", "CD53", "CD58",
   "CD69", "CD25", "CD279", "CD28", "CD40", "CD44", "HLA-DR", "B2M"
+)
+
+RAJI_DEMO_MARKERS <- c(
+  "CD3e", "CD4", "CD8", "FMC63", "CD19", "CD20", "CD21", "CD22",
+  "CD40", "CD54", "CD25", "CD279", "HLA-DR-DP-DQ", "HLA-DR", "B2M"
 )
 
 DEMO_CACHE_SCHEMA_VERSION <- 3L
@@ -27,6 +35,25 @@ default_demo_rds_path <- function(repo_root = NULL, must_work = TRUE) {
   }
 
   file.path(repo_root, DEFAULT_DEMO_RDS_RELATIVE)
+}
+
+default_demo_cache_path <- function(app_dir = getwd()) {
+  configured_cache <- Sys.getenv("PROXIOME_DEMO_CACHE_PATH", unset = "")
+  if (nzchar(configured_cache)) {
+    dir.create(dirname(configured_cache), recursive = TRUE, showWarnings = FALSE)
+    return(normalizePath(configured_cache, mustWork = FALSE))
+  }
+
+  bundled_cache <- file.path(normalizePath(app_dir, mustWork = FALSE), DEFAULT_DEMO_CACHE_RELATIVE)
+  if (file.exists(bundled_cache) || !exists("proxiomevis_cache_dir", mode = "function")) {
+    return(bundled_cache)
+  }
+
+  file.path(proxiomevis_cache_dir(), basename(DEFAULT_DEMO_CACHE_RELATIVE))
+}
+
+raji_demo_cache_path <- function(app_dir = getwd()) {
+  file.path(normalizePath(app_dir, mustWork = FALSE), RAJI_DEMO_CACHE_RELATIVE)
 }
 
 find_repo_root <- function(start = getwd(), required = TRUE) {
@@ -172,6 +199,67 @@ load_demo_proxiome_data <- function(
   }
 
   data
+}
+
+load_raji_demo_proxiome_data <- function(
+  app_dir = getwd(),
+  cache_path = raji_demo_cache_path(app_dir)
+) {
+  if (!file.exists(cache_path)) {
+    stop(
+      paste(
+        "Could not find the Raji/CAR-T demo cache.",
+        sprintf("Expected path: %s", cache_path),
+        "Run scripts/build_raji_shiny_demo_cache.R before selecting this data source.",
+        sep = "\n"
+      ),
+      call. = FALSE
+    )
+  }
+
+  data <- upgrade_cached_demo_data(readRDS(cache_path))
+  if (is.null(data$source) || !is.list(data$source)) {
+    data$source <- list()
+  }
+  data$source$source_type <- "raji_demo"
+  data$source$display_name <- data$source$display_name %||% "Raji/CAR-T patch demo"
+  data$source$cache_path <- normalizePath(cache_path, mustWork = FALSE)
+  data
+}
+
+build_raji_patch_demo_data <- function(
+  patch_dir = file.path(find_repo_root(required = FALSE) %||% getwd(), "results", "goal_patch_analysis")
+) {
+  list(
+    run_plan = read_patch_demo_table(patch_dir, "patch_detection_run_plan.csv"),
+    marker_unmixing = read_patch_demo_table(patch_dir, "patch_marker_unmixing_table.csv"),
+    raji_marker_abundance = read_patch_demo_table(patch_dir, "raji_marker_abundance_sanity_check.csv"),
+    raji_marker_proximity = read_patch_demo_table(patch_dir, "raji_marker_joint_proximity_sanity_check.csv"),
+    patch_burden = read_first_patch_demo_table(
+      patch_dir,
+      c("patch_burden_by_cart_cell.csv", "patch_burden_by_cd8t_cell.csv")
+    )
+  )
+}
+
+read_patch_demo_table <- function(patch_dir, filename) {
+  path <- file.path(patch_dir, "tables", filename)
+  if (!file.exists(path)) {
+    return(NULL)
+  }
+
+  read.csv(path, check.names = FALSE, stringsAsFactors = FALSE)
+}
+
+read_first_patch_demo_table <- function(patch_dir, filenames) {
+  for (filename in filenames) {
+    table <- read_patch_demo_table(patch_dir, filename)
+    if (!is.null(table)) {
+      return(table)
+    }
+  }
+
+  NULL
 }
 
 build_demo_proxiome_data <- function(
