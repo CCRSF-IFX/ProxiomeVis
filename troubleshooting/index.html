@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Troubleshooting - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Troubleshooting";
+        var mkdocs_page_input_path = "troubleshooting.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/r.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Introduction</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../data-input/">Data input</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">App guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../qc/">QC</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../abundance/">Abundance</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../spatial-metrics/">Spatial Metrics</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../downloads/">Downloads and plot options</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Help</span></p>
+              <ul class="current">
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Troubleshooting</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#the-rds-load-takes-a-long-time">The RDS load takes a long time</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-app-says-the-rds-path-is-not-readable">The app says the RDS path is not readable</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#a-plot-is-empty">A plot is empty</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-3d-layout-tab-cannot-find-a-layout-file">The 3D Layout tab cannot find a layout file</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-3d-layout-plot-is-slow">The 3D Layout plot is slow</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#png-or-svg-download-fails">PNG or SVG download fails</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#build-the-documentation-locally">Build the documentation locally</a>
+    </li>
+    </ul>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Help</li>
+      <li class="breadcrumb-item active">Troubleshooting</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/main/docs/troubleshooting.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="troubleshooting">Troubleshooting</h1>
+<h2 id="the-rds-load-takes-a-long-time">The RDS load takes a long time</h2>
+<p>The first load of a new RDS can take several minutes because ProxiomeVis builds
+compact tables for interactive plotting. Loading the same RDS again should be
+faster if the cache under <code>$HOME/.ProxiomeVis/cache</code> is valid.</p>
+<h2 id="the-app-says-the-rds-path-is-not-readable">The app says the RDS path is not readable</h2>
+<p>Check that the path is absolute and visible from the machine running Shiny. On
+Open OnDemand, the path must be readable from the compute session, not only from
+your local computer.</p>
+<h2 id="a-plot-is-empty">A plot is empty</h2>
+<p>Check the sidebar filters. Empty plots usually mean the selected condition,
+cell type, marker, or contrast has no matching cells.</p>
+<p>For differential views, verify that group A and group B both contain enough
+cells after filtering.</p>
+<h2 id="the-3d-layout-tab-cannot-find-a-layout-file">The 3D Layout tab cannot find a layout file</h2>
+<p>The app needs a matching <code>&lt;sample&gt;.layout.pxl</code> file. Either place the Pixelator
+layout files near the loaded RDS in the expected results directory, or set:</p>
+<pre><code class="language-bash">export PROXIOME_LAYOUT_DIR=/path/to/pixelator/layout/files
+</code></pre>
+<p>Then restart the app.</p>
+<h2 id="the-3d-layout-plot-is-slow">The 3D Layout plot is slow</h2>
+<p>Large Pixelator graph components can contain many nodes. Reduce <strong>Max background
+nodes</strong> or choose a smaller component.</p>
+<p>Highlighted marker nodes are kept; the cap mainly reduces non-highlighted
+background nodes.</p>
+<h2 id="png-or-svg-download-fails">PNG or SVG download fails</h2>
+<p>Try a smaller plot width and height first. If SVG fails for a complex plot, use
+PNG. The 3D Layout view is interactive and does not currently use the app-level
+PNG/SVG download buttons.</p>
+<h2 id="build-the-documentation-locally">Build the documentation locally</h2>
+<p>From the app directory:</p>
+<pre><code class="language-bash">mkdocs build --strict
+</code></pre>
+<p>To preview locally:</p>
+<pre><code class="language-bash">mkdocs serve
+</code></pre>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../downloads/" class="btn btn-neutral float-left" title="Downloads and plot options"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../downloads/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
