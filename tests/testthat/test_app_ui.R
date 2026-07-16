@@ -196,15 +196,15 @@ test_that("differential views include plot, detail, and table outputs", {
 
 test_that("differential volcano and box plots share a side-by-side row", {
   html <- htmltools::renderTags(ui)$html
-  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  css_source <- paste(readLines(file.path(APP_DIR, "www", "proixome.css"), warn = FALSE), collapse = "\n")
 
   expect_true(grepl("differential-plot-row", html, fixed = TRUE))
-  expect_true(grepl(".differential-plot-row", app_source, fixed = TRUE))
-  expect_true(grepl("grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));", app_source, fixed = TRUE))
-  expect_true(grepl("min-width: 0;", app_source, fixed = TRUE))
-  expect_true(grepl("width: 100% !important;", app_source, fixed = TRUE))
-  expect_false(grepl("grid-template-columns: max-content max-content;", app_source, fixed = TRUE))
-  expect_false(grepl("@media (max-width: 1100px)", app_source, fixed = TRUE))
+  expect_true(grepl(".differential-plot-row", css_source, fixed = TRUE))
+  expect_true(grepl("grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));", css_source, fixed = TRUE))
+  expect_true(grepl("min-width: 0;", css_source, fixed = TRUE))
+  expect_true(grepl("width: 100% !important;", css_source, fixed = TRUE))
+  expect_false(grepl("grid-template-columns: max-content max-content;", css_source, fixed = TRUE))
+  expect_false(grepl("@media (max-width: 1100px)", css_source, fixed = TRUE))
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
   expect_true(grepl('differential_plot_row(ns("abundance_diff_volcano"), ns("abundance_diff_detail"))', abundance_module_source, fixed = TRUE))
   clustering_module_source <- paste(readLines(file.path(APP_DIR, "R", "clustering_module.R"), warn = FALSE), collapse = "\n")
@@ -314,15 +314,15 @@ test_that("figure panes expose plot options next to downloads", {
 })
 
 test_that("resizable plots keep size controls with the plot pane controls", {
-  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  css_source <- paste(readLines(file.path(APP_DIR, "www", "proixome.css"), warn = FALSE), collapse = "\n")
   plot_layout_source <- paste(readLines(file.path(APP_DIR, "R", "plot_layout.R"), warn = FALSE), collapse = "\n")
   abundance_module_source <- paste(readLines(file.path(APP_DIR, "R", "abundance_module.R"), warn = FALSE), collapse = "\n")
   abundance_sidebar_source <- sub(".*abundance_sidebar <- function", "", sub("abundance_module_ui <- function.*", "", abundance_module_source))
 
   expect_true(grepl("plot_options_controls <- function", plot_layout_source, fixed = TRUE))
-  expect_true(grepl("plot-pane-controls", app_source, fixed = TRUE))
-  expect_true(grepl("plot-options-button", app_source, fixed = TRUE))
-  expect_true(grepl("plot-options-popover", app_source, fixed = TRUE))
+  expect_true(grepl("plot-pane-controls", css_source, fixed = TRUE))
+  expect_true(grepl("plot-options-button", css_source, fixed = TRUE))
+  expect_true(grepl("plot-options-popover", css_source, fixed = TRUE))
   expect_true(grepl('controls = plot_options_controls(\n              ns,\n              "abundance_umap_width",\n              "abundance_umap_height",', abundance_module_source, fixed = TRUE))
   expect_true(grepl('controls = plot_options_controls(', abundance_module_source, fixed = TRUE))
   expect_true(grepl('point_controls = sliderInput(ns("abundance_point_size"), "Dot size", min = 0.5, max = 5, value = 0.6', abundance_module_source, fixed = TRUE))
@@ -826,6 +826,7 @@ test_that("server RDS path loading refreshes app-local libraries before reading"
 
 test_that("server RDS path loading is delegated to an async task", {
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  js_source <- paste(readLines(file.path(APP_DIR, "www", "proixome.js"), warn = FALSE), collapse = "\n")
   data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
   load_observer_start <- regexpr("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE)[[1]]
   background_loader_start <- regexpr("start_background_rds_load <- function", data_source_source, fixed = TRUE)[[1]]
@@ -847,8 +848,9 @@ test_that("server RDS path loading is delegated to an async task", {
   expect_true(grepl("read_rds_load_progress", data_source_source, fixed = TRUE))
   expect_true(grepl("invalidateLater(1000", data_source_source, fixed = TRUE))
   expect_true(grepl('session$sendCustomMessage("proxiome-rds-load-state"', data_source_source, fixed = TRUE))
-  expect_true(grepl("Shiny.addCustomMessageHandler('proxiome-rds-load-state'", app_source, fixed = TRUE))
-  expect_true(grepl("rds_load_progress_bar", app_source, fixed = TRUE))
+  expect_true(grepl('includeScript(file.path(APP_DIR, "www", "proixome.js"))', app_source, fixed = TRUE))
+  expect_true(grepl("Shiny.addCustomMessageHandler('proxiome-rds-load-state'", js_source, fixed = TRUE))
+  expect_true(grepl("rds_load_progress_bar", js_source, fixed = TRUE))
   expect_true(grepl("current_status <- isolate(user_rds_load_task$status())", background_loader, fixed = TRUE))
   expect_true(grepl('identical(current_status, "running")', background_loader, fixed = TRUE))
   expect_true(grepl('identical(current_state, "running")', background_loader, fixed = TRUE))
@@ -862,14 +864,14 @@ test_that("server RDS path loading is delegated to an async task", {
 })
 
 test_that("RDS load elapsed display ticks in the browser while loading", {
-  app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
+  js_source <- paste(readLines(file.path(APP_DIR, "www", "proixome.js"), warn = FALSE), collapse = "\n")
   data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
 
-  expect_true(grepl("formatRdsLoadElapsedTime", app_source, fixed = TRUE))
-  expect_true(grepl("startRdsLoadElapsedTimer", app_source, fixed = TRUE))
-  expect_true(grepl("window.setInterval", app_source, fixed = TRUE))
-  expect_true(grepl("window.clearInterval", app_source, fixed = TRUE))
-  expect_true(grepl("startedAtMs", app_source, fixed = TRUE))
+  expect_true(grepl("formatRdsLoadElapsedTime", js_source, fixed = TRUE))
+  expect_true(grepl("startRdsLoadElapsedTimer", js_source, fixed = TRUE))
+  expect_true(grepl("window.setInterval", js_source, fixed = TRUE))
+  expect_true(grepl("window.clearInterval", js_source, fixed = TRUE))
+  expect_true(grepl("startedAtMs", js_source, fixed = TRUE))
   expect_true(grepl("startedAtMs = if (is_running)", data_source_source, fixed = TRUE))
   expect_true(grepl("started_at = progress$started_at", data_source_source, fixed = TRUE))
 })
