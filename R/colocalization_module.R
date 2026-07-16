@@ -11,12 +11,6 @@ colocalization_sidebar <- function(id) {
         open = c("Display", "Filters"),
         accordion_panel(
           "Display",
-          radioButtons(
-            ns("colocalization_heatmap_display"),
-            "Plot style",
-            choices = c("Interactive" = "interactive", "Original R plot" = "original"),
-            selected = "interactive"
-          ),
           selectInput(
             ns("colocalization_heatmap_preset"),
             "Heatmap preset",
@@ -137,16 +131,7 @@ colocalization_module_ui <- function(id) {
             extra_class = "coloc-heatmap-pane",
             download_id = "colocalization_heatmap",
             ns = ns,
-            conditionalPanel(
-              condition = "input.colocalization_heatmap_display == 'interactive'",
-              ns = ns,
-              plotlyOutput(ns("colocalization_heatmap_interactive"), height = "auto")
-            ),
-            conditionalPanel(
-              condition = "input.colocalization_heatmap_display == 'original'",
-              ns = ns,
-              plotOutput(ns("colocalization_heatmap_original"), height = "auto")
-            )
+            plotlyOutput(ns("colocalization_heatmap"), height = "auto")
           ),
           div(class = "table-pane", tableOutput(ns("colocalization_table")))
         ),
@@ -472,19 +457,11 @@ colocalization_module_server <- function(id, data) {
       result
     })
 
-    output$colocalization_heatmap_interactive <- renderPlotly({
+    output$colocalization_heatmap <- renderPlotly({
       coloc_heatmap_plotly(
         colocalization_heatmap_result(),
         dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())
       )
-    })
-
-    output$colocalization_heatmap_original <- renderPlot({
-      print(colocalization_heatmap_result()$plot)
-    }, width = function() {
-      shiny_plot_display_width(colocalization_heatmap_dimensions())
-    }, height = function() {
-      plotly_display_dimensions(colocalization_heatmap_dimensions())$height
     })
 
     colocalization_heatmap_ggplot <- reactive({

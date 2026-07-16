@@ -138,6 +138,11 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
         "Use Raji/CAR-T data",
         class = "btn btn-outline-secondary btn-sm"
       ),
+      actionButton(
+        ns("use_patch_detected_demo_data"),
+        "Use patch-detected data",
+        class = "btn btn-outline-secondary btn-sm"
+      ),
       uiOutput(ns("rds_schema_report")),
       div(
         id = ns("rds_load_status"),
@@ -455,6 +460,8 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
     rds_load_message <- reactiveVal("Enter an RDS path, then click Load Data.")
     rds_load_path_label <- reactiveVal("")
     rds_load_progress_path <- reactiveVal(NULL)
+    rds_load_source_type <- reactiveVal("user_rds")
+    rds_load_display_name <- reactiveVal("")
     rds_schema <- reactiveVal(NULL)
 
     send_rds_load_state <- function(
@@ -507,6 +514,66 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       }
     }
 
+    start_background_rds_load <- function(
+      rds_path,
+      source_type = "user_rds",
+      display_name = "",
+      preview_schema = TRUE
+    ) {
+      req(user_rds_path_loading_enabled())
+      req(!is.null(user_rds_load_task))
+
+      validate_rds_file_path(rds_path)
+      if (isTRUE(preview_schema)) {
+        rds_schema(inspect_user_rds_schema(rds_path))
+      } else {
+        rds_schema(NULL)
+      }
+
+      current_status <- isolate(user_rds_load_task$status())
+      current_state <- isolate(rds_load_state())
+      if (identical(current_state, "running") || identical(current_status, "running")) {
+        send_rds_load_state("running", paste(
+          "RDS load is already running.",
+          "Large files can take several minutes; wait for the current load to finish."
+        ))
+        showNotification(
+          "RDS load is already running. Wait for it to finish before clicking Load Data again.",
+          type = "warning",
+          duration = 8
+        )
+        return(invisible(NULL))
+      }
+
+      rds_path <- normalizePath(trimws(as.character(rds_path)), mustWork = TRUE)
+      progress_path <- rds_load_progress_file(session$token %||% paste0("session-", as.integer(Sys.time())))
+      started_at <- Sys.time()
+      rds_load_progress_path(progress_path)
+      rds_load_source_type(source_type)
+      rds_load_display_name(display_name)
+      write_rds_load_progress(
+        progress_path,
+        state = "running",
+        stage = "start",
+        message = paste0("Starting RDS load for ", basename(rds_path), "."),
+        value = 0.03,
+        started_at = started_at
+      )
+      rds_load_path_label(basename(rds_path))
+      send_rds_load_state("running", paste0(
+        "Loading ",
+        basename(rds_path),
+        " in the background. Large files can take several minutes."
+      ), progress = 3, elapsed_label = "Elapsed: 0s", started_at = started_at)
+      user_rds_load_task$invoke(rds_path, progress_path)
+      showNotification(
+        paste("Loading", basename(rds_path), "in the background."),
+        type = "message",
+        duration = 8
+      )
+      invisible(rds_path)
+    }
+
     observeEvent(TRUE, {
       load_raji_demo_into_app()
     }, once = TRUE)
@@ -534,6 +601,28 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
           send_rds_load_state("error", paste("Could not load Raji/CAR-T demo data:", conditionMessage(error)), progress = 0)
           showNotification(
             paste("Could not load Raji/CAR-T demo data:", conditionMessage(error)),
+            type = "error",
+            duration = NULL
+          )
+        }
+      )
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$use_patch_detected_demo_data, {
+      req(user_rds_path_loading_enabled())
+      tryCatch(
+        {
+          start_background_rds_load(
+            patch_detected_demo_rds_path(must_work = TRUE),
+            source_type = "patch_detected_demo",
+            display_name = "Patch-detected CAR-T coculture",
+            preview_schema = FALSE
+          )
+        },
+        error = function(error) {
+          send_rds_load_state("error", paste("Could not load patch-detected demo data:", conditionMessage(error)), progress = 0)
+          showNotification(
+            paste("Could not load patch-detected demo data:", conditionMessage(error)),
             type = "error",
             duration = NULL
           )
@@ -569,52 +658,9 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$load_rds_path, {
-      req(user_rds_path_loading_enabled())
-      req(!is.null(user_rds_load_task))
-
       tryCatch(
         {
-          validate_rds_file_path(input$rds_server_path)
-          rds_schema(inspect_user_rds_schema(input$rds_server_path))
-          current_status <- isolate(user_rds_load_task$status())
-          current_state <- isolate(rds_load_state())
-          if (identical(current_state, "running") || identical(current_status, "running")) {
-            send_rds_load_state("running", paste(
-              "RDS load is already running.",
-              "Large files can take several minutes; wait for the current load to finish."
-            ))
-            showNotification(
-              "RDS load is already running. Wait for it to finish before clicking Load Data again.",
-              type = "warning",
-              duration = 8
-            )
-            return(invisible(NULL))
-          }
-
-          rds_path <- normalizePath(trimws(as.character(input$rds_server_path)), mustWork = TRUE)
-          progress_path <- rds_load_progress_file(session$token %||% paste0("session-", as.integer(Sys.time())))
-          started_at <- Sys.time()
-          rds_load_progress_path(progress_path)
-          write_rds_load_progress(
-            progress_path,
-            state = "running",
-            stage = "start",
-            message = paste0("Starting RDS load for ", basename(rds_path), "."),
-            value = 0.03,
-            started_at = started_at
-          )
-          rds_load_path_label(basename(rds_path))
-          send_rds_load_state("running", paste0(
-            "Loading ",
-            basename(rds_path),
-            " in the background. Large files can take several minutes."
-          ), progress = 3, elapsed_label = "Elapsed: 0s", started_at = started_at)
-          user_rds_load_task$invoke(input$rds_server_path, progress_path)
-          showNotification(
-            paste("Loading", basename(rds_path), "in the background."),
-            type = "message",
-            duration = 8
-          )
+          start_background_rds_load(input$rds_server_path)
         },
         error = function(error) {
           send_rds_load_state("error", paste("Could not start RDS load:", conditionMessage(error)), progress = 0)
@@ -687,6 +733,14 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
 
       req(identical(status, "success"))
       data <- user_rds_load_task$result()
+      source_type <- rds_load_source_type()
+      display_name <- rds_load_display_name()
+      if (nzchar(source_type %||% "")) {
+        data$source$source_type <- source_type
+      }
+      if (nzchar(display_name %||% "")) {
+        data$source$display_name <- display_name
+      }
       demo_data(data)
       label <- data$source$display_name %||% rds_load_path_label()
       if (!nzchar(label)) {

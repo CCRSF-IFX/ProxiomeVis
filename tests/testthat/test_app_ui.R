@@ -231,7 +231,7 @@ test_that("plot outputs are wrapped in readable width classes", {
     "colocalization-colocalization_diff_detail"
   )
   wide_outputs <- c("qc-qc_molecule_rank_plot")
-  scroll_outputs <- c("abundance-abundance_marker_distribution_plot_ui", "colocalization-colocalization_heatmap_interactive", "colocalization-colocalization_heatmap_original")
+  scroll_outputs <- c("abundance-abundance_marker_distribution_plot_ui", "colocalization-colocalization_heatmap")
 
   for (output_id in compact_outputs) {
     expect_output_wrapped_with(html, output_id, "plot-pane-compact")
@@ -665,11 +665,13 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
   expect_true(grepl('id="data_source-validate_rds_path"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-load_rds_path"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-use_demo_data"', html, fixed = TRUE))
+  expect_true(grepl('id="data_source-use_patch_detected_demo_data"', html, fixed = TRUE))
   expect_false(grepl("Upload RDS", html, fixed = TRUE))
   expect_true(grepl("RDS path", html, fixed = TRUE))
   expect_true(grepl("Validate RDS", html, fixed = TRUE))
   expect_true(grepl("Load Data", html, fixed = TRUE))
   expect_true(grepl("Use demo data", html, fixed = TRUE))
+  expect_true(grepl("Use patch-detected data", html, fixed = TRUE))
   expect_true(grepl('id="data_source-source_summary"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_schema_report"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_status"', html, fixed = TRUE))
@@ -684,6 +686,8 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
   expect_false(grepl("observeEvent(input$load_rds_path", app_source, fixed = TRUE))
   expect_true(grepl("observeEvent(input$validate_rds_path", data_source_source, fixed = TRUE))
   expect_true(grepl("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE))
+  expect_true(grepl("observeEvent(input$use_patch_detected_demo_data", data_source_source, fixed = TRUE))
+  expect_true(grepl("patch_detected_demo_rds_path(must_work = TRUE)", data_source_source, fixed = TRUE))
   expect_true(grepl("inspect_user_rds_schema(input$rds_server_path)", data_source_source, fixed = TRUE))
   expect_true(grepl("format_user_rds_schema_report", data_source_source, fixed = TRUE))
   expect_false(grepl("observeEvent(input$upload_rds_too_large", app_source, fixed = TRUE))
@@ -824,8 +828,11 @@ test_that("server RDS path loading is delegated to an async task", {
   app_source <- paste(readLines(file.path(APP_DIR, "app.R"), warn = FALSE), collapse = "\n")
   data_source_source <- paste(readLines(file.path(APP_DIR, "R", "data_source_module.R"), warn = FALSE), collapse = "\n")
   load_observer_start <- regexpr("observeEvent(input$load_rds_path", data_source_source, fixed = TRUE)[[1]]
+  background_loader_start <- regexpr("start_background_rds_load <- function", data_source_source, fixed = TRUE)[[1]]
   expect_gt(load_observer_start, 0)
+  expect_gt(background_loader_start, 0)
   load_observer <- substr(data_source_source, load_observer_start, load_observer_start + 2600)
+  background_loader <- substr(data_source_source, background_loader_start, background_loader_start + 3400)
 
   expect_true(grepl("create_user_rds_load_task", data_source_source, fixed = TRUE))
   expect_true(grepl("ExtendedTask$new", data_source_source, fixed = TRUE))
@@ -842,12 +849,13 @@ test_that("server RDS path loading is delegated to an async task", {
   expect_true(grepl('session$sendCustomMessage("proxiome-rds-load-state"', data_source_source, fixed = TRUE))
   expect_true(grepl("Shiny.addCustomMessageHandler('proxiome-rds-load-state'", app_source, fixed = TRUE))
   expect_true(grepl("rds_load_progress_bar", app_source, fixed = TRUE))
-  expect_true(grepl("current_status <- isolate(user_rds_load_task$status())", load_observer, fixed = TRUE))
-  expect_true(grepl('identical(current_status, "running")', load_observer, fixed = TRUE))
-  expect_true(grepl('identical(current_state, "running")', load_observer, fixed = TRUE))
-  expect_true(grepl("RDS load is already running", load_observer, fixed = TRUE))
+  expect_true(grepl("current_status <- isolate(user_rds_load_task$status())", background_loader, fixed = TRUE))
+  expect_true(grepl('identical(current_status, "running")', background_loader, fixed = TRUE))
+  expect_true(grepl('identical(current_state, "running")', background_loader, fixed = TRUE))
+  expect_true(grepl("RDS load is already running", background_loader, fixed = TRUE))
   expect_false(grepl("validate_optional_pixelator_dir", load_observer, fixed = TRUE))
-  expect_true(grepl("user_rds_load_task$invoke(input$rds_server_path, progress_path)", load_observer, fixed = TRUE))
+  expect_true(grepl("start_background_rds_load(input$rds_server_path)", load_observer, fixed = TRUE))
+  expect_true(grepl("user_rds_load_task$invoke(rds_path, progress_path)", background_loader, fixed = TRUE))
   expect_false(grepl("load_user_proxiome_data(", load_observer, fixed = TRUE))
   expect_true(grepl("user_rds_load_task$result()", data_source_source, fixed = TRUE))
   expect_true(grepl('identical(rds_load_state(), "running")', data_source_source, fixed = TRUE))
@@ -1107,24 +1115,27 @@ test_that("colocalization heatmap Plotly output displays a pct_detected size leg
   expect_true(any(grepl("pct_detected", vapply(widget$x$data, function(trace) trace$name %||% "", character(1)), fixed = TRUE)))
 })
 
-test_that("colocalization observed heatmap has interactive and original R plot renderers", {
+test_that("colocalization observed heatmap uses one Plotly renderer without plot style control", {
   html <- htmltools::renderTags(ui)$html
   colocalization_module_source <- paste(readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE), collapse = "\n")
   result_start <- regexpr("colocalization_heatmap_result <- reactive", colocalization_module_source, fixed = TRUE)[[1]]
-  interactive_start <- regexpr("output$colocalization_heatmap_interactive <- renderPlotly", colocalization_module_source, fixed = TRUE)[[1]]
-  original_start <- regexpr("output$colocalization_heatmap_original <- renderPlot", colocalization_module_source, fixed = TRUE)[[1]]
+  plotly_start <- regexpr("output$colocalization_heatmap <- renderPlotly", colocalization_module_source, fixed = TRUE)[[1]]
 
   expect_true(grepl('id="colocalization-colocalization_heatmap_display"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization-colocalization_heatmap_interactive"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization-colocalization_heatmap_original"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap"', html, fixed = TRUE))
+  expect_false(grepl('id="colocalization-colocalization_heatmap_interactive"', html, fixed = TRUE))
+  expect_false(grepl('id="colocalization-colocalization_heatmap_original"', html, fixed = TRUE))
+  expect_false(grepl("Plot style", colocalization_module_source, fixed = TRUE))
+  expect_false(grepl('"Interactive" = "interactive"', colocalization_module_source, fixed = TRUE))
+  expect_false(grepl('"Original R plot" = "original"', colocalization_module_source, fixed = TRUE))
+  expect_true(grepl('plotlyOutput(ns("colocalization_heatmap")', colocalization_module_source, fixed = TRUE))
+  expect_false(grepl("output$colocalization_heatmap <- renderPlot({", colocalization_module_source, fixed = TRUE))
   expect_gt(result_start, 0)
-  expect_gt(interactive_start, 0)
-  expect_gt(original_start, 0)
-  expect_lt(result_start, interactive_start)
-  expect_lt(result_start, original_start)
+  expect_gt(plotly_start, 0)
+  expect_lt(result_start, plotly_start)
   expect_true(grepl("colocalization_heatmap_result()", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("coloc_heatmap_plotly(", colocalization_module_source, fixed = TRUE))
   expect_true(grepl("dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())", colocalization_module_source, fixed = TRUE))
-  expect_true(grepl("print(colocalization_heatmap_result()$plot)", colocalization_module_source, fixed = TRUE))
 })
 
 test_that("colocalization heatmap Plotly output preserves square heatmap panels", {

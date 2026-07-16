@@ -7,6 +7,13 @@ test_that("default demo RDS path points to the Pixelator v4.1.1 Seurat object", 
   expect_true(file.exists(path))
 })
 
+test_that("patch-detected demo RDS path points to the goal patch analysis object", {
+  path <- patch_detected_demo_rds_path()
+
+  expect_match(path, "results/goal_patch_analysis/rds/cart_coculture_patch_detected_cellgraphs\\.rds$")
+  expect_true(file.exists(path))
+})
+
 test_that("default demo RDS path can be provided by environment", {
   rds_path <- tempfile(fileext = ".rds")
   saveRDS(list(ok = TRUE), rds_path)

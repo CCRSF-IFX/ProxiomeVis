@@ -7,6 +7,12 @@ DEFAULT_DEMO_RDS_RELATIVE <- file.path(
 
 DEFAULT_DEMO_CACHE_RELATIVE <- file.path("cache", "demo_proxiome_data.rds")
 RAJI_DEMO_CACHE_RELATIVE <- file.path("cache", "raji_cart_demo_data.rds")
+PATCH_DETECTED_DEMO_RDS_RELATIVE <- file.path(
+  "results",
+  "goal_patch_analysis",
+  "rds",
+  "cart_coculture_patch_detected_cellgraphs.rds"
+)
 
 DEFAULT_DEMO_MARKERS <- c(
   "CD3e", "CD4", "CD8", "CD45", "CD81", "CD82", "CD53", "CD58",
@@ -35,6 +41,20 @@ default_demo_rds_path <- function(repo_root = NULL, must_work = TRUE) {
   }
 
   file.path(repo_root, DEFAULT_DEMO_RDS_RELATIVE)
+}
+
+patch_detected_demo_rds_path <- function(repo_root = NULL, must_work = FALSE) {
+  configured_rds <- Sys.getenv("PROXIOME_PATCH_DETECTED_DEMO_RDS", unset = "")
+  if (nzchar(configured_rds)) {
+    return(normalizePath(path.expand(configured_rds), mustWork = must_work))
+  }
+
+  repo_root <- repo_root %||% find_repo_root(required = must_work)
+  if (is.null(repo_root)) {
+    return(file.path(normalizePath(getwd(), mustWork = FALSE), PATCH_DETECTED_DEMO_RDS_RELATIVE))
+  }
+
+  file.path(repo_root, PATCH_DETECTED_DEMO_RDS_RELATIVE)
 }
 
 default_demo_cache_path <- function(app_dir = getwd()) {
