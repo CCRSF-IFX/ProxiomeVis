@@ -99,6 +99,57 @@ user_rds_path_loading_enabled <- function(platform = APP_PLATFORM) {
   platform %in% c("ccrsf_hpc", "biowulf_hpc", "portable") && !disabled
 }
 
+analysis_readiness_panel <- function(schema = NULL) {
+  if (is.null(schema)) {
+    return(tags$section(
+      class = "analysis-readiness-panel idle",
+      tags$h6("Analysis readiness"),
+      tags$p("Validate an RDS to check its PNA assay, metadata, reductions, proximity scores, and PXL paths.")
+    ))
+  }
+
+  readiness <- schema$readiness %||% summarize_user_rds_readiness(schema)
+  status_labels <- c(ready = "Ready", warning = "Review", blocked = "Missing")
+
+  tags$section(
+    class = paste("analysis-readiness-panel", readiness$status),
+    `aria-live` = "polite",
+    tags$div(
+      class = "analysis-readiness-header",
+      tags$h6("Analysis readiness"),
+      tags$span(class = paste("analysis-readiness-badge", readiness$status), readiness$label)
+    ),
+    tags$p(class = "analysis-readiness-summary", readiness$summary),
+    tags$ul(
+      class = "analysis-readiness-list",
+      lapply(seq_len(nrow(readiness$items)), function(index) {
+        item <- readiness$items[index, , drop = FALSE]
+        tags$li(
+          class = paste("analysis-readiness-item", item$status),
+          tags$div(
+            tags$strong(item$label),
+            tags$span(
+              class = paste("analysis-readiness-item-status", item$status),
+              status_labels[[item$status]]
+            )
+          ),
+          tags$small(item$detail)
+        )
+      })
+    ),
+    tags$div(
+      class = "analysis-readiness-footnote",
+      paste0(
+        format(schema$cell_count, big.mark = ","),
+        " cells · ",
+        format(schema$marker_count, big.mark = ","),
+        " markers · estimated cache ",
+        schema$estimated_cache_size
+      )
+    )
+  )
+}
+
 data_source_controls <- function(id, platform = APP_PLATFORM) {
   if (!user_rds_path_loading_enabled(platform)) {
     return(tagList())
@@ -778,17 +829,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
 
     output$rds_schema_report <- renderUI({
       schema <- rds_schema()
-      if (is.null(schema)) {
-        return(tags$div(
-          class = "rds-schema-report idle",
-          "Validate RDS to preview assay, metadata, embeddings, proximity, dimensions, and cache size."
-        ))
-      }
-
-      tags$pre(
-        class = "rds-schema-report",
-        format_user_rds_schema_report(schema)
-      )
+      analysis_readiness_panel(schema)
     })
 
     list(

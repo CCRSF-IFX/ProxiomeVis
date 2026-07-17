@@ -28,6 +28,7 @@ DEMO_CACHE_SCHEMA_VERSION <- 3L
 ABUNDANCE_LONG_MAX_BLOCK_ENTRIES <- 500000L
 RDS_SCHEMA_EXPECTED_METADATA_COLUMNS <- c("condition", "celltype_manual", "sample_alias")
 RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS <- c("component", "marker_1", "marker_2", "log2_ratio")
+RDS_SCHEMA_REQUIRED_ASSAY_LAYERS <- c("counts", "data")
 
 default_demo_rds_path <- function(repo_root = NULL, must_work = TRUE) {
   configured_rds <- Sys.getenv("PROXIOME_DEMO_RDS", unset = "")
@@ -417,7 +418,9 @@ summarize_user_rds_schema <- function(
   assay <- if (nzchar(assay_name) && assay_name %in% names(assays)) assays[[assay_name]] else NULL
   metadata <- schema_object_metadata(object)
   embeddings <- schema_object_embeddings(object)
+  layers <- schema_assay_layers_summary(assay)
   proximity <- schema_assay_proximity_summary(assay, required_columns = required_proximity_columns)
+  fs_map <- schema_assay_fs_map_summary(assay)
   marker_names <- schema_assay_marker_names(assay, object = object, proximity = proximity$data)
   marker_count <- length(unique(marker_names))
   cell_count <- schema_object_cell_count(object, metadata = metadata, assay = assay)
@@ -432,13 +435,19 @@ summarize_user_rds_schema <- function(
     embedding_count = length(embeddings$names)
   )
 
-  list(
+  schema <- list(
     path = rds_path,
     file_size_bytes = if (!is.null(rds_path) && file.exists(rds_path)) unname(file.info(rds_path)$size[1]) else NA_real_,
     assay = list(
       name = assay_name,
       available = !is.null(assay),
-      choices = names(assays)
+      choices = names(assays),
+      class = if (!is.null(assay)) class(assay)[1] else NA_character_,
+      is_pna = !is.null(assay) && (
+        identical(toupper(assay_name), "PNA") ||
+          startsWith(toupper(class(assay)[1]), "PNAASSAY")
+      ),
+      layers = layers
     ),
     metadata = list(
       expected = expected_metadata_columns,
@@ -449,11 +458,15 @@ summarize_user_rds_schema <- function(
     ),
     embeddings = embeddings,
     proximity = proximity[c("available", "row_count", "required_columns", "missing_columns", "message")],
+    fs_map = fs_map,
     marker_count = as.integer(marker_count),
     cell_count = as.integer(cell_count),
     estimated_cache_size_bytes = estimated_cache_size_bytes,
     estimated_cache_size = format_bytes(estimated_cache_size_bytes)
   )
+
+  schema$readiness <- summarize_user_rds_readiness(schema)
+  schema
 }
 
 schema_object_assays <- function(object) {
@@ -552,6 +565,58 @@ schema_object_embeddings <- function(object) {
     names = reduction_names,
     dimensions = dimensions,
     has_two_dimensional = any(column_counts >= 2, na.rm = TRUE)
+  )
+}
+
+schema_assay_layers_summary <- function(assay, required_layers = RDS_SCHEMA_REQUIRED_ASSAY_LAYERS) {
+  layers <- schema_object_slot_or_item(assay, "layers")
+  if (is.list(layers)) {
+    available <- names(layers)[vapply(layers, schema_layer_has_values, logical(1))]
+  } else {
+    available <- required_layers[vapply(required_layers, function(layer) {
+      schema_layer_has_values(schema_object_slot_or_item(assay, layer))
+    }, logical(1))]
+  }
+  available <- unique(as.character(available %||% character(0)))
+
+  list(
+    required = required_layers,
+    available = available,
+    missing = setdiff(required_layers, available),
+    normalized = "data" %in% available
+  )
+}
+
+schema_layer_has_values <- function(layer) {
+  dimensions <- tryCatch(dim(layer), error = function(error) NULL)
+  !is.null(dimensions) &&
+    length(dimensions) >= 2 &&
+    all(!is.na(dimensions[1:2]) & dimensions[1:2] > 0)
+}
+
+schema_assay_fs_map_summary <- function(assay) {
+  fs_map <- schema_object_slot_or_item(assay, "fs_map")
+  if (!is.data.frame(fs_map) || !"pxl_file" %in% names(fs_map)) {
+    return(list(
+      available = FALSE,
+      path_count = 0L,
+      existing_count = 0L,
+      all_exist = FALSE,
+      paths = character(0),
+      missing_paths = character(0)
+    ))
+  }
+
+  paths <- as.character(fs_map$pxl_file)
+  path_exists <- !is.na(paths) & nzchar(paths) & file.exists(path.expand(paths))
+
+  list(
+    available = length(paths) > 0,
+    path_count = as.integer(length(paths)),
+    existing_count = as.integer(sum(path_exists)),
+    all_exist = length(paths) > 0 && all(path_exists),
+    paths = paths,
+    missing_paths = paths[!path_exists]
   )
 }
 
@@ -659,6 +724,97 @@ format_bytes <- function(bytes) {
   } else {
     sprintf("%.1f %s", bytes, units[unit_index])
   }
+}
+
+summarize_user_rds_readiness <- function(schema) {
+  layers <- schema$assay$layers
+  assay_ready <- isTRUE(schema$assay$available) &&
+    isTRUE(schema$assay$is_pna) &&
+    length(layers$missing) == 0 &&
+    isTRUE(layers$normalized)
+  metadata_ready <- length(schema$metadata$missing) == 0
+  embeddings_ready <- isTRUE(schema$embeddings$has_two_dimensional)
+  proximity_ready <- isTRUE(schema$proximity$available)
+  pxl_ready <- isTRUE(schema$fs_map$all_exist)
+
+  assay_detail <- if (!isTRUE(schema$assay$available)) {
+    "No active assay was found."
+  } else if (!isTRUE(schema$assay$is_pna)) {
+    paste0("Active assay is ", schema$assay$name, "; set the PNA assay as active.")
+  } else if (length(layers$missing) > 0) {
+    paste0("Missing layers: ", paste(layers$missing, collapse = ", "), ".")
+  } else {
+    paste0(
+      schema$assay$name,
+      " (",
+      schema$assay$class,
+      ") has counts and normalized data layers."
+    )
+  }
+  metadata_detail <- if (metadata_ready) {
+    paste("Available:", paste(schema$metadata$present, collapse = ", "))
+  } else {
+    paste0(
+      "Missing: ",
+      paste(schema$metadata$missing, collapse = ", "),
+      ". Grouped summaries will use fallback labels."
+    )
+  }
+  embeddings_detail <- if (embeddings_ready) {
+    paste("Available:", paste(schema$embeddings$names, collapse = ", "))
+  } else {
+    "A reduction with at least two dimensions is required."
+  }
+  proximity_detail <- if (proximity_ready) {
+    paste0(format(schema$proximity$row_count, big.mark = ","), " stored rows available.")
+  } else {
+    schema$proximity$message %||% "Stored proximity scores are missing."
+  }
+  pxl_detail <- if (!isTRUE(schema$fs_map$available)) {
+    "No FSMap PXL paths are stored; graph-backed analyses are unavailable."
+  } else if (pxl_ready) {
+    paste0(schema$fs_map$existing_count, " of ", schema$fs_map$path_count, " PXL paths exist.")
+  } else {
+    paste0(
+      schema$fs_map$existing_count,
+      " of ",
+      schema$fs_map$path_count,
+      " PXL paths exist; restore missing paths for graph-backed analyses."
+    )
+  }
+
+  items <- data.frame(
+    label = c(
+      "PNA assay & normalization",
+      "Required metadata",
+      "Reductions",
+      "Stored proximity",
+      "FSMap PXL paths"
+    ),
+    status = c(
+      if (assay_ready) "ready" else "blocked",
+      if (metadata_ready) "ready" else "warning",
+      if (embeddings_ready) "ready" else "blocked",
+      if (proximity_ready) "ready" else "blocked",
+      if (pxl_ready) "ready" else "warning"
+    ),
+    detail = c(assay_detail, metadata_detail, embeddings_detail, proximity_detail, pxl_detail),
+    stringsAsFactors = FALSE
+  )
+
+  blocked <- any(items$status == "blocked")
+  warning <- any(items$status == "warning")
+  status <- if (blocked) "blocked" else if (warning) "warning" else "ready"
+  list(
+    status = status,
+    label = c(ready = "Ready", warning = "Ready with warnings", blocked = "Not ready")[[status]],
+    summary = c(
+      ready = "Abundance, clustering, colocalization, and graph-backed analyses are ready.",
+      warning = "Core analyses are ready; review warnings for grouped or graph-backed analyses.",
+      blocked = "Required object data are missing. Fix blocked items before loading."
+    )[[status]],
+    items = items
+  )
 }
 
 format_user_rds_schema_report <- function(schema) {

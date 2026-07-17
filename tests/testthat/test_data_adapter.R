@@ -307,9 +307,12 @@ test_that("stored assay proximity is used without calling pixelatorR ProximitySc
   expect_false(grepl("pixelatorR::ProximityScores", adapter_source, fixed = TRUE))
 })
 
-test_that("user RDS schema inspection reports assay, metadata, embeddings, proximity, dimensions, and cache estimate", {
+test_that("user RDS schema inspection reports analysis readiness", {
   if (!methods::isClass("ProxiomeSchemaAssay")) {
-    methods::setClass("ProxiomeSchemaAssay", slots = c(proximity = "data.frame"))
+    methods::setClass(
+      "ProxiomeSchemaAssay",
+      slots = c(proximity = "data.frame", layers = "list", fs_map = "data.frame")
+    )
   }
   if (!methods::isClass("ProxiomeSchemaObject")) {
     methods::setClass(
@@ -323,6 +326,8 @@ test_that("user RDS schema inspection reports assay, metadata, embeddings, proxi
     )
   }
 
+  pxl_path <- tempfile(fileext = ".pxl")
+  file.create(pxl_path)
   assay <- methods::new(
     "ProxiomeSchemaAssay",
     proximity = data.frame(
@@ -331,7 +336,12 @@ test_that("user RDS schema inspection reports assay, metadata, embeddings, proxi
       marker_2 = c("CD3e", "CD8"),
       log2_ratio = c(0.5, -0.2),
       stringsAsFactors = FALSE
-    )
+    ),
+    layers = list(
+      counts = matrix(1:6, nrow = 3),
+      data = matrix(seq_len(6) / 10, nrow = 3)
+    ),
+    fs_map = data.frame(pxl_file = pxl_path, stringsAsFactors = FALSE)
   )
   rownames(assay@proximity) <- NULL
   object <- methods::new(
@@ -340,6 +350,7 @@ test_that("user RDS schema inspection reports assay, metadata, embeddings, proxi
     meta.data = data.frame(
       condition = c("UNT", "CD3CD28"),
       celltype_manual = c("CD8 T", "CD4 T"),
+      sample_alias = c("sample-1", "sample-2"),
       row.names = c("cell-a", "cell-b"),
       stringsAsFactors = FALSE
     ),
@@ -355,12 +366,34 @@ test_that("user RDS schema inspection reports assay, metadata, embeddings, proxi
   expect_true(schema$assay$available)
   expect_equal(schema$marker_count, 3L)
   expect_equal(schema$cell_count, 2L)
-  expect_true(all(c("condition", "celltype_manual") %in% schema$metadata$present))
-  expect_true("sample_alias" %in% schema$metadata$missing)
+  expect_true(all(RDS_SCHEMA_EXPECTED_METADATA_COLUMNS %in% schema$metadata$present))
+  expect_length(schema$metadata$missing, 0L)
   expect_equal(schema$embeddings$names, "umap")
   expect_true(schema$embeddings$has_two_dimensional)
+  expect_equal(schema$assay$layers$available, c("counts", "data"))
+  expect_true(schema$assay$layers$normalized)
   expect_true(schema$proximity$available)
   expect_equal(schema$proximity$row_count, 2L)
+  expect_true(schema$fs_map$all_exist)
+  expect_equal(schema$readiness$status, "ready")
+  expect_equal(schema$readiness$label, "Ready")
+  expect_equal(schema$readiness$items$label, c(
+    "PNA assay & normalization",
+    "Required metadata",
+    "Reductions",
+    "Stored proximity",
+    "FSMap PXL paths"
+  ))
+
+  warning_schema <- schema
+  warning_schema$metadata$missing <- "sample_alias"
+  warning_schema$fs_map$all_exist <- FALSE
+  expect_equal(summarize_user_rds_readiness(warning_schema)$status, "warning")
+
+  blocked_schema <- schema
+  blocked_schema$assay$layers$missing <- "data"
+  blocked_schema$assay$layers$normalized <- FALSE
+  expect_equal(summarize_user_rds_readiness(blocked_schema)$status, "blocked")
   expect_true(schema$estimated_cache_size_bytes > 0)
 
   report <- format_user_rds_schema_report(schema)

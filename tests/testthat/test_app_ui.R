@@ -674,6 +674,28 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
   expect_true(grepl("Use patch-detected data", html, fixed = TRUE))
   expect_true(grepl('id="data_source-source_summary"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_schema_report"', html, fixed = TRUE))
+  idle_readiness <- htmltools::renderTags(analysis_readiness_panel())$html
+  expect_true(grepl("Analysis readiness", idle_readiness, fixed = TRUE))
+  expect_true(grepl("analysis-readiness-panel idle", idle_readiness, fixed = TRUE))
+  readiness_html <- htmltools::renderTags(analysis_readiness_panel(list(
+    readiness = list(
+      status = "warning",
+      label = "Ready with warnings",
+      summary = "Review warnings.",
+      items = data.frame(
+        label = "FSMap PXL paths",
+        status = "warning",
+        detail = "0 of 1 PXL paths exist.",
+        stringsAsFactors = FALSE
+      )
+    ),
+    cell_count = 2L,
+    marker_count = 3L,
+    estimated_cache_size = "1.0 MB"
+  )))$html
+  expect_true(grepl("Ready with warnings", readiness_html, fixed = TRUE))
+  expect_true(grepl("FSMap PXL paths", readiness_html, fixed = TRUE))
+  expect_true(grepl("0 of 1 PXL paths exist.", readiness_html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_status"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_progress"', html, fixed = TRUE))
   expect_true(grepl('id="data_source-rds_load_progress_bar"', html, fixed = TRUE))
@@ -689,7 +711,7 @@ test_that("navbar exposes server-side RDS path loading on HPC and desktop only",
   expect_true(grepl("observeEvent(input$use_patch_detected_demo_data", data_source_source, fixed = TRUE))
   expect_true(grepl("patch_detected_demo_rds_path(must_work = TRUE)", data_source_source, fixed = TRUE))
   expect_true(grepl("inspect_user_rds_schema(input$rds_server_path)", data_source_source, fixed = TRUE))
-  expect_true(grepl("format_user_rds_schema_report", data_source_source, fixed = TRUE))
+  expect_true(grepl("analysis_readiness_panel(schema)", data_source_source, fixed = TRUE))
   expect_false(grepl("observeEvent(input$upload_rds_too_large", app_source, fixed = TRUE))
 })
 
