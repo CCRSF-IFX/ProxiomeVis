@@ -27,7 +27,7 @@ abundance_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("abundance_condition_filter"), "Condition", choices = character(0), multiple = TRUE),
+          selectizeInput(ns("abundance_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
           selectizeInput(ns("abundance_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
         )
       )
@@ -277,7 +277,7 @@ abundance_module_server <- function(id, data) {
       metric_row(
         metric_tile("Cells", format(nrow(metadata), big.mark = ",")),
         metric_tile("Markers", format(length(current_data$marker_options), big.mark = ",")),
-        metric_tile("Conditions", format(length(unique(metadata$condition)), big.mark = ",")),
+        metric_tile("Groups", format(length(unique(metadata$condition)), big.mark = ",")),
         metric_tile("Cell Types", format(length(unique(metadata$celltype_manual)), big.mark = ","))
       )
     })
@@ -312,7 +312,7 @@ abundance_module_server <- function(id, data) {
       if (identical(color_by, "abundance")) {
         plot_data$hover <- paste0(
           "Cell: ", plot_data$component,
-          "<br>Condition: ", plot_data$condition,
+          "<br>Analysis group: ", plot_data$condition,
           hover_sample_text(plot_data),
           "<br>Cell type: ", plot_data$celltype_manual,
           "<br>", input$abundance_marker, " abundance: ", round(plot_data$abundance, 3)
@@ -332,7 +332,7 @@ abundance_module_server <- function(id, data) {
         plot_data$color_group <- as.factor(plot_data[[color_by]])
         plot_data$hover <- paste0(
           "Cell: ", plot_data$component,
-          "<br>Condition: ", plot_data$condition,
+          "<br>Analysis group: ", plot_data$condition,
           hover_sample_text(plot_data),
           "<br>Cell type: ", plot_data$celltype_manual,
           "<br>", color_label, ": ", plot_data$color_group
@@ -410,19 +410,23 @@ abundance_module_server <- function(id, data) {
       current_data <- data()
       req(current_data, input$abundance_marker)
 
-      summary <- current_data$abundance_summary[
-        current_data$abundance_summary$marker == input$abundance_marker &
-          current_data$abundance_summary$condition %in% selected_or_all(
-            input$abundance_condition_filter,
-            unique(current_data$metadata$condition)
-          ) &
-          current_data$abundance_summary$celltype_manual %in% selected_or_all(
-            input$abundance_celltype_filter,
-            unique(current_data$metadata$celltype_manual)
-          ),
+      rows <- current_data$abundance[
+        current_data$abundance$marker == input$abundance_marker,
         ,
         drop = FALSE
       ]
+      rows <- merge(
+        rows,
+        abundance_metadata()[, c("component", "condition", "celltype_manual"), drop = FALSE],
+        by = "component",
+        all.x = FALSE,
+        sort = FALSE
+      )
+      summary <- aggregate_numeric_readout(
+        rows,
+        group_cols = c("marker", "condition", "celltype_manual"),
+        value_col = "abundance"
+      )
       format_summary_table(summary, value_label = "mean_abundance")
     }, striped = TRUE, bordered = FALSE, width = "100%")
 
@@ -682,7 +686,7 @@ abundance_module_server <- function(id, data) {
 
       plot_data$hover <- paste0(
         "Cell: ", plot_data$component,
-        "<br>Condition: ", plot_data$condition,
+        "<br>Analysis group: ", plot_data$condition,
         "<br>Cell type: ", plot_data$celltype_manual,
         "<br>Abundance: ", round(plot_data$abundance, 3)
       )
@@ -775,7 +779,7 @@ available_embedding_choices <- function(metadata) {
 available_abundance_split_choices <- function(metadata) {
   candidates <- c(
     "None" = "",
-    "Condition" = "condition",
+    "Analysis group" = "condition",
     "Sample" = "sample"
   )
 
@@ -786,7 +790,7 @@ available_abundance_color_choices <- function(metadata) {
   candidates <- c(
     "Marker abundance" = "abundance",
     "Cell type" = "celltype_manual",
-    "Condition" = "condition",
+    "Analysis group" = "condition",
     "Sample" = "sample"
   )
 
@@ -810,7 +814,7 @@ abundance_color_label <- function(color_by) {
   labels <- c(
     abundance = "Marker abundance",
     celltype_manual = "Cell type",
-    condition = "Condition",
+    condition = "Analysis group",
     sample = "Sample"
   )
 
@@ -909,7 +913,7 @@ plot_abundance_marker_distribution <- function(plot_data, marker, facet_cols = N
   p <- ggplot(plot_data, aes(sample_alias, abundance, fill = condition)) +
     geom_violin(scale = "width", color = NA, alpha = 0.85, na.rm = TRUE) +
     geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.22, na.rm = TRUE) +
-    labs(x = "Sample", y = paste(marker, "normalized abundance"), fill = "Condition") +
+    labs(x = "Sample", y = paste(marker, "normalized abundance"), fill = "Analysis group") +
     theme_bw(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 60, hjust = 1),
@@ -954,7 +958,7 @@ celltype_composition_data <- function(metadata) {
   out$frac <- ifelse(out$total_cells > 0, out$n / out$total_cells, NA_real_)
   out$hover <- paste0(
     "Sample: ", out$sample_alias,
-    "<br>Condition: ", out$condition,
+    "<br>Analysis group: ", out$condition,
     "<br>Cell type: ", out$celltype_manual,
     "<br>Cells: ", out$n,
     "<br>Fraction: ", format_percent(out$frac)

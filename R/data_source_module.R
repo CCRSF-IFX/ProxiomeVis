@@ -99,6 +99,222 @@ user_rds_path_loading_enabled <- function(platform = APP_PLATFORM) {
   platform %in% c("ccrsf_hpc", "biowulf_hpc", "portable") && !disabled
 }
 
+analysis_group_text <- function(values) {
+  values <- trimws(as.character(values))
+  values[is.na(values) | !nzchar(values)] <- "Unassigned"
+  values
+}
+
+sample_level_grouping_columns <- function(metadata, sample_col = "sample_alias") {
+  if (!is.data.frame(metadata) || !sample_col %in% names(metadata) || nrow(metadata) == 0) {
+    return(character(0))
+  }
+
+  samples <- analysis_group_text(metadata[[sample_col]])
+  candidates <- setdiff(names(metadata), "component")
+  candidates[vapply(candidates, function(column) {
+    values <- metadata[[column]]
+    if (!(is.atomic(values) || is.factor(values))) {
+      return(FALSE)
+    }
+
+    values <- analysis_group_text(values)
+    all(vapply(split(values, samples), function(sample_values) {
+      length(unique(sample_values)) == 1L
+    }, logical(1)))
+  }, logical(1))]
+}
+
+sample_level_grouping_source <- function(metadata, sample_col = "sample_alias") {
+  columns <- sample_level_grouping_columns(metadata, sample_col = sample_col)
+  if (length(columns) == 0) {
+    stop("No sample-level metadata columns are available for analysis grouping.", call. = FALSE)
+  }
+
+  samples <- sort(unique(analysis_group_text(metadata[[sample_col]])))
+  source <- data.frame(sample_alias = samples, stringsAsFactors = FALSE)
+  names(source)[1] <- sample_col
+  metadata_samples <- analysis_group_text(metadata[[sample_col]])
+
+  for (column in columns) {
+    values <- analysis_group_text(metadata[[column]])
+    source[[column]] <- vapply(samples, function(sample) {
+      unique(values[metadata_samples == sample])[1]
+    }, character(1))
+  }
+
+  source
+}
+
+analysis_group_map_for_column <- function(config, column = config$column) {
+  if (is.null(config) || !column %in% names(config$source)) {
+    stop("Selected analysis grouping column is not available.", call. = FALSE)
+  }
+
+  data.frame(
+    sample_alias = analysis_group_text(config$source[[config$sample_col]]),
+    source_value = analysis_group_text(config$source[[column]]),
+    analysis_group = analysis_group_text(config$source[[column]]),
+    stringsAsFactors = FALSE
+  )
+}
+
+new_analysis_grouping_config <- function(metadata, sample_col = "sample_alias") {
+  source <- sample_level_grouping_source(metadata, sample_col = sample_col)
+  columns <- setdiff(names(source), sample_col)
+  column <- if ("condition" %in% columns) "condition" else sample_col
+  config <- list(
+    mode = "column",
+    column = column,
+    label = column,
+    sample_col = sample_col,
+    columns = unique(c(sample_col, columns)),
+    source = source
+  )
+  config$map <- analysis_group_map_for_column(config, column)
+  config
+}
+
+update_analysis_grouping_config <- function(
+  config,
+  mode = c("column", "custom"),
+  column = config$column,
+  custom_groups = NULL
+) {
+  mode <- match.arg(mode)
+  map <- analysis_group_map_for_column(config, column)
+
+  if (identical(mode, "custom")) {
+    if (!is.null(names(custom_groups))) {
+      custom_groups <- custom_groups[match(map$sample_alias, names(custom_groups))]
+    }
+    if (length(custom_groups) != nrow(map)) {
+      stop("Enter one analysis group for every sample.", call. = FALSE)
+    }
+    custom_groups <- trimws(as.character(custom_groups))
+    if (any(is.na(custom_groups) | !nzchar(custom_groups))) {
+      stop("Analysis group labels cannot be blank.", call. = FALSE)
+    }
+    map$analysis_group <- custom_groups
+  }
+
+  config$mode <- mode
+  config$column <- column
+  config$label <- if (identical(mode, "custom")) "Custom sample groups" else column
+  config$map <- map
+  config
+}
+
+analysis_grouping_summary <- function(config) {
+  if (is.null(config) || is.null(config$map)) {
+    return("Analysis grouping unavailable")
+  }
+
+  paste0(
+    "Analysis grouping: ",
+    config$label,
+    " · ",
+    length(unique(config$map$analysis_group)),
+    " groups"
+  )
+}
+
+analysis_groups_for_rows <- function(rows, config, metadata = NULL) {
+  if (!is.data.frame(rows) || nrow(rows) == 0 || is.null(config) || is.null(config$map)) {
+    return(character(0))
+  }
+
+  map <- config$map
+
+  for (column in unique(c(config$sample_col, "sample_alias", "sample"))) {
+    if (!column %in% names(rows)) {
+      next
+    }
+
+    row_values <- analysis_group_text(rows[[column]])
+    groups <- map$analysis_group[match(row_values, map$sample_alias)]
+
+    if (column %in% names(config$source)) {
+      source_values <- analysis_group_text(config$source[[column]])
+      unique_source <- !duplicated(source_values) & !duplicated(source_values, fromLast = TRUE)
+      source_groups <- map$analysis_group[
+        match(config$source[[config$sample_col]], map$sample_alias)
+      ]
+      translated <- source_groups[unique_source][match(row_values, source_values[unique_source])]
+      groups[is.na(groups)] <- translated[is.na(groups)]
+    }
+    if (any(!is.na(groups))) {
+      return(groups)
+    }
+  }
+
+  if (
+    is.data.frame(metadata) &&
+      "component" %in% names(rows) &&
+      all(c("component", "condition") %in% names(metadata))
+  ) {
+    return(as.character(metadata$condition)[match(rows$component, metadata$component)])
+  }
+
+  rep(NA_character_, nrow(rows))
+}
+
+apply_analysis_grouping_to_rows <- function(rows, config, metadata = NULL) {
+  if (!is.data.frame(rows) || nrow(rows) == 0) {
+    return(rows)
+  }
+
+  groups <- analysis_groups_for_rows(rows, config, metadata = metadata)
+  if (length(groups) == 0) {
+    return(rows)
+  }
+
+  if (!"condition" %in% names(rows)) {
+    rows$condition <- groups
+  } else {
+    rows$condition <- as.character(rows$condition)
+    replace <- !is.na(groups) & nzchar(groups)
+    rows$condition[replace] <- groups[replace]
+  }
+  rows
+}
+
+stamp_analysis_grouping <- function(data, config) {
+  if (is.null(data$source) || !is.list(data$source)) {
+    data$source <- list()
+  }
+  data$source$analysis_group_mode <- config$mode
+  data$source$analysis_group_column <- config$column
+  data$source$analysis_group_label <- config$label
+  data$source$analysis_group_count <- length(unique(config$map$analysis_group))
+  data
+}
+
+apply_analysis_grouping <- function(data, config) {
+  if (is.null(data) || !is.list(data) || is.null(data$metadata)) {
+    return(data)
+  }
+
+  metadata <- apply_analysis_grouping_to_rows(data$metadata, config)
+  data$metadata <- metadata
+
+  for (name in c("clustering", "colocalization")) {
+    if (is.data.frame(data[[name]])) {
+      data[[name]] <- apply_analysis_grouping_to_rows(data[[name]], config, metadata = metadata)
+    }
+  }
+
+  if (is.list(data$qc)) {
+    for (name in c("origin_metadata", "filtered_metadata", "filter_counts")) {
+      if (is.data.frame(data$qc[[name]])) {
+        data$qc[[name]] <- apply_analysis_grouping_to_rows(data$qc[[name]], config, metadata = metadata)
+      }
+    }
+  }
+
+  stamp_analysis_grouping(data, config)
+}
+
 analysis_readiness_panel <- function(schema = NULL) {
   if (is.null(schema)) {
     return(tags$section(
@@ -151,19 +367,9 @@ analysis_readiness_panel <- function(schema = NULL) {
 }
 
 data_source_controls <- function(id, platform = APP_PLATFORM) {
-  if (!user_rds_path_loading_enabled(platform)) {
-    return(tagList())
-  }
-
   ns <- NS(id)
-  popover(
-    actionButton(
-      ns("data_source_menu"),
-      "Data",
-      class = "btn btn-outline-secondary btn-sm data-source-button"
-    ),
-    div(
-      class = "data-source-popover",
+  rds_controls <- if (user_rds_path_loading_enabled(platform)) {
+    tagList(
       textInput(
         ns("rds_server_path"),
         "RDS path",
@@ -213,6 +419,27 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
         ),
         div(id = ns("rds_load_elapsed"), class = "rds-load-elapsed")
       )
+    )
+  } else {
+    tagList()
+  }
+
+  popover(
+    actionButton(
+      ns("data_source_menu"),
+      "Data",
+      class = "btn btn-outline-secondary btn-sm data-source-button"
+    ),
+    div(
+      class = "data-source-popover",
+      rds_controls,
+      tags$hr(),
+      actionButton(
+        ns("configure_analysis_grouping"),
+        "Analysis grouping…",
+        class = "btn btn-outline-primary btn-sm w-100"
+      ),
+      tags$small(class = "text-muted", textOutput(ns("analysis_grouping_summary"), inline = TRUE))
     ),
     title = "Data source",
     placement = "bottom",
@@ -222,11 +449,7 @@ data_source_controls <- function(id, platform = APP_PLATFORM) {
 
 data_source_module_ui <- function(id, platform = APP_PLATFORM) {
   ns <- NS(id)
-  controls <- if (user_rds_path_loading_enabled(platform)) {
-    data_source_controls(id, platform = platform)
-  } else {
-    tagList()
-  }
+  controls <- data_source_controls(id, platform = platform)
 
   nav_item(
     controls,
@@ -502,6 +725,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
   moduleServer(id, function(input, output, session) {
     app_dir <- normalizePath(app_dir, mustWork = TRUE)
     demo_data <- reactiveVal(NULL)
+    analysis_grouping <- reactiveVal(NULL)
     user_rds_load_task <- if (user_rds_path_loading_enabled()) {
       create_user_rds_load_task(app_dir)
     } else {
@@ -514,6 +738,12 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
     rds_load_source_type <- reactiveVal("user_rds")
     rds_load_display_name <- reactiveVal("")
     rds_schema <- reactiveVal(NULL)
+
+    activate_data <- function(data) {
+      config <- new_analysis_grouping_config(data$metadata)
+      analysis_grouping(config)
+      demo_data(stamp_analysis_grouping(data, config))
+    }
 
     send_rds_load_state <- function(
       state,
@@ -545,7 +775,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       withProgress(message = "Loading Pixelator v4.1.1 demo data", value = 0.1, {
         data <- load_default_proxiome_data(app_dir)
         incProgress(0.8)
-        demo_data(data)
+        activate_data(data)
       })
 
       if (isTRUE(show_loaded_notification)) {
@@ -557,7 +787,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       withProgress(message = "Loading Raji/CAR-T demo data", value = 0.1, {
         data <- load_raji_demo_proxiome_data(app_dir)
         incProgress(0.8)
-        demo_data(data)
+        activate_data(data)
       })
 
       if (isTRUE(show_loaded_notification)) {
@@ -792,7 +1022,7 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       if (nzchar(display_name %||% "")) {
         data$source$display_name <- display_name
       }
-      demo_data(data)
+      activate_data(data)
       label <- data$source$display_name %||% rds_load_path_label()
       if (!nzchar(label)) {
         label <- "RDS path"
@@ -810,6 +1040,143 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       )
       showNotification("RDS path loaded.", type = "message")
     })
+
+    grouping_editor_map <- function(config, mode, column) {
+      if (
+        identical(mode, "custom") &&
+          identical(config$mode, "custom") &&
+          identical(column, config$column)
+      ) {
+        return(config$map)
+      }
+      analysis_group_map_for_column(config, column)
+    }
+
+    observeEvent(input$configure_analysis_grouping, {
+      config <- analysis_grouping()
+      req(config, demo_data())
+
+      choices <- stats::setNames(config$columns, config$columns)
+      showModal(modalDialog(
+        title = "Analysis grouping",
+        radioButtons(
+          session$ns("analysis_group_mode"),
+          "Grouping mode",
+          choices = c("Use metadata column" = "column", "Edit sample groups" = "custom"),
+          selected = config$mode,
+          inline = TRUE
+        ),
+        selectInput(
+          session$ns("analysis_group_column"),
+          "Sample-level metadata column",
+          choices = choices,
+          selected = config$column
+        ),
+        uiOutput(session$ns("analysis_group_editor")),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(
+            session$ns("reset_analysis_grouping"),
+            "Reset to condition",
+            class = "btn btn-outline-secondary"
+          ),
+          actionButton(
+            session$ns("apply_analysis_grouping"),
+            "Apply grouping",
+            class = "btn btn-primary"
+          )
+        ),
+        easyClose = TRUE,
+        size = "l"
+      ))
+    }, ignoreInit = TRUE)
+
+    output$analysis_group_editor <- renderUI({
+      config <- analysis_grouping()
+      req(config)
+      mode <- input$analysis_group_mode %||% config$mode
+      column <- input$analysis_group_column %||% config$column
+      map <- grouping_editor_map(config, mode, column)
+      editable <- identical(mode, "custom")
+
+      tags$table(
+        class = "table table-sm align-middle",
+        tags$thead(tags$tr(
+          tags$th("Sample"),
+          tags$th(column),
+          tags$th("Analysis group")
+        )),
+        tags$tbody(lapply(seq_len(nrow(map)), function(index) {
+          tags$tr(
+            tags$td(map$sample_alias[index]),
+            tags$td(map$source_value[index]),
+            tags$td(if (editable) {
+              textInput(
+                session$ns(paste0("analysis_group_value_", index)),
+                label = NULL,
+                value = map$analysis_group[index],
+                width = "100%"
+              )
+            } else {
+              map$analysis_group[index]
+            })
+          )
+        }))
+      )
+    })
+
+    observeEvent(input$apply_analysis_grouping, {
+      config <- isolate(analysis_grouping())
+      req(config, demo_data())
+      mode <- input$analysis_group_mode %||% config$mode
+      column <- input$analysis_group_column %||% config$column
+      map <- grouping_editor_map(config, mode, column)
+      custom_groups <- if (identical(mode, "custom")) {
+        vapply(seq_len(nrow(map)), function(index) {
+          input[[paste0("analysis_group_value_", index)]] %||% ""
+        }, character(1))
+      } else {
+        NULL
+      }
+
+      tryCatch(
+        {
+          config <- update_analysis_grouping_config(
+            config,
+            mode = mode,
+            column = column,
+            custom_groups = custom_groups
+          )
+          withProgress(message = "Applying analysis grouping", value = 0.2, {
+            data <- apply_analysis_grouping(isolate(demo_data()), config)
+            incProgress(0.7)
+            analysis_grouping(config)
+            demo_data(data)
+          })
+          removeModal()
+          showNotification(analysis_grouping_summary(config), type = "message")
+        },
+        error = function(error) {
+          showNotification(conditionMessage(error), type = "error", duration = NULL)
+        }
+      )
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$reset_analysis_grouping, {
+      config <- isolate(analysis_grouping())
+      req(config, demo_data())
+      column <- if ("condition" %in% names(config$source)) "condition" else config$sample_col
+      config <- update_analysis_grouping_config(config, mode = "column", column = column)
+
+      withProgress(message = "Resetting analysis grouping", value = 0.2, {
+        data <- apply_analysis_grouping(isolate(demo_data()), config)
+        incProgress(0.7)
+        analysis_grouping(config)
+        demo_data(data)
+      })
+      removeModal()
+      showNotification(analysis_grouping_summary(config), type = "message")
+    }, ignoreInit = TRUE)
 
     source_summary_text <- reactive({
       if (identical(rds_load_state(), "running")) {
@@ -832,8 +1199,13 @@ data_source_module_server <- function(id, app_dir = APP_DIR) {
       analysis_readiness_panel(schema)
     })
 
+    output$analysis_grouping_summary <- renderText({
+      analysis_grouping_summary(analysis_grouping())
+    })
+
     list(
       data = reactive(demo_data()),
+      grouping = reactive(analysis_grouping()),
       state = reactive(rds_load_state()),
       summary = source_summary_text
     )

@@ -15,7 +15,7 @@ clustering_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("clustering_condition_filter"), "Condition", choices = character(0), multiple = TRUE),
+          selectizeInput(ns("clustering_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
           selectizeInput(ns("clustering_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
         )
       )
@@ -31,7 +31,7 @@ clustering_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("clustering_heatmap_condition_filter"), "Condition", choices = character(0), multiple = TRUE),
+          selectizeInput(ns("clustering_heatmap_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
           selectizeInput(ns("clustering_heatmap_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
         )
       )
@@ -218,7 +218,7 @@ clustering_module_server <- function(id, data) {
 
       plot_data$hover <- paste0(
         "Cell: ", plot_data$component,
-        "<br>Condition: ", plot_data$condition,
+        "<br>Analysis group: ", plot_data$condition,
         "<br>Cell type: ", plot_data$celltype_manual,
         "<br>Abundance: ", round(plot_data$abundance, 3),
         "<br>Self-clustering log2 ratio: ", round(plot_data$log2_ratio, 3)
@@ -452,7 +452,7 @@ clustering_module_server <- function(id, data) {
 
       plot_data$hover <- paste0(
         "Cell: ", plot_data$component,
-        "<br>Condition: ", plot_data$condition,
+        "<br>Analysis group: ", plot_data$condition,
         "<br>Cell type: ", plot_data$celltype_manual,
         "<br>Self-clustering log2 ratio: ", round(plot_data$log2_ratio, 3)
       )
@@ -531,7 +531,7 @@ plot_clustering_per_marker <- function(plot_data, marker) {
     geom_violin(scale = "width", color = NA, alpha = 0.85, na.rm = TRUE) +
     geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.22, na.rm = TRUE) +
     geom_jitter(width = 0.14, height = 0, alpha = 0.28, size = 0.5, na.rm = TRUE) +
-    labs(x = "Sample", y = paste(marker, "self-clustering log2 ratio"), fill = "Condition") +
+    labs(x = "Sample", y = paste(marker, "self-clustering log2 ratio"), fill = "Analysis group") +
     theme_bw(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 60, hjust = 1),
@@ -550,7 +550,7 @@ plot_clustering_summary_heatmap <- function(summary) {
     limit <- 1
   }
   summary$hover <- paste0(
-    "Condition: ", summary$condition,
+    "Analysis group: ", summary$condition,
     "<br>Cell type: ", summary$celltype_manual,
     "<br>Marker: ", summary$marker,
     "<br>Mean log2 ratio: ", round(summary$mean_log2_ratio, 3),

@@ -624,72 +624,30 @@ summarize_colocalization_heatmap <- function(
     return(empty_colocalization_heatmap_summary(condition_col, marker1_col, marker2_col))
   }
 
-  plot_data <- colocalization
-  plot_data[[condition_col]] <- as.character(plot_data[[condition_col]])
-  plot_data[[marker1_col]] <- as.character(plot_data[[marker1_col]])
-  plot_data[[marker2_col]] <- as.character(plot_data[[marker2_col]])
-  plot_data[[value_col]] <- as.numeric(plot_data[[value_col]])
-
-  selected_markers <- as.character(selected_markers)
+  if (!component_col %in% names(colocalization)) {
+    colocalization[[component_col]] <- seq_len(nrow(colocalization))
+  }
   if (!is.null(conditions) && length(conditions) > 0) {
-    plot_data <- plot_data[plot_data[[condition_col]] %in% as.character(conditions), , drop = FALSE]
+    conditions <- as.character(conditions)
+    available_conditions <- unique(as.character(colocalization[[condition_col]]))
+    if (!setequal(conditions, available_conditions)) {
+      colocalization <- colocalization[
+        as.character(colocalization[[condition_col]]) %in% conditions,
+        ,
+        drop = FALSE
+      ]
+    }
   }
 
-  plot_data <- plot_data[
-    plot_data[[marker1_col]] %in% selected_markers &
-      plot_data[[marker2_col]] %in% selected_markers &
-      plot_data[[marker1_col]] != plot_data[[marker2_col]] &
-      is.finite(plot_data[[value_col]]),
-    ,
-    drop = FALSE
-  ]
-
-  if (nrow(plot_data) == 0) {
-    return(empty_colocalization_heatmap_summary(condition_col, marker1_col, marker2_col))
-  }
-
-  group_cols <- c(condition_col, marker1_col, marker2_col)
-  means <- aggregate(
-    plot_data[[value_col]],
-    plot_data[group_cols],
-    function(values) mean(values, na.rm = TRUE)
+  summarize_spatial_heatmap(
+    proximity = colocalization,
+    selected_markers = selected_markers,
+    group_cols = condition_col,
+    value_col = value_col,
+    component_col = component_col,
+    marker1_col = marker1_col,
+    marker2_col = marker2_col
   )
-  names(means)[ncol(means)] <- "mean_log2_ratio"
-
-  if (component_col %in% names(plot_data)) {
-    detected <- aggregate(
-      plot_data[[component_col]],
-      plot_data[group_cols],
-      function(values) length(unique(values))
-    )
-    names(detected)[ncol(detected)] <- "n_detected"
-
-    totals <- aggregate(
-      plot_data[[component_col]],
-      plot_data[condition_col],
-      function(values) length(unique(values))
-    )
-    names(totals)[ncol(totals)] <- "n_total"
-  } else {
-    detected <- aggregate(
-      plot_data[[value_col]],
-      plot_data[group_cols],
-      length
-    )
-    names(detected)[ncol(detected)] <- "n_detected"
-
-    totals <- aggregate(
-      plot_data[[value_col]],
-      plot_data[condition_col],
-      length
-    )
-    names(totals)[ncol(totals)] <- "n_total"
-  }
-
-  summary <- merge(means, detected, by = group_cols, all.x = TRUE, sort = FALSE)
-  summary <- merge(summary, totals, by = condition_col, all.x = TRUE, sort = FALSE)
-  summary$pct_detected <- ifelse(summary$n_total > 0, summary$n_detected / summary$n_total, NA_real_)
-  summary[, c(group_cols, "mean_log2_ratio", "pct_detected", "n_detected", "n_total"), drop = FALSE]
 }
 
 empty_colocalization_heatmap_summary <- function(condition_col, marker1_col, marker2_col) {
@@ -1111,7 +1069,7 @@ prepare_coloc_heatmap_plot_data <- function(
   plot_data$plot_marker_2 <- factor(plot_data[[marker2_col]], levels = rev(marker_order))
   plot_data$plot_value <- as.numeric(plot_data[[value_col]])
   plot_data$plot_size <- as.numeric(plot_data[[size_col]])
-  condition_label <- if (identical(condition_col, "sample_alias")) "Sample" else "Condition"
+  condition_label <- if (identical(condition_col, "sample_alias")) "Sample" else "Analysis group"
   plot_data$hover <- paste0(
     condition_label, ": ", plot_data[[condition_col]],
     "<br>Marker 1: ", plot_data[[marker1_col]],
@@ -1273,6 +1231,7 @@ format_summary_table <- function(summary, value_label) {
   summary$median_value <- round(summary$median_value, 3)
   names(summary)[names(summary) == "mean_value"] <- value_label
   names(summary)[names(summary) == "median_value"] <- sub("^mean", "median", value_label)
+  names(summary)[names(summary) == "condition"] <- "analysis_group"
   summary
 }
 
@@ -1307,7 +1266,9 @@ format_spatial_heatmap_table <- function(summary, max_rows = 30) {
     ),
     names(summary)
   )
-  summary[, display_cols, drop = FALSE]
+  summary <- summary[, display_cols, drop = FALSE]
+  names(summary)[names(summary) == "condition"] <- "analysis_group"
+  summary
 }
 
 numeric_input_value <- function(value, default) {

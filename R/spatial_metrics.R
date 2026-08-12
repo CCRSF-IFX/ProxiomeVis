@@ -42,7 +42,7 @@ summarize_spatial_heatmap <- function(
 
   selected_markers <- as.character(selected_markers)
   require_spatial_namespace("data.table")
-  proximity_dt <- data.table::as.data.table(proximity)
+  proximity_dt <- data.table::as.data.table(proximity[required_cols])
   rows <- proximity_dt[
     get(marker1_col) %in% selected_markers &
       get(marker2_col) %in% selected_markers &

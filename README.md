@@ -19,6 +19,8 @@ colocalization from Pixelator v4.1.1 Seurat objects.
 - **Server-side RDS loading**: users on supported desktop or HPC runtimes can
   load an `.rds` file by path, with background progress reporting and
   processed app-data caching.
+- **Global analysis grouping**: choose a sample-level metadata column or assign
+  custom sample groups for filters, summaries, heatmaps, and comparisons.
 
 ## Data Model
 

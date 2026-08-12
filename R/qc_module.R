@@ -417,7 +417,7 @@ plot_filter_cell_counts <- function(
   plot_df$hover <- paste0(
     "Step: ", plot_df$step_label,
     "<br>Sample: ", plot_df$sample,
-    "<br>Condition: ", plot_df$condition,
+    "<br>Analysis group: ", plot_df$condition,
     "<br>Cells: ", format(plot_df$n_cells, big.mark = ","),
     "<br>Fraction loaded: ", format_percent(plot_df$fraction_loaded_for_hover)
   )
@@ -453,6 +453,7 @@ format_qc_filter_table <- function(filter_counts) {
   }
 
   filter_counts$fraction_loaded <- round(filter_counts$fraction_loaded, 3)
+  names(filter_counts)[names(filter_counts) == "condition"] <- "analysis_group"
   filter_counts
 }
 

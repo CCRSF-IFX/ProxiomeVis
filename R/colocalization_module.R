@@ -21,7 +21,7 @@ colocalization_sidebar <- function(id) {
             ns("spatial_coloc_scope"),
             "Heatmap scope",
             choices = c(
-              "Condition summary" = "condition",
+              "Analysis group summary" = "condition",
               "Sample summary" = "sample",
               "Cell type focus" = "celltype"
             ),
@@ -49,7 +49,7 @@ colocalization_sidebar <- function(id) {
             numericInput(ns("spatial_min_pct_detected"), "Minimum fraction detected", value = 0.25, min = 0, max = 1, step = 0.05),
             numericInput(ns("spatial_min_log2_range"), "Minimum log2 range", value = 0.2, min = 0, step = 0.05)
           ),
-          selectInput(ns("colocalization_reference_condition"), "Reference condition", choices = character(0)),
+          selectInput(ns("colocalization_reference_condition"), "Reference group", choices = character(0)),
           selectInput(
             ns("colocalization_clustering_method"),
             "Marker ordering",
@@ -61,7 +61,7 @@ colocalization_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("colocalization_condition_filter"), "Condition", choices = character(0), multiple = TRUE),
+          selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
           selectizeInput(ns("colocalization_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
         )
       )
@@ -344,6 +344,12 @@ colocalization_module_server <- function(id, data) {
       req(current_data)
 
       metadata <- colocalization_metadata()
+      if (
+        nrow(metadata) == nrow(current_data$metadata) &&
+          setequal(metadata$component, current_data$metadata$component)
+      ) {
+        return(current_data$colocalization)
+      }
       current_data$colocalization[current_data$colocalization$component %in% metadata$component, , drop = FALSE]
     })
 
@@ -374,9 +380,11 @@ colocalization_module_server <- function(id, data) {
         sort(unique(as.character(current_data$metadata$condition)))
       )
       selected_conditions <- intersect(selected_conditions, unique(as.character(colocalization$condition)))
-      validate(need(length(selected_conditions) > 0, "Select at least one condition for the colocalization heatmap."))
+      validate(need(length(selected_conditions) > 0, "Select at least one analysis group for the colocalization heatmap."))
 
-      colocalization <- colocalization[colocalization$condition %in% selected_conditions, , drop = FALSE]
+      if (!setequal(selected_conditions, unique(as.character(colocalization$condition)))) {
+        colocalization <- colocalization[colocalization$condition %in% selected_conditions, , drop = FALSE]
+      }
 
       if (identical(scope, "celltype")) {
         focus_celltype <- input$spatial_celltype_focus
@@ -646,7 +654,7 @@ colocalization_module_server <- function(id, data) {
 
       plot_data$hover <- paste0(
         "Cell: ", plot_data$component,
-        "<br>Condition: ", plot_data$condition,
+        "<br>Analysis group: ", plot_data$condition,
         "<br>Cell type: ", plot_data$celltype_manual,
         "<br>Colocalization log2 ratio: ", round(plot_data$log2_ratio, 3)
       )

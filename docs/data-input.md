@@ -57,3 +57,15 @@ $HOME/.ProxiomeVis/cache
 
 The cache avoids repeated conversion work for the same RDS. It does not replace
 the source RDS.
+
+## Analysis grouping
+
+Use **Data > Analysis grouping…** after loading a dataset to choose the metadata
+column used as the global analysis group. Only columns with one value per
+sample are offered. Choose **Edit sample groups** to assign a custom group to
+each sample instead.
+
+The selection applies to abundance, clustering, colocalization, QC labels,
+filters, heatmaps, and differential comparisons. Changes are session-local:
+the source RDS and processed cache are not modified. Loading another dataset
+resets grouping to its `condition` column when available.
