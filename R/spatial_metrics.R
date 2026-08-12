@@ -70,6 +70,68 @@ summarize_spatial_heatmap <- function(
   as.data.frame(result[, ..output_cols])
 }
 
+summarize_cached_spatial_heatmap <- function(
+  sample_summary,
+  metadata,
+  selected_markers,
+  group_cols,
+  min_cells_detected = 1L
+) {
+  summary_cols <- c(
+    "sample_alias", "celltype_manual", "marker_1", "marker_2",
+    "sum_log2_ratio", "n_values", "n_detected"
+  )
+  metadata_cols <- unique(c("component", "sample_alias", "condition", "celltype_manual", group_cols))
+  missing_summary_cols <- setdiff(summary_cols, names(sample_summary))
+  missing_metadata_cols <- setdiff(metadata_cols, names(metadata))
+  if (length(missing_summary_cols) > 0 || length(missing_metadata_cols) > 0) {
+    missing_cols <- c(missing_summary_cols, missing_metadata_cols)
+    stop("Missing columns for cached spatial heatmap summary: ", paste(unique(missing_cols), collapse = ", "), call. = FALSE)
+  }
+
+  selected_markers <- as.character(selected_markers)
+  require_spatial_namespace("data.table")
+  metadata_dt <- unique(
+    data.table::as.data.table(metadata)[, ..metadata_cols],
+    by = "component"
+  )
+  if (nrow(metadata_dt) == 0) {
+    return(empty_spatial_heatmap_summary(group_cols))
+  }
+
+  summary_dt <- data.table::as.data.table(sample_summary)[
+    marker_1 %in% selected_markers &
+      marker_2 %in% selected_markers &
+      marker_1 != marker_2
+  ]
+  if (nrow(summary_dt) == 0) {
+    return(empty_spatial_heatmap_summary(group_cols))
+  }
+
+  selected_strata <- unique(metadata_dt[, .(sample_alias, celltype_manual)])
+  summary_dt <- summary_dt[selected_strata, on = c("sample_alias", "celltype_manual"), nomatch = 0]
+  sample_conditions <- unique(metadata_dt[, .(sample_alias, condition)])
+  summary_dt <- sample_conditions[summary_dt, on = "sample_alias", nomatch = 0]
+  if (nrow(summary_dt) == 0) {
+    return(empty_spatial_heatmap_summary(group_cols))
+  }
+
+  split_cols <- unique(c(group_cols, "marker_1", "marker_2"))
+  result <- summary_dt[, .(
+    sum_log2_ratio = sum(as.numeric(sum_log2_ratio)),
+    n_values = sum(as.numeric(n_values)),
+    n_detected = sum(as.integer(n_detected))
+  ), keyby = split_cols]
+  result[, mean_log2_ratio := sum_log2_ratio / n_values]
+
+  totals <- metadata_dt[, .(n_total = data.table::uniqueN(component)), keyby = group_cols]
+  result <- totals[result, on = group_cols]
+  result <- result[n_detected >= min_cells_detected]
+  result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
+  output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
+  as.data.frame(result[, ..output_cols])
+}
+
 complete_spatial_marker_pairs <- function(
   summary,
   selected_markers,

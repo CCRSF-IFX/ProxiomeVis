@@ -54,6 +54,38 @@ test_that("per-cell-type spatial summary groups by sample and cell type", {
   )
 })
 
+test_that("cached sample summaries regroup without raw proximity rows", {
+  sample_summary <- data.frame(
+    sample_alias = c("S1", "S2", "S2"),
+    celltype_manual = c("T", "T", "B"),
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    sum_log2_ratio = c(4, -1, 5),
+    n_values = c(2L, 1L, 1L),
+    n_detected = c(2L, 1L, 1L),
+    stringsAsFactors = FALSE
+  )
+  metadata <- data.frame(
+    component = c("cell-a", "cell-b", "cell-c", "cell-d"),
+    sample_alias = c("S1", "S1", "S2", "S2"),
+    condition = "combined",
+    celltype_manual = c("T", "T", "T", "B"),
+    stringsAsFactors = FALSE
+  )
+
+  result <- summarize_cached_spatial_heatmap(
+    sample_summary,
+    metadata,
+    selected_markers = c("CD3e", "CD4"),
+    group_cols = "condition"
+  )
+
+  expect_equal(result$mean_log2_ratio, 2)
+  expect_equal(result$n_detected, 4L)
+  expect_equal(result$n_total, 4L)
+  expect_equal(result$pct_detected, 1)
+})
+
 test_that("spatial heatmap completion mirrors observed marker pairs before filling missing pairs", {
   summary <- data.frame(
     sample_alias = "S1",

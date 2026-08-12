@@ -87,6 +87,7 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="colocalization-colocalization_clustering_method"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_legend_min"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_legend_max"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-apply_colocalization_heatmap"', html, fixed = TRUE))
   expect_true(grepl('data-value="3D Layout"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_3d_sample"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_3d_component"', html, fixed = TRUE))
@@ -124,7 +125,23 @@ test_that("spatial metrics tab wires PixelatorES-style heatmap controls", {
   expect_true(grepl("summarize_spatial_heatmap_by_celltype", app_source, fixed = TRUE))
   expect_true(grepl("select_spatial_heatmap_markers", app_source, fixed = TRUE))
   expect_true(grepl("complete_spatial_marker_pairs", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl("colocalization_all_marker_summary", colocalization_module_source, fixed = TRUE))
+  expect_false(grepl("colocalization_heatmap_rows", colocalization_module_source, fixed = TRUE))
   expect_true(grepl('else "sample_alias"', colocalization_module_source, fixed = TRUE))
+})
+
+test_that("report heatmap preset is a single reusable configuration", {
+  custom <- make_colocalization_heatmap_config(
+    markers = paste0("M", 1:50),
+    conditions = c("UNT", "CD3CD28"),
+    cell_types = c("T", "B")
+  )
+  report <- report_colocalization_heatmap_config(custom)
+
+  expect_equal(report$preset, "report")
+  expect_equal(report$top_marker_count, 40L)
+  expect_equal(c(report$legend_min, report$legend_max), c(-0.75, 0.75))
+  expect_equal(report$clustering_method, "ward.D2")
 })
 
 test_that("each readout exposes observed and differential modes", {

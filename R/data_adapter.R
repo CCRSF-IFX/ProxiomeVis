@@ -24,7 +24,7 @@ RAJI_DEMO_MARKERS <- c(
   "CD40", "CD54", "CD25", "CD279", "HLA-DR-DP-DQ", "HLA-DR", "B2M"
 )
 
-DEMO_CACHE_SCHEMA_VERSION <- 3L
+DEMO_CACHE_SCHEMA_VERSION <- 4L
 ABUNDANCE_LONG_MAX_BLOCK_ENTRIES <- 500000L
 RDS_SCHEMA_EXPECTED_METADATA_COLUMNS <- c("condition", "celltype_manual", "sample_alias")
 RDS_SCHEMA_REQUIRED_PROXIMITY_COLUMNS <- c("component", "marker_1", "marker_2", "log2_ratio")
@@ -170,7 +170,8 @@ load_demo_proxiome_data <- function(
     )
     source_is_missing <- !file.exists(rds_path)
     if (source_matches_cache || source_is_missing) {
-      cache_needs_save <- !identical(cache$source$cache_schema_version, DEMO_CACHE_SCHEMA_VERSION)
+      cache_needs_save <- !identical(cache$source$cache_schema_version, DEMO_CACHE_SCHEMA_VERSION) ||
+        is.null(cache$colocalization_sample_summary)
       cache <- upgrade_cached_demo_data(cache)
       if (is.null(cache$qc)) {
         if (source_is_missing) {
@@ -334,7 +335,8 @@ build_demo_proxiome_data <- function(
     clustering = readouts$clustering,
     clustering_summary = readouts$clustering_summary,
     colocalization = readouts$colocalization,
-    colocalization_summary = readouts$colocalization_summary
+    colocalization_summary = readouts$colocalization_summary,
+    colocalization_sample_summary = readouts$colocalization_sample_summary
   )
 }
 
@@ -931,6 +933,12 @@ upgrade_cached_demo_data <- function(cache) {
 
   cache$colocalization <- attach_spatial_metadata_to_readout(cache$colocalization, cache$metadata)
   cache$clustering <- attach_spatial_metadata_to_readout(cache$clustering, cache$metadata)
+  if (
+    is.null(cache$colocalization_sample_summary) &&
+      is.data.frame(cache$colocalization)
+  ) {
+    cache$colocalization_sample_summary <- summarize_colocalization_by_sample(cache$colocalization)
+  }
 
   if (is.null(cache$source) || !is.list(cache$source)) {
     cache$source <- list()
@@ -952,26 +960,18 @@ attach_spatial_metadata_to_readout <- function(readout, metadata) {
     return(readout)
   }
 
-  metadata_cols <- intersect(c("component", "condition", "celltype_manual", "sample_alias"), names(metadata))
-  metadata <- metadata[!duplicated(metadata$component), metadata_cols, drop = FALSE]
-  merged <- merge(
-    readout,
-    metadata,
-    by = "component",
-    all.x = TRUE,
-    sort = FALSE,
-    suffixes = c("", "_metadata")
-  )
-
-  for (metadata_col in c("condition", "celltype_manual", "sample_alias")) {
-    suffixed_col <- paste0(metadata_col, "_metadata")
-    if (suffixed_col %in% names(merged)) {
-      merged[[metadata_col]] <- merged[[metadata_col]] %||% merged[[suffixed_col]]
-      merged[[suffixed_col]] <- NULL
-    }
+  metadata_cols <- intersect(c("condition", "celltype_manual", "sample_alias"), names(metadata))
+  missing_cols <- setdiff(metadata_cols, names(readout))
+  if (length(missing_cols) == 0) {
+    return(readout)
   }
 
-  merged
+  metadata <- metadata[!duplicated(metadata$component), c("component", missing_cols), drop = FALSE]
+  metadata_index <- match(readout$component, metadata$component)
+  for (metadata_col in missing_cols) {
+    readout[[metadata_col]] <- metadata[[metadata_col]][metadata_index]
+  }
+  readout
 }
 
 standardize_qc_filter_counts <- function(filter_counts, loaded_n, filtered_n) {
@@ -1234,6 +1234,7 @@ summarize_proximity_readouts <- function(proximity, metadata) {
     drop = FALSE
   ]
   colocalization$marker_pair <- paste(colocalization$marker_1, "/", colocalization$marker_2)
+  colocalization_sample_summary <- summarize_colocalization_by_sample(colocalization)
 
   list(
     clustering = as.data.frame(clustering),
@@ -1247,8 +1248,54 @@ summarize_proximity_readouts <- function(proximity, metadata) {
       colocalization,
       group_cols = c("marker_pair", "marker_1", "marker_2", "condition", "celltype_manual"),
       value_col = "log2_ratio"
-    )
+    ),
+    colocalization_sample_summary = colocalization_sample_summary
   )
+}
+
+summarize_colocalization_by_sample <- function(colocalization) {
+  required_cols <- c(
+    "component", "sample_alias", "celltype_manual",
+    "marker_1", "marker_2", "log2_ratio"
+  )
+  missing_cols <- setdiff(required_cols, names(colocalization))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Missing columns for sample colocalization summary: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  require_namespace("data.table")
+  colocalization_dt <- if (data.table::is.data.table(colocalization)) {
+    colocalization
+  } else {
+    data.table::as.data.table(colocalization[required_cols])
+  }
+  result <- colocalization_dt[
+    marker_1 != marker_2 & is.finite(as.numeric(log2_ratio)),
+    .(
+      sum_log2_ratio = sum(as.numeric(log2_ratio)),
+      n_values = .N,
+      n_detected = data.table::uniqueN(component)
+    ),
+    keyby = .(sample_alias, celltype_manual, marker_1, marker_2)
+  ]
+  if (nrow(result) == 0) {
+    return(data.frame(
+      sample_alias = character(),
+      celltype_manual = character(),
+      marker_1 = character(),
+      marker_2 = character(),
+      sum_log2_ratio = numeric(),
+      n_values = integer(),
+      n_detected = integer(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  as.data.frame(result)
 }
 
 join_metadata_by_component <- function(data, metadata, metadata_cols) {

@@ -57,7 +57,13 @@ colocalization_sidebar <- function(id) {
             selected = "ward.D2"
           ),
           numericInput(ns("colocalization_legend_min"), "Legend minimum", value = -1, step = 0.1),
-          numericInput(ns("colocalization_legend_max"), "Legend maximum", value = 1, step = 0.1)
+          numericInput(ns("colocalization_legend_max"), "Legend maximum", value = 1, step = 0.1),
+          helpText("Report style applies 40 variable markers, Ward D2 ordering, and a -0.75 to 0.75 legend. Custom changes are applied together."),
+          conditionalPanel(
+            condition = "input.colocalization_heatmap_preset == 'custom'",
+            ns = ns,
+            actionButton(ns("apply_colocalization_heatmap"), "Apply heatmap settings", class = "btn-primary w-100")
+          )
         ),
         accordion_panel(
           "Filters",
@@ -113,6 +119,41 @@ colocalization_sidebar <- function(id) {
   )
 }
 
+make_colocalization_heatmap_config <- function(
+  markers,
+  conditions,
+  cell_types,
+  preset = "custom"
+) {
+  reference_condition <- if ("CD3CD28" %in% conditions) "CD3CD28" else conditions[1]
+  list(
+    preset = preset,
+    scope = "condition",
+    focus_celltype = cell_types[1],
+    marker_selection_mode = "auto",
+    markers = head(markers, min(20L, length(markers))),
+    top_marker_count = 20L,
+    min_pct_detected = 0.25,
+    min_log2_range = 0.2,
+    reference_condition = reference_condition,
+    clustering_method = "ward.D2",
+    legend_min = -1,
+    legend_max = 1
+  )
+}
+
+report_colocalization_heatmap_config <- function(config) {
+  config$preset <- "report"
+  config$marker_selection_mode <- "auto"
+  config$top_marker_count <- 40L
+  config$min_pct_detected <- 0.25
+  config$min_log2_range <- 0.2
+  config$clustering_method <- "ward.D2"
+  config$legend_min <- -0.75
+  config$legend_max <- 0.75
+  config
+}
+
 colocalization_module_ui <- function(id) {
   ns <- NS(id)
 
@@ -165,6 +206,70 @@ colocalization_module_ui <- function(id) {
 colocalization_module_server <- function(id, data) {
   moduleServer(id, function(input, output, session) {
     colocalization_diff_config <- reactiveVal(NULL)
+    colocalization_heatmap_config <- reactiveVal(NULL)
+    custom_colocalization_heatmap_config <- reactiveVal(NULL)
+    colocalization_heatmap_summary_config <- reactiveVal(NULL)
+
+    set_colocalization_heatmap_config <- function(config) {
+      summary_config <- list(
+        scope = config$scope,
+        focus_celltype = if (identical(config$scope, "celltype")) config$focus_celltype else NULL
+      )
+      if (!identical(isolate(colocalization_heatmap_summary_config()), summary_config)) {
+        colocalization_heatmap_summary_config(summary_config)
+      }
+      if (!identical(isolate(colocalization_heatmap_config()), config)) {
+        colocalization_heatmap_config(config)
+      }
+      invisible(config)
+    }
+
+    update_colocalization_heatmap_inputs <- function(config) {
+      updateSelectInput(session, "colocalization_heatmap_preset", selected = config$preset)
+      updateSelectInput(session, "spatial_coloc_scope", selected = config$scope)
+      updateSelectInput(session, "spatial_celltype_focus", selected = config$focus_celltype)
+      updateSelectInput(session, "spatial_marker_selection_mode", selected = config$marker_selection_mode)
+      updateSelectizeInput(session, "colocalization_heatmap_markers", selected = config$markers)
+      updateNumericInput(session, "spatial_top_marker_count", value = config$top_marker_count)
+      updateNumericInput(session, "spatial_min_pct_detected", value = config$min_pct_detected)
+      updateNumericInput(session, "spatial_min_log2_range", value = config$min_log2_range)
+      updateSelectInput(session, "colocalization_reference_condition", selected = config$reference_condition)
+      updateSelectInput(session, "colocalization_clustering_method", selected = config$clustering_method)
+      updateNumericInput(session, "colocalization_legend_min", value = config$legend_min)
+      updateNumericInput(session, "colocalization_legend_max", value = config$legend_max)
+      invisible(config)
+    }
+
+    colocalization_heatmap_config_from_inputs <- function() {
+      current_config <- isolate(colocalization_heatmap_config())
+      scope <- input$spatial_coloc_scope
+      if (is.null(scope) || length(scope) != 1 || !scope %in% c("condition", "sample", "celltype")) {
+        scope <- current_config$scope %||% "condition"
+      }
+      focus_celltype <- input$spatial_celltype_focus
+      if (is.null(focus_celltype) || length(focus_celltype) != 1 || is.na(focus_celltype) || !nzchar(focus_celltype)) {
+        focus_celltype <- current_config$focus_celltype
+      }
+      reference_condition <- input$colocalization_reference_condition
+      if (is.null(reference_condition) || length(reference_condition) != 1 || is.na(reference_condition) || !nzchar(reference_condition)) {
+        reference_condition <- current_config$reference_condition
+      }
+
+      list(
+        preset = "custom",
+        scope = scope,
+        focus_celltype = focus_celltype,
+        marker_selection_mode = input$spatial_marker_selection_mode %||% "auto",
+        markers = as.character(input$colocalization_heatmap_markers %||% character()),
+        top_marker_count = numeric_input_value(input$spatial_top_marker_count, 20),
+        min_pct_detected = numeric_input_value(input$spatial_min_pct_detected, 0.25),
+        min_log2_range = numeric_input_value(input$spatial_min_log2_range, 0.2),
+        reference_condition = reference_condition,
+        clustering_method = input$colocalization_clustering_method %||% "ward.D2",
+        legend_min = numeric_input_value(input$colocalization_legend_min, -1),
+        legend_max = numeric_input_value(input$colocalization_legend_max, 1)
+      )
+    }
 
     colocalization_differential_config_from_inputs <- function(current_data, anchor_marker = NULL) {
       make_differential_config(
@@ -190,19 +295,54 @@ colocalization_module_server <- function(id, data) {
       cell_types <- sort(unique(current_data$metadata$celltype_manual))
       default_group_a <- conditions[1]
       default_group_b <- conditions[min(2, length(conditions))]
-      colocalization_pairs <- sort(unique(current_data$colocalization$marker_pair))
-      colocalization_markers <- available_colocalization_marker_choices(current_data$colocalization)
+      pair_source <- current_data$colocalization_summary %||% current_data$colocalization
+      colocalization_pairs <- sort(unique(pair_source$marker_pair))
+      marker_source <- current_data$colocalization_sample_summary %||% pair_source
+      colocalization_markers <- available_colocalization_marker_choices(marker_source)
       default_heatmap_markers <- head(colocalization_markers, min(20L, length(colocalization_markers)))
       default_colocalization_reference <- if ("CD3CD28" %in% conditions) "CD3CD28" else conditions[1]
 
-      updateSelectizeInput(session, "colocalization_heatmap_markers", choices = colocalization_markers, selected = default_heatmap_markers)
-      updateSelectInput(session, "spatial_celltype_focus", choices = cell_types, selected = cell_types[1])
+      heatmap_config <- isolate(colocalization_heatmap_config())
+      if (is.null(heatmap_config)) {
+        heatmap_config <- make_colocalization_heatmap_config(colocalization_markers, conditions, cell_types)
+      } else {
+        heatmap_config$markers <- intersect(heatmap_config$markers, colocalization_markers)
+        if (length(heatmap_config$markers) < 2) {
+          heatmap_config$markers <- default_heatmap_markers
+        }
+        if (
+          is.null(heatmap_config$focus_celltype) ||
+            length(heatmap_config$focus_celltype) != 1 ||
+            !heatmap_config$focus_celltype %in% cell_types
+        ) {
+          heatmap_config$focus_celltype <- cell_types[1]
+        }
+        if (
+          is.null(heatmap_config$reference_condition) ||
+            length(heatmap_config$reference_condition) != 1 ||
+            !heatmap_config$reference_condition %in% conditions
+        ) {
+          heatmap_config$reference_condition <- default_colocalization_reference
+        }
+      }
+
+      updateSelectizeInput(session, "colocalization_heatmap_markers", choices = colocalization_markers, selected = heatmap_config$markers)
+      updateSelectInput(session, "spatial_celltype_focus", choices = cell_types, selected = heatmap_config$focus_celltype)
       updateSelectInput(
         session,
         "colocalization_reference_condition",
         choices = conditions,
-        selected = default_colocalization_reference
+        selected = heatmap_config$reference_condition
       )
+      update_colocalization_heatmap_inputs(heatmap_config)
+      set_colocalization_heatmap_config(heatmap_config)
+      if (identical(heatmap_config$preset, "custom")) {
+        custom_colocalization_heatmap_config(heatmap_config)
+      } else if (is.null(isolate(custom_colocalization_heatmap_config()))) {
+        custom_colocalization_heatmap_config(
+          make_colocalization_heatmap_config(colocalization_markers, conditions, cell_types)
+        )
+      }
 
       updateSelectizeInput(session, "colocalization_condition_filter", choices = conditions, selected = conditions)
       updateSelectizeInput(session, "colocalization_celltype_filter", choices = cell_types, selected = cell_types)
@@ -246,17 +386,28 @@ colocalization_module_server <- function(id, data) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$colocalization_heatmap_preset, {
-      if (!identical(input$colocalization_heatmap_preset, "report")) {
-        return(invisible(NULL))
+      current_config <- isolate(colocalization_heatmap_config())
+      req(current_config)
+
+      if (identical(input$colocalization_heatmap_preset, "report")) {
+        if (identical(current_config$preset, "custom")) {
+          custom_colocalization_heatmap_config(current_config)
+        }
+        new_config <- report_colocalization_heatmap_config(current_config)
+      } else {
+        new_config <- isolate(custom_colocalization_heatmap_config()) %||% current_config
+        new_config$preset <- "custom"
       }
 
-      updateSelectInput(session, "spatial_marker_selection_mode", selected = "auto")
-      updateNumericInput(session, "spatial_top_marker_count", value = 40)
-      updateNumericInput(session, "spatial_min_pct_detected", value = 0.25)
-      updateNumericInput(session, "spatial_min_log2_range", value = 0.2)
-      updateNumericInput(session, "colocalization_legend_min", value = -0.75)
-      updateNumericInput(session, "colocalization_legend_max", value = 0.75)
-      updateSelectInput(session, "colocalization_clustering_method", selected = "ward.D2")
+      update_colocalization_heatmap_inputs(new_config)
+      set_colocalization_heatmap_config(new_config)
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$apply_colocalization_heatmap, {
+      new_config <- colocalization_heatmap_config_from_inputs()
+      custom_colocalization_heatmap_config(new_config)
+      updateSelectInput(session, "colocalization_heatmap_preset", selected = "custom")
+      set_colocalization_heatmap_config(new_config)
     }, ignoreInit = TRUE)
 
     observe({
@@ -339,92 +490,81 @@ colocalization_module_server <- function(id, data) {
       ]
     })
 
-    colocalization_heatmap_rows <- reactive({
+    colocalization_all_marker_summary <- reactive({
       current_data <- data()
-      req(current_data)
+      summary_config <- colocalization_heatmap_summary_config()
+      req(current_data, summary_config)
 
       metadata <- colocalization_metadata()
-      if (
-        nrow(metadata) == nrow(current_data$metadata) &&
-          setequal(metadata$component, current_data$metadata$component)
-      ) {
-        return(current_data$colocalization)
-      }
-      current_data$colocalization[current_data$colocalization$component %in% metadata$component, , drop = FALSE]
-    })
+      validate(need(nrow(metadata) > 0, "No cells are available for the selected filters."))
 
-    colocalization_heatmap_result <- reactive({
-      current_data <- data()
-      req(current_data)
-
-      colocalization <- colocalization_heatmap_rows()
-      validate(need(nrow(colocalization) > 0, "No colocalization scores are available for the selected filters."))
-      if (!"sample_alias" %in% names(colocalization)) {
-        colocalization$sample_alias <- "sample"
-      }
-
-      scope <- input$spatial_coloc_scope %||% "condition"
-      if (length(scope) == 0) {
-        scope <- "condition"
-      }
+      scope <- summary_config$scope
       if (!scope %in% c("condition", "sample", "celltype")) {
         scope <- "condition"
       }
-      marker_selection_mode <- input$spatial_marker_selection_mode %||% "auto"
-      if (length(marker_selection_mode) == 0) {
-        marker_selection_mode <- "auto"
-      }
-
-      selected_conditions <- selected_or_all(
-        input$colocalization_condition_filter,
-        sort(unique(as.character(current_data$metadata$condition)))
-      )
-      selected_conditions <- intersect(selected_conditions, unique(as.character(colocalization$condition)))
-      validate(need(length(selected_conditions) > 0, "Select at least one analysis group for the colocalization heatmap."))
-
-      if (!setequal(selected_conditions, unique(as.character(colocalization$condition)))) {
-        colocalization <- colocalization[colocalization$condition %in% selected_conditions, , drop = FALSE]
-      }
 
       if (identical(scope, "celltype")) {
-        focus_celltype <- input$spatial_celltype_focus
+        focus_celltype <- summary_config$focus_celltype
         if (is.null(focus_celltype) || length(focus_celltype) == 0 || is.na(focus_celltype) || !nzchar(focus_celltype)) {
-          focus_celltype <- sort(unique(as.character(colocalization$celltype_manual)))[1]
+          focus_celltype <- sort(unique(as.character(metadata$celltype_manual)))[1]
         }
-        colocalization <- colocalization[colocalization$celltype_manual == focus_celltype, , drop = FALSE]
-        validate(need(nrow(colocalization) > 0, "No colocalization scores are available for the selected cell type focus."))
+        metadata <- metadata[metadata$celltype_manual == focus_celltype, , drop = FALSE]
+        validate(need(nrow(metadata) > 0, "No cells are available for the selected cell type focus."))
       }
 
-      available_markers <- available_colocalization_marker_choices(colocalization)
-      requested_markers <- selected_or_all(input$colocalization_heatmap_markers, available_markers)
+      sample_summary <- current_data$colocalization_sample_summary
+      if (is.null(sample_summary)) {
+        sample_summary <- summarize_colocalization_by_sample(current_data$colocalization)
+      }
+      available_markers <- available_colocalization_marker_choices(sample_summary)
+      validate(need(length(available_markers) >= 2, "No colocalization scores are available for the selected filters."))
+
+      spatial_heatmap_summary_for_scope(
+        selected_markers = available_markers,
+        scope = scope,
+        sample_summary = sample_summary,
+        metadata = metadata
+      )
+    })
+
+    colocalization_heatmap_result <- reactive({
+      config <- colocalization_heatmap_config()
+      marker_summary <- colocalization_all_marker_summary()
+      req(config)
+      validate(need(nrow(marker_summary) > 0, "No colocalization scores are available for the selected filters."))
+
+      scope <- config$scope
+      marker_selection_mode <- config$marker_selection_mode
+      available_markers <- available_colocalization_marker_choices(marker_summary)
+      requested_markers <- selected_or_all(config$markers, available_markers)
       requested_markers <- intersect(requested_markers, available_markers)
       candidate_markers <- if (identical(marker_selection_mode, "auto")) available_markers else requested_markers
       validate(need(length(candidate_markers) >= 2, "Select at least two markers for the spatial heatmap."))
 
-      marker_summary <- spatial_heatmap_summary_for_scope(
-        colocalization = colocalization,
-        selected_markers = candidate_markers,
-        scope = scope,
-        selected_conditions = selected_conditions
-      )
+      candidate_summary <- marker_summary[
+        marker_summary$marker_1 %in% candidate_markers &
+          marker_summary$marker_2 %in% candidate_markers,
+        ,
+        drop = FALSE
+      ]
       selected_markers <- spatial_heatmap_selected_markers(
-        summary = marker_summary,
+        summary = candidate_summary,
         available_markers = candidate_markers,
         requested_markers = requested_markers,
         marker_selection_mode = marker_selection_mode,
-        n_markers = input$spatial_top_marker_count,
-        min_pct_detected = input$spatial_min_pct_detected,
-        min_range = input$spatial_min_log2_range
+        n_markers = config$top_marker_count,
+        min_pct_detected = config$min_pct_detected,
+        min_range = config$min_log2_range
       )
       validate(need(length(selected_markers) >= 2, "Select at least two markers for the spatial heatmap."))
       validate(need(length(selected_markers) <= 40, "Use 40 or fewer markers for an interpretable spatial heatmap."))
 
-      summary <- spatial_heatmap_summary_for_scope(
-        colocalization = colocalization,
-        selected_markers = selected_markers,
-        scope = scope,
-        selected_conditions = selected_conditions
-      )
+      summary <- marker_summary[
+        marker_summary$marker_1 %in% selected_markers &
+          marker_summary$marker_2 %in% selected_markers,
+        ,
+        drop = FALSE
+      ]
       validate(need(nrow(summary) > 0, "No colocalization scores are available for the selected markers."))
 
       group_cols <- spatial_heatmap_group_cols(scope)
@@ -437,6 +577,15 @@ colocalization_module_server <- function(id, data) {
       plot_groups <- unique(as.character(summary[[condition_col]]))
       plot_groups <- plot_groups[nzchar(plot_groups)]
       validate(need(length(plot_groups) > 0, "No spatial heatmap groups are available for the selected filters."))
+      selected_conditions <- unique(as.character(summary$condition))
+      reference_condition <- config$reference_condition
+      if (
+        is.null(reference_condition) ||
+          length(reference_condition) != 1 ||
+          !reference_condition %in% selected_conditions
+      ) {
+        reference_condition <- selected_conditions[1]
+      }
 
       result <- make_coloc_heatmaps(
         data = summary,
@@ -444,19 +593,19 @@ colocalization_module_server <- function(id, data) {
         cell_label = spatial_heatmap_cell_label(
           scope,
           selected_celltypes = input$colocalization_celltype_filter,
-          focus_celltype = input$spatial_celltype_focus
+          focus_celltype = config$focus_celltype
         ),
         conditions = plot_groups,
         reference_condition = if (identical(scope, "condition")) {
-          input$colocalization_reference_condition %||% selected_conditions[1]
+          reference_condition
         } else {
           plot_groups[1]
         },
         condition_col = condition_col,
-        clustering_method = input$colocalization_clustering_method %||% "ward.D2",
+        clustering_method = config$clustering_method,
         legend_range = colocalization_legend_range(
-          input$colocalization_legend_min,
-          input$colocalization_legend_max
+          config$legend_min,
+          config$legend_max
         )
       )
       result$summary <- summary

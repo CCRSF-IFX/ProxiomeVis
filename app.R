@@ -535,11 +535,22 @@ spatial_heatmap_group_cols <- function(scope) {
 }
 
 spatial_heatmap_summary_for_scope <- function(
-  colocalization,
+  colocalization = NULL,
   selected_markers,
   scope,
-  selected_conditions
+  selected_conditions = NULL,
+  sample_summary = NULL,
+  metadata = NULL
 ) {
+  if (!is.null(sample_summary) && !is.null(metadata)) {
+    return(summarize_cached_spatial_heatmap(
+      sample_summary = sample_summary,
+      metadata = metadata,
+      selected_markers = selected_markers,
+      group_cols = spatial_heatmap_group_cols(scope)
+    ))
+  }
+
   if (identical(scope, "sample")) {
     return(summarize_spatial_heatmap_by_sample(
       proximity = colocalization,

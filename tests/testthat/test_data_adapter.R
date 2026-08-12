@@ -105,6 +105,8 @@ test_that("older cached data is upgraded with spatial sample aliases", {
   expect_equal(data$metadata$sample_alias, c("sample-1", "sample-2"))
   expect_equal(data$colocalization$sample_alias, c("sample-1", "sample-2"))
   expect_equal(data$clustering$sample_alias, c("sample-1", "sample-2"))
+  expect_equal(nrow(data$colocalization_sample_summary), 2L)
+  expect_equal(data$colocalization_sample_summary$n_values, c(1L, 1L))
 })
 
 test_that("proxiome readout context names the three required readouts", {
@@ -261,12 +263,39 @@ test_that("proximity summarization separates self clustering from pair colocaliz
 
   readouts <- summarize_proximity_readouts(proximity, metadata)
 
-  expect_named(readouts, c("clustering", "clustering_summary", "colocalization", "colocalization_summary"))
+  expect_named(readouts, c(
+    "clustering", "clustering_summary", "colocalization",
+    "colocalization_summary", "colocalization_sample_summary"
+  ))
   expect_equal(unique(readouts$clustering$marker), "CD81")
   expect_equal(unique(readouts$colocalization$marker_pair), "CD53 / CD58")
   expect_equal(readouts$colocalization$sample_alias, c("sample-1", "sample-2"))
   expect_equal(readouts$clustering_summary$n_cells, c(1L, 1L))
   expect_equal(readouts$colocalization_summary$n_cells, c(1L, 1L))
+  expect_equal(readouts$colocalization_sample_summary$n_values, c(1L, 1L))
+})
+
+test_that("sample colocalization summaries preserve weighted means and detected cells", {
+  colocalization <- data.frame(
+    component = c("cell-a", "cell-b", "cell-a", "cell-c"),
+    sample_alias = c("S1", "S1", "S1", "S2"),
+    celltype_manual = c("T", "T", "T", "B"),
+    marker_1 = c("CD3e", "CD3e", "CD4", "CD3e"),
+    marker_2 = c("CD4", "CD4", "CD8", "CD4"),
+    log2_ratio = c(1, 3, 0.5, -1),
+    stringsAsFactors = FALSE
+  )
+
+  summary <- summarize_colocalization_by_sample(colocalization)
+  cd3_cd4_s1 <- summary[
+    summary$sample_alias == "S1" & summary$marker_1 == "CD3e",
+    ,
+    drop = FALSE
+  ]
+
+  expect_equal(cd3_cd4_s1$sum_log2_ratio, 4)
+  expect_equal(cd3_cd4_s1$n_values, 2L)
+  expect_equal(cd3_cd4_s1$n_detected, 2L)
 })
 
 test_that("proximity and abundance summaries avoid base R merge and aggregate hot paths", {
