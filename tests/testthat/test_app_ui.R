@@ -79,6 +79,9 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="colocalization-colocalization_heatmap_preset"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_coloc_scope"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_celltype_focus"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_view"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_focus_group"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_heatmap_compare_groups"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_marker_selection_mode"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_top_marker_count"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_min_pct_detected"', html, fixed = TRUE))
@@ -139,7 +142,8 @@ test_that("report heatmap preset is a single reusable configuration", {
   report <- report_colocalization_heatmap_config(custom)
 
   expect_equal(report$preset, "report")
-  expect_equal(report$top_marker_count, 40L)
+  expect_equal(report$view_mode, "compare")
+  expect_equal(report$top_marker_count, 15L)
   expect_equal(c(report$legend_min, report$legend_max), c(-0.75, 0.75))
   expect_equal(report$clustering_method, "ward.D2")
 })
@@ -323,8 +327,10 @@ test_that("figure panes expose plot options next to downloads", {
   for (base_id in option_bases) {
     expect_true(grepl(paste0('id="', base_id, '_width_options"'), html, fixed = TRUE))
     expect_true(grepl(paste0('id="', base_id, '_display"'), html, fixed = TRUE))
-    expect_true(grepl(paste0('id="', base_id, '_view_width"'), html, fixed = TRUE))
-    expect_true(grepl(paste0('id="', base_id, '_view_height"'), html, fixed = TRUE))
+    if (!identical(base_id, "colocalization-colocalization_heatmap")) {
+      expect_true(grepl(paste0('id="', base_id, '_view_width"'), html, fixed = TRUE))
+      expect_true(grepl(paste0('id="', base_id, '_view_height"'), html, fixed = TRUE))
+    }
     expect_true(grepl(paste0('id="', base_id, '_width"'), html, fixed = TRUE))
     expect_true(grepl(paste0('id="', base_id, '_height"'), html, fixed = TRUE))
   }
@@ -1133,7 +1139,7 @@ test_that("colocalization heatmap mirrors completed one-direction marker pairs",
   expect_false(any(is.na(result$plot_data$plot_value)))
 })
 
-test_that("colocalization heatmap Plotly output displays a pct_detected size legend", {
+test_that("colocalization heatmap Plotly output displays a clean detected-fraction legend", {
   coloc_summary <- expand.grid(
     condition = c("CD3CD28", "UNT"),
     marker_1 = c("CD3e", "CD4", "CD8"),
@@ -1155,8 +1161,8 @@ test_that("colocalization heatmap Plotly output displays a pct_detected size leg
 
   expect_s3_class(widget, "plotly")
   expect_true(isTRUE(widget$x$layout$showlegend))
-  expect_equal(widget$x$layout$legend$title$text, "pct_detected")
-  expect_true(any(grepl("pct_detected", vapply(widget$x$data, function(trace) trace$name %||% "", character(1)), fixed = TRUE)))
+  expect_equal(widget$x$layout$legend$title$text, "Detected fraction")
+  expect_true(any(vapply(widget$x$data, function(trace) identical(trace$name, "25%"), logical(1))))
 })
 
 test_that("colocalization observed heatmap uses one Plotly renderer without plot style control", {
@@ -1209,6 +1215,72 @@ test_that("colocalization heatmap Plotly output preserves square heatmap panels"
   expect_equal(widget$x$layout$margin, dimensions$margin)
   expect_equal(widget$x$layout$yaxis$scaleanchor, "x")
   expect_equal(widget$x$layout$yaxis$scaleratio, 1)
+})
+
+test_that("colocalization comparison heatmaps use an adaptive two-column grid", {
+  markers <- paste0("M", seq_len(11))
+  coloc_summary <- expand.grid(
+    condition = paste0("Group ", seq_len(6)),
+    marker_1 = markers,
+    marker_2 = markers,
+    stringsAsFactors = FALSE
+  )
+  coloc_summary <- coloc_summary[coloc_summary$marker_1 != coloc_summary$marker_2, , drop = FALSE]
+  coloc_summary$mean_log2_ratio <- 0.2
+  coloc_summary$pct_detected <- 0.5
+
+  result <- make_coloc_heatmaps(
+    data = coloc_summary,
+    selected_markers = markers,
+    cell_label = "selected cells",
+    conditions = unique(coloc_summary$condition),
+    facet_columns = 2L
+  )
+  dimensions <- coloc_heatmap_widget_dimensions(result$plot_data, result$facet_columns)
+  widget <- coloc_heatmap_plotly(result)
+
+  expect_equal(result$facet_columns, 2L)
+  expect_equal(dimensions$facet_rows, 3L)
+  expect_equal(dimensions$panel_px, coloc_heatmap_panel_px(length(markers)))
+  expect_gt(dimensions$height, dimensions$width)
+  expect_false(widget$x$layout$xaxis$showticklabels)
+  expect_true(widget$x$layout$yaxis$showticklabels)
+  expect_false(widget$x$layout$yaxis2$showticklabels)
+})
+
+test_that("colocalization heatmap view planning protects dense comparisons", {
+  groups <- paste0("Group ", seq_len(8))
+
+  comparison <- colocalization_heatmap_view_plan(
+    view_mode = "compare",
+    marker_count = 15L,
+    available_groups = groups,
+    comparison_groups = groups[c(3, 1, 5)]
+  )
+  expect_equal(comparison$view_mode, "compare")
+  expect_equal(comparison$plot_groups, groups[c(3, 1, 5)])
+  expect_equal(comparison$facet_columns, 2L)
+  expect_null(comparison$density_notice)
+
+  caution <- colocalization_heatmap_view_plan(
+    view_mode = "compare",
+    marker_count = 16L,
+    available_groups = groups,
+    comparison_groups = groups[1:4]
+  )
+  expect_match(caution$density_notice, "15 or fewer")
+
+  focused <- colocalization_heatmap_view_plan(
+    view_mode = "compare",
+    marker_count = 21L,
+    available_groups = groups,
+    focus_group = "missing",
+    reference_group = groups[2]
+  )
+  expect_equal(focused$view_mode, "focused")
+  expect_equal(focused$plot_groups, groups[2])
+  expect_equal(focused$facet_columns, 1L)
+  expect_match(focused$density_notice, "Showing one focused group")
 })
 
 test_that("colocalization heatmap caps marker size for dense marker panels", {

@@ -33,6 +33,23 @@ colocalization_sidebar <- function(id) {
             selectInput(ns("spatial_celltype_focus"), "Cell type focus", choices = character(0))
           ),
           selectInput(
+            ns("colocalization_heatmap_view"),
+            "Group display",
+            choices = c("Focused group" = "focused", "Compare groups" = "compare"),
+            selected = "focused"
+          ),
+          conditionalPanel(
+            condition = "input.colocalization_heatmap_view == 'focused'",
+            ns = ns,
+            selectInput(ns("colocalization_heatmap_focus_group"), "Displayed group", choices = character(0))
+          ),
+          conditionalPanel(
+            condition = "input.colocalization_heatmap_view == 'compare'",
+            ns = ns,
+            selectizeInput(ns("colocalization_heatmap_compare_groups"), "Groups to compare", choices = character(0), multiple = TRUE),
+            helpText("Comparison uses a two-column grid. For the clearest labels, use 15 or fewer markers.")
+          ),
+          selectInput(
             ns("spatial_marker_selection_mode"),
             "Marker set",
             choices = c(
@@ -58,10 +75,11 @@ colocalization_sidebar <- function(id) {
           ),
           numericInput(ns("colocalization_legend_min"), "Legend minimum", value = -1, step = 0.1),
           numericInput(ns("colocalization_legend_max"), "Legend maximum", value = 1, step = 0.1),
-          helpText("Report style applies 40 variable markers, Ward D2 ordering, and a -0.75 to 0.75 legend. Custom changes are applied together."),
+          helpText("Report style applies 15 variable markers, a comparison grid, Ward D2 ordering, and a -0.75 to 0.75 legend."),
           conditionalPanel(
             condition = "input.colocalization_heatmap_preset == 'custom'",
             ns = ns,
+            uiOutput(ns("colocalization_heatmap_settings_status")),
             actionButton(ns("apply_colocalization_heatmap"), "Apply heatmap settings", class = "btn-primary w-100")
           )
         ),
@@ -130,6 +148,9 @@ make_colocalization_heatmap_config <- function(
     preset = preset,
     scope = "condition",
     focus_celltype = cell_types[1],
+    view_mode = "focused",
+    focus_group = reference_condition,
+    comparison_groups = head(conditions, 6L),
     marker_selection_mode = "auto",
     markers = head(markers, min(20L, length(markers))),
     top_marker_count = 20L,
@@ -144,14 +165,74 @@ make_colocalization_heatmap_config <- function(
 
 report_colocalization_heatmap_config <- function(config) {
   config$preset <- "report"
+  config$view_mode <- "compare"
   config$marker_selection_mode <- "auto"
-  config$top_marker_count <- 40L
+  config$top_marker_count <- 15L
   config$min_pct_detected <- 0.25
   config$min_log2_range <- 0.2
   config$clustering_method <- "ward.D2"
   config$legend_min <- -0.75
   config$legend_max <- 0.75
   config
+}
+
+colocalization_heatmap_view_plan <- function(
+  view_mode,
+  marker_count,
+  available_groups,
+  focus_group = NULL,
+  comparison_groups = character(),
+  reference_group = NULL
+) {
+  available_groups <- unique(as.character(available_groups))
+  available_groups <- available_groups[!is.na(available_groups) & nzchar(available_groups)]
+  view_mode <- as.character(view_mode[1])
+  if (length(view_mode) == 0 || is.na(view_mode) || !view_mode %in% c("focused", "compare")) {
+    view_mode <- "focused"
+  }
+
+  marker_count <- suppressWarnings(as.integer(marker_count[1]))
+  if (length(marker_count) == 0 || is.na(marker_count)) {
+    marker_count <- 0L
+  }
+  density_notice <- NULL
+  if (identical(view_mode, "compare") && marker_count > 20L) {
+    view_mode <- "focused"
+    density_notice <- "Comparison view supports up to 20 markers. Showing one focused group for readability."
+  } else if (identical(view_mode, "compare") && marker_count > 15L) {
+    density_notice <- "For clearer comparison labels, use 15 or fewer markers."
+  }
+
+  if (identical(view_mode, "compare")) {
+    plot_groups <- intersect(as.character(comparison_groups), available_groups)
+    if (length(plot_groups) == 0) {
+      plot_groups <- head(available_groups, 6L)
+    }
+    facet_columns <- min(2L, length(plot_groups))
+  } else {
+    focus_group <- as.character(focus_group[1])
+    if (length(focus_group) == 0 || is.na(focus_group) || !focus_group %in% available_groups) {
+      reference_group <- as.character(reference_group[1])
+      focus_group <- if (
+        length(reference_group) > 0 &&
+          !is.na(reference_group) &&
+          reference_group %in% available_groups
+      ) {
+        reference_group
+      } else {
+        available_groups[1]
+      }
+    }
+    plot_groups <- focus_group
+    facet_columns <- 1L
+  }
+
+  list(
+    view_mode = view_mode,
+    plot_groups = plot_groups,
+    facet_columns = facet_columns,
+    density_notice = density_notice
+  )
 }
 
 colocalization_module_ui <- function(id) {
@@ -167,11 +248,21 @@ colocalization_module_ui <- function(id) {
         full_screen = TRUE,
         nav_panel(
           "Observed",
+          uiOutput(ns("colocalization_heatmap_notice")),
           plot_pane(
             size = "scroll",
             extra_class = "coloc-heatmap-pane",
             download_id = "colocalization_heatmap",
             ns = ns,
+            controls = plot_options_controls(
+              ns,
+              "colocalization_heatmap_width",
+              "colocalization_heatmap_height",
+              width_value = 1000,
+              height_value = 1200,
+              max_value = 5000,
+              show_view_dimensions = FALSE
+            ),
             plotlyOutput(ns("colocalization_heatmap"), height = "auto")
           ),
           div(class = "table-pane", tableOutput(ns("colocalization_table")))
@@ -228,6 +319,9 @@ colocalization_module_server <- function(id, data) {
       updateSelectInput(session, "colocalization_heatmap_preset", selected = config$preset)
       updateSelectInput(session, "spatial_coloc_scope", selected = config$scope)
       updateSelectInput(session, "spatial_celltype_focus", selected = config$focus_celltype)
+      updateSelectInput(session, "colocalization_heatmap_view", selected = config$view_mode)
+      updateSelectInput(session, "colocalization_heatmap_focus_group", selected = config$focus_group)
+      updateSelectizeInput(session, "colocalization_heatmap_compare_groups", selected = config$comparison_groups)
       updateSelectInput(session, "spatial_marker_selection_mode", selected = config$marker_selection_mode)
       updateSelectizeInput(session, "colocalization_heatmap_markers", selected = config$markers)
       updateNumericInput(session, "spatial_top_marker_count", value = config$top_marker_count)
@@ -254,11 +348,18 @@ colocalization_module_server <- function(id, data) {
       if (is.null(reference_condition) || length(reference_condition) != 1 || is.na(reference_condition) || !nzchar(reference_condition)) {
         reference_condition <- current_config$reference_condition
       }
+      view_mode <- input$colocalization_heatmap_view
+      if (is.null(view_mode) || length(view_mode) != 1 || !view_mode %in% c("focused", "compare")) {
+        view_mode <- current_config$view_mode %||% "focused"
+      }
 
       list(
         preset = "custom",
         scope = scope,
         focus_celltype = focus_celltype,
+        view_mode = view_mode,
+        focus_group = input$colocalization_heatmap_focus_group %||% current_config$focus_group,
+        comparison_groups = as.character(input$colocalization_heatmap_compare_groups %||% current_config$comparison_groups),
         marker_selection_mode = input$spatial_marker_selection_mode %||% "auto",
         markers = as.character(input$colocalization_heatmap_markers %||% character()),
         top_marker_count = numeric_input_value(input$spatial_top_marker_count, 20),
@@ -324,6 +425,9 @@ colocalization_module_server <- function(id, data) {
         ) {
           heatmap_config$reference_condition <- default_colocalization_reference
         }
+        heatmap_config$view_mode <- heatmap_config$view_mode %||% "focused"
+        heatmap_config$focus_group <- heatmap_config$focus_group %||% default_colocalization_reference
+        heatmap_config$comparison_groups <- heatmap_config$comparison_groups %||% head(conditions, 6L)
       }
 
       updateSelectizeInput(session, "colocalization_heatmap_markers", choices = colocalization_markers, selected = heatmap_config$markers)
@@ -459,6 +563,61 @@ colocalization_module_server <- function(id, data) {
       filtered_metadata_for(input$colocalization_condition_filter, input$colocalization_celltype_filter)
     })
 
+    observe({
+      current_data <- data()
+      req(current_data)
+
+      scope <- input$spatial_coloc_scope %||% "condition"
+      metadata <- colocalization_metadata()
+      if (identical(scope, "celltype") && !is.null(input$spatial_celltype_focus)) {
+        metadata <- metadata[metadata$celltype_manual == input$spatial_celltype_focus, , drop = FALSE]
+      }
+      groups <- spatial_heatmap_group_values(metadata, scope)
+      req(length(groups) > 0)
+
+      active_config <- isolate(colocalization_heatmap_config())
+      focus_group <- input$colocalization_heatmap_focus_group
+      if (is.null(focus_group) || !focus_group %in% groups) {
+        focus_group <- active_config$focus_group
+      }
+      if (is.null(focus_group) || !focus_group %in% groups) {
+        focus_group <- groups[1]
+      }
+
+      comparison_groups <- intersect(input$colocalization_heatmap_compare_groups %||% character(), groups)
+      if (length(comparison_groups) == 0) {
+        comparison_groups <- intersect(active_config$comparison_groups %||% character(), groups)
+      }
+      if (length(comparison_groups) == 0) {
+        comparison_groups <- head(groups, 6L)
+      }
+
+      updateSelectInput(session, "colocalization_heatmap_focus_group", choices = groups, selected = focus_group)
+      updateSelectizeInput(
+        session,
+        "colocalization_heatmap_compare_groups",
+        choices = groups,
+        selected = comparison_groups
+      )
+    })
+
+    output$colocalization_heatmap_settings_status <- renderUI({
+      req(identical(input$colocalization_heatmap_preset, "custom"))
+      active_config <- colocalization_heatmap_config()
+      input_config <- colocalization_heatmap_config_from_inputs()
+      fields <- c(
+        "scope", "focus_celltype", "view_mode", "focus_group", "comparison_groups",
+        "marker_selection_mode", "markers", "top_marker_count", "min_pct_detected",
+        "min_log2_range", "reference_condition", "clustering_method", "legend_min", "legend_max"
+      )
+      pending <- !identical(active_config[fields], input_config[fields])
+
+      if (pending) {
+        return(div(class = "alert alert-warning py-2 mb-2", "Settings changed — click Apply to update the heatmap."))
+      }
+      div(class = "small text-muted mb-2", "Heatmap settings are applied.")
+    })
+
     colocalization_diff_results <- reactive({
       current_data <- data()
       config <- colocalization_diff_config()
@@ -574,9 +733,9 @@ colocalization_module_server <- function(id, data) {
         group_cols = group_cols
       )
       condition_col <- if (identical(scope, "condition")) "condition" else "sample_alias"
-      plot_groups <- unique(as.character(summary[[condition_col]]))
-      plot_groups <- plot_groups[nzchar(plot_groups)]
-      validate(need(length(plot_groups) > 0, "No spatial heatmap groups are available for the selected filters."))
+      available_plot_groups <- unique(as.character(summary[[condition_col]]))
+      available_plot_groups <- available_plot_groups[nzchar(available_plot_groups)]
+      validate(need(length(available_plot_groups) > 0, "No spatial heatmap groups are available for the selected filters."))
       selected_conditions <- unique(as.character(summary$condition))
       reference_condition <- config$reference_condition
       if (
@@ -586,6 +745,16 @@ colocalization_module_server <- function(id, data) {
       ) {
         reference_condition <- selected_conditions[1]
       }
+
+      view_plan <- colocalization_heatmap_view_plan(
+        view_mode = config$view_mode %||% "focused",
+        marker_count = length(selected_markers),
+        available_groups = available_plot_groups,
+        focus_group = config$focus_group,
+        comparison_groups = config$comparison_groups %||% character(),
+        reference_group = if (identical(scope, "condition")) reference_condition else NULL
+      )
+      plot_groups <- view_plan$plot_groups
 
       result <- make_coloc_heatmaps(
         data = summary,
@@ -603,15 +772,26 @@ colocalization_module_server <- function(id, data) {
         },
         condition_col = condition_col,
         clustering_method = config$clustering_method,
+        facet_columns = view_plan$facet_columns,
         legend_range = colocalization_legend_range(
           config$legend_min,
           config$legend_max
         )
       )
-      result$summary <- summary
+      result$summary <- summary[summary[[condition_col]] %in% plot_groups, , drop = FALSE]
       result$scope <- scope
       result$condition_col <- condition_col
+      result$view_mode <- view_plan$view_mode
+      result$density_notice <- view_plan$density_notice
       result
+    })
+
+    output$colocalization_heatmap_notice <- renderUI({
+      notice <- colocalization_heatmap_result()$density_notice
+      if (is.null(notice) || !nzchar(notice)) {
+        return(NULL)
+      }
+      div(class = "alert alert-warning py-2 mb-2", notice)
     })
 
     output$colocalization_heatmap <- renderPlotly({
@@ -625,17 +805,19 @@ colocalization_module_server <- function(id, data) {
       colocalization_heatmap_result()$plot
     })
     colocalization_heatmap_dimensions <- reactive({
+      result <- colocalization_heatmap_result()
       plot_options_view_overrides(
         input,
         "colocalization_heatmap",
-        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
+        coloc_heatmap_widget_dimensions(result$plot_data, facet_columns = result$facet_columns)
       )
     })
     colocalization_heatmap_export_dimensions <- reactive({
+      result <- colocalization_heatmap_result()
       plot_options_export_overrides(
         input,
         "colocalization_heatmap",
-        coloc_heatmap_widget_dimensions(colocalization_heatmap_result()$plot_data)
+        coloc_heatmap_widget_dimensions(result$plot_data, facet_columns = result$facet_columns)
       )
     })
     register_ggplot_downloads(

@@ -59,6 +59,32 @@ test_that("plot options separate view display from export dimensions", {
   expect_equal(default_view$display, "fit")
 })
 
+test_that("heatmap options can leave screen dimensions automatic", {
+  withr::local_package("shiny")
+  controls <- plot_options_controls(
+    identity,
+    "heatmap_width",
+    "heatmap_height",
+    width_value = 1000,
+    height_value = 1200,
+    show_view_dimensions = FALSE
+  )
+  html <- htmltools::renderTags(controls)$html
+
+  expect_true(grepl('id="heatmap_display"', html, fixed = TRUE))
+  expect_false(grepl('id="heatmap_view_width"', html, fixed = TRUE))
+  expect_false(grepl('id="heatmap_view_height"', html, fixed = TRUE))
+  expect_true(grepl('id="heatmap_width"', html, fixed = TRUE))
+  expect_true(grepl('id="heatmap_height"', html, fixed = TRUE))
+})
+
+test_that("colocalization panel size follows marker density", {
+  expect_equal(coloc_heatmap_panel_px(), 340)
+  expect_equal(coloc_heatmap_panel_px(11), 320)
+  expect_equal(coloc_heatmap_panel_px(20), 520)
+  expect_equal(coloc_heatmap_panel_px(40), 720)
+})
+
 test_that("Plotly display dimensions fit by default and scroll when requested", {
   base_dimensions <- list(
     width = 960,

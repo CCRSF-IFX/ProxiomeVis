@@ -534,6 +534,16 @@ spatial_heatmap_group_cols <- function(scope) {
   )
 }
 
+spatial_heatmap_group_values <- function(metadata, scope) {
+  group_col <- if (identical(scope, "condition")) "condition" else "sample_alias"
+  if (!is.data.frame(metadata) || !group_col %in% names(metadata)) {
+    return(character(0))
+  }
+
+  groups <- sort(unique(as.character(metadata[[group_col]])))
+  groups[!is.na(groups) & nzchar(groups)]
+}
+
 spatial_heatmap_summary_for_scope <- function(
   colocalization = NULL,
   selected_markers,
@@ -834,6 +844,7 @@ make_coloc_heatmaps <- function(
   value_col = "mean_log2_ratio",
   size_col = "pct_detected",
   clustering_method = "ward.D2",
+  facet_columns = 2L,
   legend_range = c(-1, 1)
 ) {
   selected_markers <- as.character(selected_markers)
@@ -842,9 +853,10 @@ make_coloc_heatmaps <- function(
   if (length(conditions) == 0) {
     conditions <- unique(as.character(data[[condition_col]]))
   }
-  if (!reference_condition %in% conditions) {
+  if (!reference_condition %in% unique(as.character(data[[condition_col]]))) {
     reference_condition <- conditions[1]
   }
+  facet_columns <- max(1L, min(as.integer(facet_columns), length(conditions)))
 
   marker_order <- get_reference_marker_order(
     data = data,
@@ -895,30 +907,38 @@ make_coloc_heatmaps <- function(
     marker_order = marker_order,
     plots = plots,
     plot_data = plot_data,
+    facet_columns = facet_columns,
     plot = build_coloc_heatmap_plot(
       plot_data,
       cell_label = cell_label,
       legend_range = legend_range,
-      facet = TRUE
+      facet = TRUE,
+      facet_columns = facet_columns
     )
   )
 }
 
-coloc_heatmap_widget_dimensions <- function(plot_data) {
+coloc_heatmap_widget_dimensions <- function(plot_data, facet_columns = 2L) {
   condition_count <- length(unique(stats::na.omit(as.character(plot_data$plot_condition))))
   if (condition_count == 0) {
     condition_count <- 1L
   }
+  marker_count <- length(unique(stats::na.omit(as.character(plot_data$plot_marker_1))))
+  facet_columns <- max(1L, min(as.integer(facet_columns), condition_count))
+  facet_rows <- ceiling(condition_count / facet_columns)
 
   margins <- coloc_heatmap_plot_margins()
-  panel_px <- coloc_heatmap_panel_px()
+  panel_px <- coloc_heatmap_panel_px(marker_count)
 
   list(
-    width = panel_px * condition_count + margins$l + margins$r,
-    height = panel_px + margins$t + margins$b,
+    width = panel_px * facet_columns + margins$l + margins$r,
+    height = panel_px * facet_rows + margins$t + margins$b,
     margin = margins,
     panel_px = panel_px,
-    condition_count = condition_count
+    condition_count = condition_count,
+    facet_columns = facet_columns,
+    facet_rows = facet_rows,
+    marker_count = marker_count
   )
 }
 
@@ -933,31 +953,53 @@ apply_coloc_heatmap_square_layout <- function(widget, dimensions) {
   yaxis_names <- axis_names[grepl("^yaxis[0-9]*$", axis_names)]
 
   for (axis_name in xaxis_names) {
+    suffix <- sub("^xaxis", "", axis_name)
+    axis_index <- if (nzchar(suffix)) as.integer(suffix) else 1L
+    axis_row <- ceiling(axis_index / dimensions$facet_columns)
     widget$x$layout[[axis_name]] <- modifyList(
       widget$x$layout[[axis_name]] %||% list(),
-      list(automargin = TRUE, constrain = "domain")
+      list(
+        automargin = TRUE,
+        constrain = "domain",
+        showticklabels = axis_row == dimensions$facet_rows,
+        tickangle = 45,
+        tickfont = list(size = 10)
+      )
     )
+    if (axis_row != dimensions$facet_rows) {
+      widget$x$layout[[axis_name]]$title <- list(text = "")
+    }
   }
 
   for (axis_name in yaxis_names) {
     suffix <- sub("^yaxis", "", axis_name)
     scaleanchor <- paste0("x", suffix)
+    axis_index <- if (nzchar(suffix)) as.integer(suffix) else 1L
+    axis_column <- ((axis_index - 1L) %% dimensions$facet_columns) + 1L
     widget$x$layout[[axis_name]] <- modifyList(
       widget$x$layout[[axis_name]] %||% list(),
       list(
         automargin = TRUE,
         constrain = "domain",
         scaleanchor = scaleanchor,
-        scaleratio = 1
+        scaleratio = 1,
+        showticklabels = axis_column == 1L,
+        tickfont = list(size = 10)
       )
     )
+    if (axis_column != 1L) {
+      widget$x$layout[[axis_name]]$title <- list(text = "")
+    }
   }
 
   widget
 }
 
 coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Mean log2 ratio", dimensions = NULL) {
-  dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(coloc_result$plot_data)
+  dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(
+    coloc_result$plot_data,
+    facet_columns = coloc_result$facet_columns %||% 2L
+  )
   widget <- ggplotly(
     coloc_result$plot,
     tooltip = "text",
@@ -969,8 +1011,22 @@ coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Mean log2 ratio
   widget$x$layout$showlegend <- TRUE
   widget$x$layout$legend <- modifyList(
     widget$x$layout$legend %||% list(),
-    list(title = list(text = "pct_detected"))
+    list(
+      title = list(text = "Detected fraction"),
+      x = 1.02,
+      xanchor = "left",
+      y = 1,
+      yanchor = "top"
+    )
   )
+  for (trace_index in seq_along(widget$x$data)) {
+    if (!is.null(widget$x$data[[trace_index]]$marker$colorbar)) {
+      widget$x$data[[trace_index]]$marker$colorbar <- modifyList(
+        widget$x$data[[trace_index]]$marker$colorbar,
+        list(x = 1.02, y = 0.32, len = 0.45, yanchor = "middle")
+      )
+    }
+  }
   widget <- apply_coloc_heatmap_square_layout(widget, dimensions)
   widget
 }
@@ -988,7 +1044,7 @@ add_pct_detected_size_legend <- function(widget, plot_data) {
       y = 0,
       type = "scatter",
         mode = "markers",
-        name = paste0("pct_detected ", format_percent(value)),
+        name = format_percent(value),
         marker = list(
           size = pct_detected_marker_size(value, plot_data),
           color = "rgba(80, 96, 100, 0.45)",
@@ -1099,27 +1155,36 @@ coloc_heatmap_size_range <- function(plot_data) {
     return(c(1.5, 7))
   }
 
-  height_px <- suppressWarnings(as.numeric(sub("px$", "", proxiome_plot_height())))
-  if (!is.finite(height_px)) {
-    height_px <- 430
-  }
-  margins <- proxiome_plot_margins()
-  panel_height_px <- max(160, height_px - margins$t - margins$b)
+  panel_height_px <- coloc_heatmap_panel_px(row_count)
   row_step_px <- panel_height_px / row_count
   ggplot_to_plotly_size_ratio <- 3.78
-  upper <- min(7, max(0.8, (row_step_px * 0.75) / ggplot_to_plotly_size_ratio))
+  upper <- min(3.7, max(0.8, (row_step_px * 0.75) / ggplot_to_plotly_size_ratio))
   lower <- min(1.5, upper * 0.4)
 
   c(lower, upper)
 }
 
-build_coloc_heatmap_plot <- function(plot_data, cell_label, legend_range = c(-1, 1), facet = TRUE, title = NULL) {
+wrap_coloc_marker_labels <- function(labels, width = 12L) {
+  vapply(labels, function(label) {
+    words <- strwrap(gsub("-", "- ", as.character(label), fixed = TRUE), width = width)
+    gsub("- ", "-", paste(words, collapse = "\n"), fixed = TRUE)
+  }, character(1), USE.NAMES = FALSE)
+}
+
+build_coloc_heatmap_plot <- function(
+  plot_data,
+  cell_label,
+  legend_range = c(-1, 1),
+  facet = TRUE,
+  title = NULL,
+  facet_columns = 2L
+) {
   size_range <- coloc_heatmap_size_range(plot_data)
 
   p <- ggplot(plot_data, aes(plot_marker_1, plot_marker_2, fill = plot_value, size = plot_size, text = hover)) +
     geom_point(shape = 21, color = "#263238", stroke = 0.18, alpha = 0.9, na.rm = TRUE) +
-    scale_x_discrete(position = "top", drop = FALSE) +
-    scale_y_discrete(drop = FALSE) +
+    scale_x_discrete(drop = FALSE, labels = wrap_coloc_marker_labels) +
+    scale_y_discrete(drop = FALSE, labels = wrap_coloc_marker_labels) +
     scale_fill_gradient2(
       low = "#176d73",
       mid = "#f7f8f7",
@@ -1135,7 +1200,7 @@ build_coloc_heatmap_plot <- function(plot_data, cell_label, legend_range = c(-1,
       limits = c(0, 1),
       breaks = c(0.25, 0.5, 0.75, 1),
       labels = qc_percent_axis_labels,
-      name = "Detected"
+      name = "Detected fraction"
     ) +
     coord_fixed(ratio = 1) +
     labs(
@@ -1147,13 +1212,14 @@ build_coloc_heatmap_plot <- function(plot_data, cell_label, legend_range = c(-1,
     theme(
       panel.grid = element_blank(),
       panel.border = element_rect(color = "#263238", fill = NA, linewidth = 0.6),
-      axis.text.x = element_text(angle = 45, hjust = 0, vjust = 0.5),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+      axis.text = element_text(size = 9),
       strip.text = element_text(face = "bold"),
       legend.position = "right"
     )
 
   if (isTRUE(facet)) {
-    p <- p + facet_wrap(~plot_condition, nrow = 1)
+    p <- p + facet_wrap(~plot_condition, ncol = facet_columns)
   }
 
   p

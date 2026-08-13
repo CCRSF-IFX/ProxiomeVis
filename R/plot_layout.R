@@ -51,7 +51,8 @@ plot_options_controls <- function(
   min_height = 320,
   max_value = 2600,
   step = 50,
-  point_controls = NULL
+  point_controls = NULL,
+  show_view_dimensions = TRUE
 ) {
   if (is.null(ns)) {
     ns <- identity
@@ -59,28 +60,36 @@ plot_options_controls <- function(
   ids <- plot_options_control_ids(width_id, height_id)
   display_value <- plot_options_display_value(display_value)
 
-  sections <- list(
-    div(
-      class = "plot-options-section",
-      div("View", class = "plot-options-section-title"),
-      radioButtons(
-        ns(ids$display),
-        "Display",
-        choices = c("Fit" = "fit", "Scroll canvas" = "scroll"),
-        selected = display_value,
-        inline = TRUE
-      ),
-      div(
-        class = "plot-options-field",
-        numericInput(ns(ids$view_width), "Width", value = view_width_value, min = min_width, max = max_value, step = step, width = "170px"),
-        span("px", class = "plot-options-unit")
-      ),
-      div(
-        class = "plot-options-field",
-        numericInput(ns(ids$view_height), "Height", value = view_height_value, min = min_height, max = max_value, step = step, width = "170px"),
-        span("px", class = "plot-options-unit")
+  view_controls <- list(
+    div("View", class = "plot-options-section-title"),
+    radioButtons(
+      ns(ids$display),
+      "Display",
+      choices = c("Fit" = "fit", "Scroll canvas" = "scroll"),
+      selected = display_value,
+      inline = TRUE
+    )
+  )
+  if (isTRUE(show_view_dimensions)) {
+    view_controls <- c(
+      view_controls,
+      list(
+        div(
+          class = "plot-options-field",
+          numericInput(ns(ids$view_width), "Width", value = view_width_value, min = min_width, max = max_value, step = step, width = "170px"),
+          span("px", class = "plot-options-unit")
+        ),
+        div(
+          class = "plot-options-field",
+          numericInput(ns(ids$view_height), "Height", value = view_height_value, min = min_height, max = max_value, step = step, width = "170px"),
+          span("px", class = "plot-options-unit")
+        )
       )
-    ),
+    )
+  }
+
+  sections <- list(
+    do.call(div, c(list(class = "plot-options-section"), view_controls)),
     div(
       class = "plot-options-section",
       div("Export", class = "plot-options-section-title"),
@@ -444,11 +453,15 @@ register_ggplot_downloads <- function(
 }
 
 coloc_heatmap_plot_margins <- function() {
-  list(l = 104, r = 184, t = 72, b = 126)
+  list(l = 140, r = 220, t = 80, b = 130)
 }
 
-coloc_heatmap_panel_px <- function() {
-  340
+coloc_heatmap_panel_px <- function(marker_count = NULL) {
+  if (is.null(marker_count) || length(marker_count) == 0 || !is.finite(marker_count)) {
+    return(340)
+  }
+
+  max(320, min(720, as.integer(marker_count) * 26))
 }
 
 coloc_heatmap_widget_height_px <- function() {
