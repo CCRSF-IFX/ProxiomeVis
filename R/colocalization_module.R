@@ -89,7 +89,16 @@ colocalization_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE)
+          selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
+          checkboxInput(ns("colocalization_pixelator_filter_enabled"), "Apply Pixelator proximity filters", value = FALSE),
+          conditionalPanel(
+            condition = "input.colocalization_pixelator_filter_enabled",
+            ns = ns,
+            numericInput(ns("colocalization_background_threshold_pct"), "Minimum marker fraction", value = 0.001, min = 0, max = 1, step = 0.0005),
+            numericInput(ns("colocalization_background_threshold_count"), "Minimum marker count", value = 0, min = 0, step = 1),
+            numericInput(ns("colocalization_min_cells_count"), "Minimum cells per pair", value = 1, min = 1, step = 1),
+            helpText("Compatible with pixelatorR FilterProximityScores: both markers must meet the fraction and count thresholds; the pair must remain in the requested number of cells. Set a threshold to 0 to disable it.")
+          )
         ),
         accordion_panel(
           "Advanced",
@@ -327,6 +336,12 @@ colocalization_module_server <- function(id, data) {
     colocalization_heatmap_config <- reactiveVal(NULL)
     custom_colocalization_heatmap_config <- reactiveVal(NULL)
     colocalization_heatmap_summary_config <- reactiveVal(NULL)
+    colocalization_pixelator_filter_config <- debounce(reactive(list(
+      enabled = isTRUE(input$colocalization_pixelator_filter_enabled),
+      background_threshold_pct = numeric_input_value(input$colocalization_background_threshold_pct, 0.001),
+      background_threshold_count = numeric_input_value(input$colocalization_background_threshold_count, 0),
+      min_cells_count = numeric_input_value(input$colocalization_min_cells_count, 1)
+    )), 500)
 
     set_colocalization_heatmap_config <- function(config) {
       summary_config <- list(
@@ -687,7 +702,8 @@ colocalization_module_server <- function(id, data) {
     colocalization_all_marker_summary <- reactive({
       current_data <- data()
       summary_config <- colocalization_heatmap_summary_config()
-      req(current_data, summary_config)
+      pixelator_filter_config <- colocalization_pixelator_filter_config()
+      req(current_data, summary_config, pixelator_filter_config)
 
       metadata <- colocalization_metadata()
       validate(need(nrow(metadata) > 0, "No cells are available for the selected filters."))
@@ -707,7 +723,21 @@ colocalization_module_server <- function(id, data) {
       }
 
       sample_summary <- current_data$colocalization_sample_summary
-      if (is.null(sample_summary)) {
+      if (isTRUE(pixelator_filter_config$enabled)) {
+        filtered_colocalization <- tryCatch(
+          filter_pixelator_proximity_scores(
+            current_data$colocalization,
+            metadata,
+            current_data$abundance,
+            background_threshold_pct = pixelator_filter_config$background_threshold_pct,
+            background_threshold_count = pixelator_filter_config$background_threshold_count,
+            min_cells_count = pixelator_filter_config$min_cells_count
+          ),
+          error = function(error) validate(need(FALSE, conditionMessage(error)))
+        )
+        validate(need(nrow(filtered_colocalization) > 0, "No colocalization scores pass the Pixelator filters."))
+        sample_summary <- summarize_colocalization_by_sample(filtered_colocalization)
+      } else if (is.null(sample_summary)) {
         sample_summary <- summarize_colocalization_by_sample(current_data$colocalization)
       }
       available_markers <- available_colocalization_marker_choices(sample_summary)

@@ -298,6 +298,35 @@ test_that("sample colocalization summaries preserve weighted means and detected 
   expect_equal(cd3_cd4_s1$n_detected, 2L)
 })
 
+test_that("Pixelator-compatible proximity filters use marker fractions, counts, and retained cells", {
+  proximity <- data.frame(
+    component = c("c1", "c2", "c3", "c1"),
+    marker_1 = c("A", "A", "A", "A"),
+    marker_2 = c("B", "B", "B", "C"),
+    log2_ratio = c(1, 2, 3, 4),
+    stringsAsFactors = FALSE
+  )
+  abundance <- data.frame(
+    component = rep(c("c1", "c2", "c3"), each = 3),
+    marker = rep(c("A", "B", "C"), 3),
+    count = c(20, 10, 10, 20, 1, 10, 20, 5, 10),
+    stringsAsFactors = FALSE
+  )
+  metadata <- data.frame(component = c("c1", "c2", "c3"), n_umi = 100)
+  filtered <- filter_pixelator_proximity_scores(
+    proximity,
+    metadata,
+    abundance,
+    background_threshold_pct = 0.05,
+    background_threshold_count = 5,
+    min_cells_count = 2
+  )
+
+  expect_equal(filtered$component, c("c1", "c3"))
+  expect_equal(filtered$pixelator_min_marker_count, c(10, 5))
+  expect_true(all(filtered$marker_1 == "A" & filtered$marker_2 == "B"))
+})
+
 test_that("proximity and abundance summaries avoid base R merge and aggregate hot paths", {
   summarize_abundance_source <- paste(deparse(body(summarize_abundance)), collapse = "\n")
   summarize_proximity_source <- paste(deparse(body(summarize_proximity_readouts)), collapse = "\n")

@@ -948,6 +948,83 @@ upgrade_cached_demo_data <- function(cache) {
   cache
 }
 
+filter_pixelator_proximity_scores <- function(
+  proximity,
+  metadata,
+  abundance,
+  background_threshold_pct = 0,
+  background_threshold_count = 0,
+  min_cells_count = 1L
+) {
+  required_cols <- c("component", "marker_1", "marker_2")
+  missing_cols <- setdiff(required_cols, names(proximity))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Pixelator-compatible filtering is unavailable; missing columns: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  missing_abundance_cols <- setdiff(c("component", "marker", "count"), names(abundance))
+  if (length(missing_abundance_cols) > 0) {
+    stop(
+      "Pixelator-compatible filtering is unavailable; abundance is missing columns: ",
+      paste(missing_abundance_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  require_namespace("data.table")
+  proximity_dt <- data.table::as.data.table(proximity)
+  abundance_dt <- data.table::as.data.table(abundance)
+  if (is.data.frame(metadata) && "component" %in% names(metadata)) {
+    components <- unique(as.character(metadata$component))
+    selected_components <- data.table::data.table(component = components)
+    rows <- proximity_dt[selected_components, on = "component", nomatch = 0]
+    abundance_dt <- abundance_dt[selected_components, on = "component", nomatch = 0]
+  } else {
+    rows <- data.table::copy(proximity_dt)
+  }
+
+  counts <- abundance_dt[, .(
+    count = sum(as.numeric(count), na.rm = TRUE)
+  ), keyby = .(component, marker)]
+  count_1 <- counts[rows, on = .(component, marker = marker_1), count]
+  count_2 <- counts[rows, on = .(component, marker = marker_2), count]
+  rows[, pixelator_min_marker_count := pmin(count_1, count_2)]
+  rows[is.na(pixelator_min_marker_count), pixelator_min_marker_count := 0]
+
+  background_threshold_pct <- suppressWarnings(as.numeric(background_threshold_pct)[1])
+  background_threshold_count <- suppressWarnings(as.numeric(background_threshold_count)[1])
+  min_cells_count <- suppressWarnings(as.integer(min_cells_count)[1])
+  if (!is.finite(background_threshold_pct)) background_threshold_pct <- 0
+  if (!is.finite(background_threshold_count)) background_threshold_count <- 0
+  if (!is.finite(min_cells_count)) min_cells_count <- 1L
+  background_threshold_pct <- min(max(background_threshold_pct, 0), 1)
+  background_threshold_count <- max(background_threshold_count, 0)
+  min_cells_count <- max(min_cells_count, 0L)
+
+  if (background_threshold_pct > 0) {
+    if (!is.data.frame(metadata) || !all(c("component", "n_umi") %in% names(metadata))) {
+      stop("Marker-fraction filtering requires n_umi in the cell metadata.", call. = FALSE)
+    }
+    component_n_umi <- as.numeric(metadata$n_umi[match(rows$component, metadata$component)])
+    marker_fraction <- rows$pixelator_min_marker_count / component_n_umi
+    rows <- rows[is.finite(marker_fraction) & marker_fraction >= background_threshold_pct]
+  }
+  if (background_threshold_count > 0) {
+    rows <- rows[pixelator_min_marker_count >= background_threshold_count]
+  }
+  if (min_cells_count > 1L && nrow(rows) > 0) {
+    pair_counts <- rows[, .(pixelator_n_cells = .N), keyby = .(marker_1, marker_2)]
+    rows <- pair_counts[rows, on = c("marker_1", "marker_2")]
+    rows <- rows[pixelator_n_cells >= min_cells_count]
+    rows[, pixelator_n_cells := NULL]
+  }
+
+  as.data.frame(rows)
+}
+
 attach_spatial_metadata_to_readout <- function(readout, metadata) {
   if (
     is.null(readout) ||
