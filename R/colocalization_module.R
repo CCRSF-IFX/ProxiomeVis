@@ -100,6 +100,15 @@ colocalization_sidebar <- function(id) {
             selected = "population"
           ),
           helpText("Population mean includes cells without the pair as zero. Detected-cell mean averages only cells where the pair is recorded. Dot size always shows the detected fraction.")
+        ),
+        accordion_panel(
+          "Interpretation",
+          div(
+            class = "small",
+            p(class = "mb-2", tags$strong("Positive:"), " closer than expected by chance."),
+            p(class = "mb-2", tags$strong("Zero:"), " approximately random spatial organization."),
+            p(class = "mb-0", tags$strong("Negative:"), " spatial segregation.")
+          )
         )
       )
     ),
