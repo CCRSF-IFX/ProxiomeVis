@@ -1133,6 +1133,7 @@ test_that("colocalization heatmap helper follows the notebook shared-order contr
   expect_equal(result$plot$coordinates$ratio, 1)
   expect_true(inherits(result$plot$theme$panel.border, "element_rect"))
   expect_true(all(c("marker_1", "marker_2", "mean_log2_ratio", "pct_detected", "pair_key", "hover") %in% names(result$plot_data)))
+  expect_equal(sum(as.character(result$plot_data$marker_1) == as.character(result$plot_data$marker_2)), 6L)
 })
 
 test_that("colocalization pair detail preserves the selected mean and missing-pair status", {
@@ -1330,7 +1331,7 @@ test_that("colocalization heatmap distinguishes missing pairs from observed zero
   expect_false(missing_pair$pair_observed)
   expect_true(is.na(missing_pair$plot_value))
   expect_match(missing_pair$hover, "No detected pair", fixed = TRUE)
-  expect_equal(result$plot$labels$caption, "× = no detected pair")
+  expect_equal(result$plot$labels$caption, "Diagonal = self-proximity; × = no detected pair")
 })
 
 test_that("colocalization heatmap mirrors completed one-direction marker pairs", {
@@ -1378,7 +1379,8 @@ test_that("colocalization heatmap mirrors completed one-direction marker pairs",
   expect_equal(reverse$plot_size, forward$plot_size)
   expect_equal(reverse$n_detected, forward$n_detected)
   expect_equal(reverse$n_total, forward$n_total)
-  expect_false(any(is.na(result$plot_data$plot_value)))
+  off_diagonal <- as.character(result$plot_data$marker_1) != as.character(result$plot_data$marker_2)
+  expect_false(any(is.na(result$plot_data$plot_value[off_diagonal])))
 })
 
 test_that("colocalization heatmap Plotly output displays a clean detected-fraction legend", {

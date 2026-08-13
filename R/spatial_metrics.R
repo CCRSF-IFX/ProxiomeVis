@@ -54,7 +54,6 @@ summarize_spatial_heatmap <- function(
   rows <- proximity_dt[
     get(marker1_col) %in% selected_markers &
       get(marker2_col) %in% selected_markers &
-      get(marker1_col) != get(marker2_col) &
       is.finite(as.numeric(get(value_col)))
   ]
 
@@ -113,8 +112,7 @@ summarize_cached_spatial_heatmap <- function(
 
   summary_dt <- data.table::as.data.table(sample_summary)[
     marker_1 %in% selected_markers &
-      marker_2 %in% selected_markers &
-      marker_1 != marker_2
+      marker_2 %in% selected_markers
   ]
   if (nrow(summary_dt) == 0) {
     return(empty_spatial_heatmap_summary(group_cols))
@@ -164,8 +162,6 @@ complete_spatial_marker_pairs <- function(
     marker_2 = selected_markers,
     unique = FALSE
   )
-  pair_grid <- pair_grid[marker_1 != marker_2]
-
   group_grid <- unique(summary_dt[, ..group_cols])
   group_grid[, proxiome_cross_key := 1L]
   pair_grid[, proxiome_cross_key := 1L]

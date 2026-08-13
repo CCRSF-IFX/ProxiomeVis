@@ -190,6 +190,37 @@ test_that("spatial heatmap completion mirrors observed marker pairs before filli
   )
 })
 
+test_that("spatial heatmap includes observed self-proximity on the diagonal", {
+  proximity <- data.frame(
+    component = c("cell-a", "cell-b", "cell-a"),
+    sample_alias = "S1",
+    condition = "UNT",
+    marker_1 = c("CD3e", "CD3e", "CD3e"),
+    marker_2 = c("CD3e", "CD3e", "CD4"),
+    log2_ratio = c(1, 3, 0.5),
+    stringsAsFactors = FALSE
+  )
+
+  summary <- summarize_spatial_heatmap_by_sample(
+    proximity,
+    selected_markers = c("CD3e", "CD4")
+  )
+  completed <- complete_spatial_marker_pairs(
+    summary,
+    selected_markers = c("CD3e", "CD4"),
+    group_cols = c("sample_alias", "condition")
+  )
+  self_pair <- completed[
+    completed$marker_1 == "CD3e" & completed$marker_2 == "CD3e",
+    ,
+    drop = FALSE
+  ]
+
+  expect_equal(nrow(completed), 4L)
+  expect_equal(self_pair$mean_log2_ratio, 2)
+  expect_equal(self_pair$pct_detected, 1)
+})
+
 test_that("spatial marker selection ranks variable detected markers", {
   summary <- data.frame(
     sample_alias = rep(c("S1", "S2"), each = 4),

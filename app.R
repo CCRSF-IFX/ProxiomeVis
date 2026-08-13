@@ -1122,7 +1122,6 @@ prepare_coloc_heatmap_plot_data <- function(
     stringsAsFactors = FALSE
   )
   names(grid) <- c(condition_col, marker1_col, marker2_col)
-  grid <- grid[grid[[marker1_col]] != grid[[marker2_col]], , drop = FALSE]
 
   data <- data[
     as.character(data[[condition_col]]) %in% conditions &
@@ -1249,7 +1248,7 @@ build_coloc_heatmap_plot <- function(
       title = title %||% paste("Colocalization in", cell_label),
       x = "Marker 1",
       y = "Marker 2",
-      caption = "× = no detected pair"
+      caption = "Diagonal = self-proximity; × = no detected pair"
     ) +
     theme_minimal(base_size = 12) +
     theme(

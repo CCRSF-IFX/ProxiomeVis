@@ -298,6 +298,23 @@ test_that("sample colocalization summaries preserve weighted means and detected 
   expect_equal(cd3_cd4_s1$n_detected, 2L)
 })
 
+test_that("sample spatial summaries can include self-proximity", {
+  proximity <- data.frame(
+    component = c("cell-a", "cell-b"),
+    sample_alias = "S1",
+    celltype_manual = "T",
+    marker_1 = "CD3e",
+    marker_2 = "CD3e",
+    log2_ratio = c(1, 3),
+    stringsAsFactors = FALSE
+  )
+
+  expect_equal(nrow(summarize_colocalization_by_sample(proximity)), 0L)
+  summary <- summarize_colocalization_by_sample(proximity, include_self = TRUE)
+  expect_equal(summary$sum_log2_ratio, 4)
+  expect_equal(summary$n_detected, 2L)
+})
+
 test_that("Pixelator-compatible proximity filters use marker fractions, counts, and retained cells", {
   proximity <- data.frame(
     component = c("c1", "c2", "c3", "c1"),

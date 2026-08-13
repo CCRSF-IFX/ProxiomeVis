@@ -1330,7 +1330,7 @@ summarize_proximity_readouts <- function(proximity, metadata) {
   )
 }
 
-summarize_colocalization_by_sample <- function(colocalization) {
+summarize_colocalization_by_sample <- function(colocalization, include_self = FALSE) {
   required_cols <- c(
     "component", "sample_alias", "celltype_manual",
     "marker_1", "marker_2", "log2_ratio"
@@ -1350,8 +1350,11 @@ summarize_colocalization_by_sample <- function(colocalization) {
   } else {
     data.table::as.data.table(colocalization[required_cols])
   }
+  if (!isTRUE(include_self)) {
+    colocalization_dt <- colocalization_dt[marker_1 != marker_2]
+  }
   result <- colocalization_dt[
-    marker_1 != marker_2 & is.finite(as.numeric(log2_ratio)),
+    is.finite(as.numeric(log2_ratio)),
     .(
       sum_log2_ratio = sum(as.numeric(log2_ratio)),
       n_values = .N,

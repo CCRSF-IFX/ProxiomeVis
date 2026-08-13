@@ -385,6 +385,15 @@ colocalization_module_server <- function(id, data) {
     custom_colocalization_heatmap_config <- reactiveVal(NULL)
     colocalization_heatmap_summary_config <- reactiveVal(NULL)
     colocalization_pair_selection <- reactiveVal(NULL)
+    colocalization_spatial_sample_summary <- reactive({
+      current_data <- data()
+      req(current_data)
+
+      pair_summary <- current_data$colocalization_sample_summary %||%
+        summarize_colocalization_by_sample(current_data$colocalization)
+      self_summary <- summarize_colocalization_by_sample(current_data$clustering, include_self = TRUE)
+      rbind(pair_summary, self_summary)
+    })
     colocalization_pixelator_filter_config <- debounce(reactive(list(
       enabled = isTRUE(input$colocalization_pixelator_filter_enabled),
       background_threshold_pct = numeric_input_value(input$colocalization_background_threshold_pct, 0.001),
@@ -777,11 +786,14 @@ colocalization_module_server <- function(id, data) {
         validate(need(nrow(metadata) > 0, "No cells are available for the selected cell type focus."))
       }
 
-      sample_summary <- current_data$colocalization_sample_summary
+      sample_summary <- colocalization_spatial_sample_summary()
       if (isTRUE(pixelator_filter_config$enabled)) {
         filtered_colocalization <- tryCatch(
           filter_pixelator_proximity_scores(
-            current_data$colocalization,
+            data.table::rbindlist(
+              list(current_data$clustering, current_data$colocalization),
+              fill = TRUE
+            ),
             metadata,
             current_data$abundance,
             background_threshold_pct = pixelator_filter_config$background_threshold_pct,
@@ -791,9 +803,7 @@ colocalization_module_server <- function(id, data) {
           error = function(error) validate(need(FALSE, conditionMessage(error)))
         )
         validate(need(nrow(filtered_colocalization) > 0, "No colocalization scores pass the Pixelator filters."))
-        sample_summary <- summarize_colocalization_by_sample(filtered_colocalization)
-      } else if (is.null(sample_summary)) {
-        sample_summary <- summarize_colocalization_by_sample(current_data$colocalization)
+        sample_summary <- summarize_colocalization_by_sample(filtered_colocalization, include_self = TRUE)
       }
       available_markers <- available_colocalization_marker_choices(sample_summary)
       validate(need(length(available_markers) >= 2, "No colocalization scores are available for the selected filters."))
@@ -970,10 +980,13 @@ colocalization_module_server <- function(id, data) {
       ]
       validate(need(nrow(metadata) > 0, "No cells are available for the selected pair detail."))
 
-      sample_summary <- current_data$colocalization_sample_summary
+      sample_summary <- colocalization_spatial_sample_summary()
       if (isTRUE(filter_config$enabled) || is.null(sample_summary)) {
         pair_scores <- filter_colocalization_marker_pair(
-          current_data$colocalization,
+          data.table::rbindlist(
+            list(current_data$clustering, current_data$colocalization),
+            fill = TRUE
+          ),
           selection$marker_1,
           selection$marker_2
         )
@@ -990,7 +1003,7 @@ colocalization_module_server <- function(id, data) {
             error = function(error) validate(need(FALSE, conditionMessage(error)))
           )
         }
-        sample_summary <- summarize_colocalization_by_sample(pair_scores)
+        sample_summary <- summarize_colocalization_by_sample(pair_scores, include_self = TRUE)
       }
 
       detail <- summarize_colocalization_pair_detail(
