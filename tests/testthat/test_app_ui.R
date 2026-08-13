@@ -75,6 +75,7 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="clustering-clustering_per_marker_plot"', html, fixed = TRUE))
   expect_true(grepl('id="clustering-clustering_summary_heatmap"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_heatmap_markers"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_celltype_filter"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_heatmap_display"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_heatmap_preset"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_coloc_scope"', html, fixed = TRUE))
@@ -1505,8 +1506,11 @@ test_that("Open OnDemand template launches the app with the shared renv environm
 
 test_that("sidebars organize controls with accordions", {
   html <- htmltools::renderTags(ui)$html
+  colocalization_module_source <- paste(readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE), collapse = "\n")
 
   expect_true(grepl("accordion", html, fixed = TRUE))
+  expect_true(grepl("Cell population", html, fixed = TRUE))
+  expect_true(grepl('open = c("Cell population", "Display")', colocalization_module_source, fixed = TRUE))
   expect_true(grepl("Display", html, fixed = TRUE))
   expect_true(grepl("Filters", html, fixed = TRUE))
   expect_true(grepl("Contrast", html, fixed = TRUE))

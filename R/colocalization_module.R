@@ -8,7 +8,11 @@ colocalization_sidebar <- function(id) {
       condition = "input.colocalization_mode == 'Observed'",
       ns = ns,
       accordion(
-        open = c("Display", "Filters"),
+        open = c("Cell population", "Display"),
+        accordion_panel(
+          "Cell population",
+          selectizeInput(ns("colocalization_celltype_filter"), "Cell population", choices = character(0), multiple = TRUE)
+        ),
         accordion_panel(
           "Display",
           selectInput(
@@ -85,8 +89,7 @@ colocalization_sidebar <- function(id) {
         ),
         accordion_panel(
           "Filters",
-          selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
-          selectizeInput(ns("colocalization_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
+          selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE)
         ),
         accordion_panel(
           "Advanced",
