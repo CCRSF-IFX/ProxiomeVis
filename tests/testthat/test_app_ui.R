@@ -144,6 +144,8 @@ test_that("report heatmap preset is a single reusable configuration", {
   expect_equal(report$preset, "report")
   expect_equal(report$view_mode, "compare")
   expect_equal(report$top_marker_count, 15L)
+  expect_equal(custom$mean_type, "population")
+  expect_equal(report$mean_type, "population")
   expect_equal(c(report$legend_min, report$legend_max), c(-0.75, 0.75))
   expect_equal(report$clustering_method, "ward.D2")
 })
@@ -177,6 +179,7 @@ test_that("each readout exposes observed and differential modes", {
   expect_true(grepl('id="clustering-clustering_run_differential"', html, fixed = TRUE))
 
   expect_true(grepl('id="colocalization-colocalization_diff_group_a"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_mean_type"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_group_b"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_fdr"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_effect"', html, fixed = TRUE))
@@ -1089,6 +1092,29 @@ test_that("colocalization heatmap helper follows the notebook shared-order contr
   expect_equal(result$plot$coordinates$ratio, 1)
   expect_true(inherits(result$plot$theme$panel.border, "element_rect"))
   expect_true(all(c("marker_1", "marker_2", "mean_log2_ratio", "pct_detected", "hover") %in% names(result$plot_data)))
+})
+
+test_that("colocalization heatmap labels the detected-cell mean explicitly", {
+  coloc_summary <- data.frame(
+    condition = "UNT",
+    marker_1 = c("CD3e", "CD4"),
+    marker_2 = c("CD4", "CD3e"),
+    mean_log2_ratio = 2,
+    pct_detected = 0.5,
+    stringsAsFactors = FALSE
+  )
+
+  result <- make_coloc_heatmaps(
+    data = coloc_summary,
+    selected_markers = c("CD3e", "CD4"),
+    cell_label = "selected cells",
+    conditions = "UNT",
+    value_label = colocalization_mean_label("detected")
+  )
+
+  expect_equal(result$value_label, "Detected-cell mean log2 ratio")
+  expect_true(all(grepl("Detected-cell mean log2 ratio", result$plot_data$hover, fixed = TRUE)))
+  expect_equal(result$plot$scales$get_scales("fill")$name, "Detected-cell mean log2 ratio")
 })
 
 test_that("colocalization heatmap mirrors completed one-direction marker pairs", {

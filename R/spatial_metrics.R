@@ -1,26 +1,30 @@
 summarize_spatial_heatmap_by_sample <- function(
   proximity,
   selected_markers,
-  min_cells_detected = 1L
+  min_cells_detected = 1L,
+  include_missing_obs = TRUE
 ) {
   summarize_spatial_heatmap(
     proximity = proximity,
     selected_markers = selected_markers,
     group_cols = c("sample_alias", "condition"),
-    min_cells_detected = min_cells_detected
+    min_cells_detected = min_cells_detected,
+    include_missing_obs = include_missing_obs
   )
 }
 
 summarize_spatial_heatmap_by_celltype <- function(
   proximity,
   selected_markers,
-  min_cells_detected = 1L
+  min_cells_detected = 1L,
+  include_missing_obs = TRUE
 ) {
   summarize_spatial_heatmap(
     proximity = proximity,
     selected_markers = selected_markers,
     group_cols = c("sample_alias", "condition", "celltype_manual"),
-    min_cells_detected = min_cells_detected
+    min_cells_detected = min_cells_detected,
+    include_missing_obs = include_missing_obs
   )
 }
 
@@ -32,7 +36,8 @@ summarize_spatial_heatmap <- function(
   component_col = "component",
   marker1_col = "marker_1",
   marker2_col = "marker_2",
-  min_cells_detected = 1L
+  min_cells_detected = 1L,
+  include_missing_obs = TRUE
 ) {
   required_cols <- unique(c(group_cols, component_col, marker1_col, marker2_col, value_col))
   missing_cols <- setdiff(required_cols, names(proximity))
@@ -65,7 +70,12 @@ summarize_spatial_heatmap <- function(
 
   result <- totals[result, on = group_cols]
   result <- result[n_detected >= min_cells_detected]
-  result[, mean_log2_ratio := ifelse(n_total > 0, sum_log2_ratio / n_total, NA_real_)]
+  denominator_col <- if (isTRUE(include_missing_obs)) "n_total" else "n_detected"
+  result[, mean_log2_ratio := ifelse(
+    get(denominator_col) > 0,
+    sum_log2_ratio / get(denominator_col),
+    NA_real_
+  )]
   result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
   output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
   as.data.frame(result[, ..output_cols])
@@ -76,7 +86,8 @@ summarize_cached_spatial_heatmap <- function(
   metadata,
   selected_markers,
   group_cols,
-  min_cells_detected = 1L
+  min_cells_detected = 1L,
+  include_missing_obs = TRUE
 ) {
   summary_cols <- c(
     "sample_alias", "celltype_manual", "marker_1", "marker_2",
@@ -125,7 +136,12 @@ summarize_cached_spatial_heatmap <- function(
   totals <- metadata_dt[, .(n_total = data.table::uniqueN(component)), keyby = group_cols]
   result <- totals[result, on = group_cols]
   result <- result[n_detected >= min_cells_detected]
-  result[, mean_log2_ratio := ifelse(n_total > 0, sum_log2_ratio / n_total, NA_real_)]
+  denominator_col <- if (isTRUE(include_missing_obs)) "n_total" else "n_detected"
+  result[, mean_log2_ratio := ifelse(
+    get(denominator_col) > 0,
+    sum_log2_ratio / get(denominator_col),
+    NA_real_
+  )]
   result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
   output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
   as.data.frame(result[, ..output_cols])

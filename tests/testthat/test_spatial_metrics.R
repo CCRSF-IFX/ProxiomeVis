@@ -50,6 +50,14 @@ test_that("spatial heatmap population means include undetected cells as zero", {
   expect_equal(result$n_detected, 1L)
   expect_equal(result$n_total, 2L)
   expect_equal(result$pct_detected, 0.5)
+
+  detected_result <- summarize_spatial_heatmap_by_sample(
+    proximity,
+    selected_markers = c("CD3e", "CD4"),
+    include_missing_obs = FALSE
+  )
+  expect_equal(detected_result$mean_log2_ratio, 2)
+  expect_equal(detected_result$pct_detected, 0.5)
 })
 
 test_that("per-cell-type spatial summary groups by sample and cell type", {
@@ -138,6 +146,16 @@ test_that("cached spatial heatmap population means include metadata cells withou
   expect_equal(result$n_detected, 1L)
   expect_equal(result$n_total, 2L)
   expect_equal(result$pct_detected, 0.5)
+
+  detected_result <- summarize_cached_spatial_heatmap(
+    sample_summary,
+    metadata,
+    selected_markers = c("CD3e", "CD4"),
+    group_cols = "condition",
+    include_missing_obs = FALSE
+  )
+  expect_equal(detected_result$mean_log2_ratio, 4)
+  expect_equal(detected_result$pct_detected, 0.5)
 })
 
 test_that("spatial heatmap completion mirrors observed marker pairs before filling missing pairs", {

@@ -75,7 +75,6 @@ colocalization_sidebar <- function(id) {
           ),
           numericInput(ns("colocalization_legend_min"), "Legend minimum", value = -1, step = 0.1),
           numericInput(ns("colocalization_legend_max"), "Legend maximum", value = 1, step = 0.1),
-          helpText("Color shows the population mean; cells without a detected pair contribute zero. Dot size shows the fraction of cells with that pair."),
           helpText("Report style applies 15 variable markers, a comparison grid, Ward D2 ordering, and a -0.75 to 0.75 legend."),
           conditionalPanel(
             condition = "input.colocalization_heatmap_preset == 'custom'",
@@ -88,6 +87,19 @@ colocalization_sidebar <- function(id) {
           "Filters",
           selectizeInput(ns("colocalization_condition_filter"), "Analysis group", choices = character(0), multiple = TRUE),
           selectizeInput(ns("colocalization_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE)
+        ),
+        accordion_panel(
+          "Advanced",
+          selectInput(
+            ns("colocalization_mean_type"),
+            "Heatmap mean",
+            choices = c(
+              "Population mean" = "population",
+              "Detected-cell mean" = "detected"
+            ),
+            selected = "population"
+          ),
+          helpText("Population mean includes cells without the pair as zero. Detected-cell mean averages only cells where the pair is recorded. Dot size always shows the detected fraction.")
         )
       )
     ),
@@ -157,6 +169,7 @@ make_colocalization_heatmap_config <- function(
     top_marker_count = 20L,
     min_pct_detected = 0.25,
     min_log2_range = 0.2,
+    mean_type = "population",
     reference_condition = reference_condition,
     clustering_method = "ward.D2",
     legend_min = -1,
@@ -171,6 +184,7 @@ report_colocalization_heatmap_config <- function(config) {
   config$top_marker_count <- 15L
   config$min_pct_detected <- 0.25
   config$min_log2_range <- 0.2
+  config$mean_type <- "population"
   config$clustering_method <- "ward.D2"
   config$legend_min <- -0.75
   config$legend_max <- 0.75
@@ -305,7 +319,8 @@ colocalization_module_server <- function(id, data) {
     set_colocalization_heatmap_config <- function(config) {
       summary_config <- list(
         scope = config$scope,
-        focus_celltype = if (identical(config$scope, "celltype")) config$focus_celltype else NULL
+        focus_celltype = if (identical(config$scope, "celltype")) config$focus_celltype else NULL,
+        mean_type = config$mean_type %||% "population"
       )
       if (!identical(isolate(colocalization_heatmap_summary_config()), summary_config)) {
         colocalization_heatmap_summary_config(summary_config)
@@ -328,6 +343,7 @@ colocalization_module_server <- function(id, data) {
       updateNumericInput(session, "spatial_top_marker_count", value = config$top_marker_count)
       updateNumericInput(session, "spatial_min_pct_detected", value = config$min_pct_detected)
       updateNumericInput(session, "spatial_min_log2_range", value = config$min_log2_range)
+      updateSelectInput(session, "colocalization_mean_type", selected = config$mean_type %||% "population")
       updateSelectInput(session, "colocalization_reference_condition", selected = config$reference_condition)
       updateSelectInput(session, "colocalization_clustering_method", selected = config$clustering_method)
       updateNumericInput(session, "colocalization_legend_min", value = config$legend_min)
@@ -353,6 +369,10 @@ colocalization_module_server <- function(id, data) {
       if (is.null(view_mode) || length(view_mode) != 1 || !view_mode %in% c("focused", "compare")) {
         view_mode <- current_config$view_mode %||% "focused"
       }
+      mean_type <- input$colocalization_mean_type
+      if (is.null(mean_type) || length(mean_type) != 1 || !mean_type %in% c("population", "detected")) {
+        mean_type <- current_config$mean_type %||% "population"
+      }
 
       list(
         preset = "custom",
@@ -366,6 +386,7 @@ colocalization_module_server <- function(id, data) {
         top_marker_count = numeric_input_value(input$spatial_top_marker_count, 20),
         min_pct_detected = numeric_input_value(input$spatial_min_pct_detected, 0.25),
         min_log2_range = numeric_input_value(input$spatial_min_log2_range, 0.2),
+        mean_type = mean_type,
         reference_condition = reference_condition,
         clustering_method = input$colocalization_clustering_method %||% "ward.D2",
         legend_min = numeric_input_value(input$colocalization_legend_min, -1),
@@ -429,6 +450,7 @@ colocalization_module_server <- function(id, data) {
         heatmap_config$view_mode <- heatmap_config$view_mode %||% "focused"
         heatmap_config$focus_group <- heatmap_config$focus_group %||% default_colocalization_reference
         heatmap_config$comparison_groups <- heatmap_config$comparison_groups %||% head(conditions, 6L)
+        heatmap_config$mean_type <- heatmap_config$mean_type %||% "population"
       }
 
       updateSelectizeInput(session, "colocalization_heatmap_markers", choices = colocalization_markers, selected = heatmap_config$markers)
@@ -609,7 +631,7 @@ colocalization_module_server <- function(id, data) {
       fields <- c(
         "scope", "focus_celltype", "view_mode", "focus_group", "comparison_groups",
         "marker_selection_mode", "markers", "top_marker_count", "min_pct_detected",
-        "min_log2_range", "reference_condition", "clustering_method", "legend_min", "legend_max"
+        "min_log2_range", "mean_type", "reference_condition", "clustering_method", "legend_min", "legend_max"
       )
       pending <- !identical(active_config[fields], input_config[fields])
 
@@ -683,7 +705,8 @@ colocalization_module_server <- function(id, data) {
         selected_markers = available_markers,
         scope = scope,
         sample_summary = sample_summary,
-        metadata = metadata
+        metadata = metadata,
+        include_missing_obs = !identical(summary_config$mean_type, "detected")
       )
     })
 
@@ -774,6 +797,7 @@ colocalization_module_server <- function(id, data) {
         condition_col = condition_col,
         clustering_method = config$clustering_method,
         facet_columns = view_plan$facet_columns,
+        value_label = colocalization_mean_label(config$mean_type),
         legend_range = colocalization_legend_range(
           config$legend_min,
           config$legend_max

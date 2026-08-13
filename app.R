@@ -550,35 +550,40 @@ spatial_heatmap_summary_for_scope <- function(
   scope,
   selected_conditions = NULL,
   sample_summary = NULL,
-  metadata = NULL
+  metadata = NULL,
+  include_missing_obs = TRUE
 ) {
   if (!is.null(sample_summary) && !is.null(metadata)) {
     return(summarize_cached_spatial_heatmap(
       sample_summary = sample_summary,
       metadata = metadata,
       selected_markers = selected_markers,
-      group_cols = spatial_heatmap_group_cols(scope)
+      group_cols = spatial_heatmap_group_cols(scope),
+      include_missing_obs = include_missing_obs
     ))
   }
 
   if (identical(scope, "sample")) {
     return(summarize_spatial_heatmap_by_sample(
       proximity = colocalization,
-      selected_markers = selected_markers
+      selected_markers = selected_markers,
+      include_missing_obs = include_missing_obs
     ))
   }
 
   if (identical(scope, "celltype")) {
     return(summarize_spatial_heatmap_by_celltype(
       proximity = colocalization,
-      selected_markers = selected_markers
+      selected_markers = selected_markers,
+      include_missing_obs = include_missing_obs
     ))
   }
 
   summarize_colocalization_heatmap(
     colocalization,
     selected_markers = selected_markers,
-    conditions = selected_conditions
+    conditions = selected_conditions,
+    include_missing_obs = include_missing_obs
   )
 }
 
@@ -633,7 +638,8 @@ summarize_colocalization_heatmap <- function(
   marker1_col = "marker_1",
   marker2_col = "marker_2",
   value_col = "log2_ratio",
-  component_col = "component"
+  component_col = "component",
+  include_missing_obs = TRUE
 ) {
   required_cols <- c(condition_col, marker1_col, marker2_col, value_col)
   missing_cols <- setdiff(required_cols, names(colocalization))
@@ -667,8 +673,17 @@ summarize_colocalization_heatmap <- function(
     value_col = value_col,
     component_col = component_col,
     marker1_col = marker1_col,
-    marker2_col = marker2_col
+    marker2_col = marker2_col,
+    include_missing_obs = include_missing_obs
   )
+}
+
+colocalization_mean_label <- function(mean_type = "population") {
+  if (identical(mean_type, "detected")) {
+    "Detected-cell mean log2 ratio"
+  } else {
+    "Population mean log2 ratio"
+  }
 }
 
 empty_colocalization_heatmap_summary <- function(condition_col, marker1_col, marker2_col) {
@@ -809,7 +824,8 @@ plot_coloc_fixed_order <- function(
   marker2_col = "marker_2",
   value_col = "mean_log2_ratio",
   size_col = "pct_detected",
-  legend_range = c(-1, 1)
+  legend_range = c(-1, 1),
+  value_label = "Population mean log2 ratio"
 ) {
   plot_data <- prepare_coloc_heatmap_plot_data(
     data = data,
@@ -820,7 +836,8 @@ plot_coloc_fixed_order <- function(
     marker1_col = marker1_col,
     marker2_col = marker2_col,
     value_col = value_col,
-    size_col = size_col
+    size_col = size_col,
+    value_label = value_label
   )
 
   build_coloc_heatmap_plot(
@@ -828,6 +845,7 @@ plot_coloc_fixed_order <- function(
     cell_label = cell_label,
     legend_range = legend_range,
     facet = FALSE,
+    value_label = value_label,
     title = paste0("Colocalization in ", cell_label, " (", condition_name, ")")
   )
 }
@@ -845,7 +863,8 @@ make_coloc_heatmaps <- function(
   size_col = "pct_detected",
   clustering_method = "ward.D2",
   facet_columns = 2L,
-  legend_range = c(-1, 1)
+  legend_range = c(-1, 1),
+  value_label = "Population mean log2 ratio"
 ) {
   selected_markers <- as.character(selected_markers)
   conditions <- as.character(conditions)
@@ -880,7 +899,8 @@ make_coloc_heatmaps <- function(
     marker1_col = marker1_col,
     marker2_col = marker2_col,
     value_col = value_col,
-    size_col = size_col
+    size_col = size_col,
+    value_label = value_label
   )
 
   plots <- lapply(
@@ -897,7 +917,8 @@ make_coloc_heatmaps <- function(
         marker2_col = marker2_col,
         value_col = value_col,
         size_col = size_col,
-        legend_range = legend_range
+        legend_range = legend_range,
+        value_label = value_label
       )
     }
   )
@@ -907,13 +928,15 @@ make_coloc_heatmaps <- function(
     marker_order = marker_order,
     plots = plots,
     plot_data = plot_data,
+    value_label = value_label,
     facet_columns = facet_columns,
     plot = build_coloc_heatmap_plot(
       plot_data,
       cell_label = cell_label,
       legend_range = legend_range,
       facet = TRUE,
-      facet_columns = facet_columns
+      facet_columns = facet_columns,
+      value_label = value_label
     )
   )
 }
@@ -995,7 +1018,8 @@ apply_coloc_heatmap_square_layout <- function(widget, dimensions) {
   widget
 }
 
-coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Population mean log2 ratio", dimensions = NULL) {
+coloc_heatmap_plotly <- function(coloc_result, colorbar_title = NULL, dimensions = NULL) {
+  colorbar_title <- colorbar_title %||% coloc_result$value_label %||% "Population mean log2 ratio"
   dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(
     coloc_result$plot_data,
     facet_columns = coloc_result$facet_columns %||% 2L
@@ -1087,7 +1111,8 @@ prepare_coloc_heatmap_plot_data <- function(
   marker1_col = "marker_1",
   marker2_col = "marker_2",
   value_col = "mean_log2_ratio",
-  size_col = "pct_detected"
+  size_col = "pct_detected",
+  value_label = "Population mean log2 ratio"
 ) {
   grid <- expand.grid(
     condition = conditions,
@@ -1141,7 +1166,7 @@ prepare_coloc_heatmap_plot_data <- function(
     condition_label, ": ", plot_data[[condition_col]],
     "<br>Marker 1: ", plot_data[[marker1_col]],
     "<br>Marker 2: ", plot_data[[marker2_col]],
-    "<br>Population mean log2 ratio: ", ifelse(is.na(plot_data$plot_value), "No data", round(plot_data$plot_value, 3)),
+    "<br>", value_label, ": ", ifelse(is.na(plot_data$plot_value), "No data", round(plot_data$plot_value, 3)),
     "<br>Detected cells: ", plot_data$n_detected,
     "<br>Fraction detected: ", format_percent(plot_data$plot_size)
   )
@@ -1177,7 +1202,8 @@ build_coloc_heatmap_plot <- function(
   legend_range = c(-1, 1),
   facet = TRUE,
   title = NULL,
-  facet_columns = 2L
+  facet_columns = 2L,
+  value_label = "Population mean log2 ratio"
 ) {
   size_range <- coloc_heatmap_size_range(plot_data)
 
@@ -1193,7 +1219,7 @@ build_coloc_heatmap_plot <- function(
       limits = legend_range,
       oob = squish_to_limits,
       na.value = "#e3e8e7",
-      name = "Population mean log2 ratio"
+      name = value_label
     ) +
     scale_size_continuous(
       range = size_range,
