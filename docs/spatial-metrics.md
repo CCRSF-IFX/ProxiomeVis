@@ -28,7 +28,15 @@ Use **Colocalization > Observed** to view marker-pair proximity heatmaps. The
 heatmap can summarize by condition, sample, or focused cell type.
 
 Use **Colocalization > Differential** to compare marker-pair proximity between
-two groups.
+two groups within one cell population. The analysis first calculates the
+selected population or detected-cell mean for every sample, then compares the
+median sample values between groups. Samples—not cells—are the statistical
+replicates. If either group has fewer than the requested number of samples, the
+app reports descriptive effects but leaves p-values and FDR unavailable.
+
+The volcano shows every marker pair by default. Use **Pairs shown** to focus on
+pairs containing one marker, and click a volcano point to update the sample-level
+detail plot. Missing pairs are included as zero only for the population mean.
 
 Use **Colocalization > 3D Layout** to inspect one selected Pixelator cell graph
 in 3D. The app reads stored `wpmds_3d` coordinates from `.layout.pxl`, labels

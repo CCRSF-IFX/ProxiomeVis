@@ -198,7 +198,11 @@ test_that("each readout exposes observed and differential modes", {
   expect_true(grepl('id="colocalization-colocalization_diff_effect"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_anchor_marker"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_pair"', html, fixed = TRUE))
-  expect_true(grepl('id="colocalization-colocalization_diff_stratify_celltype"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_mean_type"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_min_samples"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_pair_scope"', html, fixed = TRUE))
+  expect_false(grepl('id="colocalization-colocalization_diff_stratify_celltype"', html, fixed = TRUE))
+  expect_false(grepl('id="colocalization-colocalization_diff_min_cells"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_run_differential"', html, fixed = TRUE))
 })
 
@@ -228,6 +232,7 @@ test_that("differential views include plot, detail, and table outputs", {
   expect_true(grepl('id="colocalization-colocalization_diff_volcano"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_detail"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_diff_table"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_diff_method"', html, fixed = TRUE))
   expect_false(grepl('id="colocalization_diff_heatmap"', html, fixed = TRUE))
 })
 
@@ -1181,6 +1186,60 @@ test_that("colocalization pair selection follows clicks and defaults to the stro
 
   expect_equal(c(default$marker_1, default$marker_2, default$group), c("CD4", "CD8", "B"))
   expect_equal(c(clicked$marker_1, clicked$marker_2, clicked$group), c("CD3e", "CD4", "A"))
+})
+
+test_that("differential colocalization uses completed sample-level statistics", {
+  metadata <- data.frame(
+    component = paste0("cell", 1:8),
+    sample_alias = rep(c("A1", "A2", "B1", "B2"), each = 2),
+    condition = rep(c("A", "A", "B", "B"), each = 2),
+    celltype_manual = "T",
+    stringsAsFactors = FALSE
+  )
+  sample_summary <- data.frame(
+    sample_alias = c("A1", "A1", "A2", "B1"),
+    celltype_manual = "T",
+    marker_1 = c("CD3e", "CD4", "CD3e", "CD3e"),
+    marker_2 = c("CD4", "CD3e", "CD4", "CD4"),
+    sum_log2_ratio = c(2, 20, 4, 6),
+    n_detected = c(1L, 1L, 2L, 1L),
+    stringsAsFactors = FALSE
+  )
+
+  population <- prepare_colocalization_differential_samples(
+    sample_summary,
+    metadata,
+    conditions = c("A", "B"),
+    celltype = "T",
+    mean_type = "population"
+  )
+  detected <- prepare_colocalization_differential_samples(
+    sample_summary,
+    metadata,
+    conditions = c("A", "B"),
+    celltype = "T",
+    mean_type = "detected"
+  )
+
+  expect_equal(nrow(population), 4L)
+  expect_equal(population$mean_log2_ratio[population$sample_alias == "A1"], 1)
+  expect_equal(detected$mean_log2_ratio[detected$sample_alias == "A1"], 2)
+  expect_equal(population$mean_log2_ratio[population$sample_alias == "B2"], 0)
+  expect_true(is.na(detected$mean_log2_ratio[detected$sample_alias == "B2"]))
+  expect_false(population$pair_observed[population$sample_alias == "B2"])
+
+  differential <- calculate_differential_readout(
+    population,
+    feature_cols = c("marker_pair", "marker_1", "marker_2"),
+    value_col = "mean_log2_ratio",
+    group_a = "A",
+    group_b = "B",
+    celltype_filter = "T",
+    min_cells = 2
+  )
+  expect_equal(differential$n_a, 2L)
+  expect_equal(differential$n_b, 2L)
+  expect_equal(differential$effect_size, 0)
 })
 
 test_that("colocalization heatmap labels the detected-cell mean explicitly", {

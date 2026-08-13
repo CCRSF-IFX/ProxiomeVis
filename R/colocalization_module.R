@@ -128,25 +128,47 @@ colocalization_sidebar <- function(id) {
       condition = "input.colocalization_mode == 'Differential'",
       ns = ns,
       accordion(
-        open = c("Contrast", "Thresholds"),
+        open = c("Cell population", "Contrast", "Pair display"),
+        accordion_panel(
+          "Cell population",
+          selectInput(ns("colocalization_diff_celltype_filter"), "Cell population", choices = character(0)),
+          helpText("Differential colocalization compares one cell population at a time to avoid mixing population composition with spatial effects.")
+        ),
         accordion_panel(
           "Contrast",
           selectInput(ns("colocalization_diff_group_a"), "Group A", choices = character(0)),
           selectInput(ns("colocalization_diff_group_b"), "Group B (reference)", choices = character(0)),
-          selectizeInput(ns("colocalization_diff_celltype_filter"), "Cell type", choices = character(0), multiple = TRUE),
-          checkboxInput(ns("colocalization_diff_stratify_celltype"), "Stratify by cell type", value = FALSE),
+          selectInput(
+            ns("colocalization_diff_mean_type"),
+            "Sample statistic",
+            choices = c(
+              "Population mean" = "population",
+              "Detected-cell mean" = "detected"
+            ),
+            selected = "population"
+          ),
+          numericInput(ns("colocalization_diff_min_samples"), "Minimum samples per group", value = 2, min = 2, step = 1),
           actionButton(ns("colocalization_run_differential"), "Run differential analysis", class = "btn-primary w-100")
+        ),
+        accordion_panel(
+          "Pair display",
+          selectInput(
+            ns("colocalization_diff_pair_scope"),
+            "Pairs shown",
+            choices = c("All marker pairs" = "all", "Pairs containing one marker" = "anchor"),
+            selected = "all"
+          ),
+          conditionalPanel(
+            condition = "input.colocalization_diff_pair_scope == 'anchor'",
+            ns = ns,
+            selectInput(ns("colocalization_diff_anchor_marker"), "Marker", choices = character(0))
+          ),
+          selectizeInput(ns("colocalization_diff_pair"), "Detail pair", choices = character(0))
         ),
         accordion_panel(
           "Thresholds",
           numericInput(ns("colocalization_diff_fdr"), "FDR threshold", value = 0.05, min = 0, max = 1, step = 0.01),
-          numericInput(ns("colocalization_diff_effect"), "Minimum effect", value = 0.25, min = 0, step = 0.05),
-          numericInput(ns("colocalization_diff_min_cells"), "Minimum cells per group", value = 3, min = 1, step = 1)
-        ),
-        accordion_panel(
-          "Detail",
-          selectInput(ns("colocalization_diff_anchor_marker"), "Anchor marker", choices = character(0)),
-          selectInput(ns("colocalization_diff_pair"), "Detail pair", choices = character(0))
+          numericInput(ns("colocalization_diff_effect"), "Minimum median-sample difference", value = 0.25, min = 0, step = 0.05)
         )
       )
     ),
@@ -330,6 +352,7 @@ colocalization_module_ui <- function(id) {
         ),
         nav_panel(
           "Differential",
+          uiOutput(ns("colocalization_diff_method")),
           uiOutput(ns("colocalization_diff_summary")),
           differential_plot_row(ns("colocalization_diff_volcano"), ns("colocalization_diff_detail")),
           div(class = "table-pane", tableOutput(ns("colocalization_diff_table")))
@@ -447,20 +470,16 @@ colocalization_module_server <- function(id, data) {
       )
     }
 
-    colocalization_differential_config_from_inputs <- function(current_data, anchor_marker = NULL) {
-      make_differential_config(
+    colocalization_differential_config_from_inputs <- function() {
+      config <- make_differential_config(
         group_a = input$colocalization_diff_group_a,
         group_b = input$colocalization_diff_group_b,
-        celltype_filter = selected_or_all(
-          input$colocalization_diff_celltype_filter,
-          unique(current_data$metadata$celltype_manual)
-        ),
-        stratify_by_celltype = input$colocalization_diff_stratify_celltype,
-        min_cells = numeric_input_value(input$colocalization_diff_min_cells, 3),
-        fdr_cutoff = numeric_input_value(input$colocalization_diff_fdr, 0.05),
-        effect_cutoff = numeric_input_value(input$colocalization_diff_effect, 0.25),
-        anchor_marker = anchor_marker
+        celltype_filter = input$colocalization_diff_celltype_filter,
+        stratify_by_celltype = FALSE,
+        min_cells = numeric_input_value(input$colocalization_diff_min_samples, 2)
       )
+      config$mean_type <- if (identical(input$colocalization_diff_mean_type, "detected")) "detected" else "population"
+      config
     }
 
     observe({
@@ -529,9 +548,10 @@ colocalization_module_server <- function(id, data) {
 
       updateSelectInput(session, "colocalization_diff_group_a", choices = conditions, selected = default_group_a)
       updateSelectInput(session, "colocalization_diff_group_b", choices = conditions, selected = default_group_b)
-      updateSelectizeInput(session, "colocalization_diff_celltype_filter", choices = cell_types, selected = cell_types)
+      default_diff_celltype <- if ("CD8 T" %in% cell_types) "CD8 T" else cell_types[1]
+      updateSelectInput(session, "colocalization_diff_celltype_filter", choices = cell_types, selected = default_diff_celltype)
       updateSelectInput(session, "colocalization_diff_anchor_marker", choices = current_data$marker_options, selected = current_data$marker_options[1])
-      updateSelectInput(session, "colocalization_diff_pair", choices = colocalization_pairs, selected = colocalization_pairs[1])
+      updateSelectizeInput(session, "colocalization_diff_pair", choices = colocalization_pairs, selected = colocalization_pairs[1], server = TRUE)
 
       sample_col <- colocalization_3d_sample_column(current_data$metadata)
       samples <- sort(unique(as.character(current_data$metadata[[sample_col]])))
@@ -549,20 +569,19 @@ colocalization_module_server <- function(id, data) {
       )
       updateSelectizeInput(session, "colocalization_3d_markers", choices = current_data$marker_options, selected = default_3d_markers)
 
-      colocalization_diff_config(default_differential_config(
+      default_diff_config <- default_differential_config(
         conditions,
-        cell_types,
-        anchor_marker = current_data$marker_options[1]
-      ))
+        default_diff_celltype,
+        min_cells = 2
+      )
+      default_diff_config$mean_type <- "population"
+      colocalization_diff_config(default_diff_config)
     })
 
     observeEvent(input$colocalization_run_differential, {
       current_data <- data()
       req(current_data)
-      colocalization_diff_config(colocalization_differential_config_from_inputs(
-        current_data,
-        anchor_marker = input$colocalization_diff_anchor_marker
-      ))
+      colocalization_diff_config(colocalization_differential_config_from_inputs())
     }, ignoreInit = TRUE)
 
     observeEvent(input$colocalization_heatmap_preset, {
@@ -589,23 +608,6 @@ colocalization_module_server <- function(id, data) {
       updateSelectInput(session, "colocalization_heatmap_preset", selected = "custom")
       set_colocalization_heatmap_config(new_config)
     }, ignoreInit = TRUE)
-
-    observe({
-      current_data <- data()
-      config <- colocalization_diff_config()
-      req(current_data, config$anchor_marker)
-
-      choices <- sort(unique(current_data$colocalization$marker_pair[
-        current_data$colocalization$marker_1 == config$anchor_marker |
-          current_data$colocalization$marker_2 == config$anchor_marker
-      ]))
-
-      if (length(choices) == 0) {
-        choices <- sort(unique(current_data$colocalization$marker_pair))
-      }
-
-      updateSelectInput(session, "colocalization_diff_pair", choices = choices, selected = choices[1])
-    })
 
     observe({
       current_data <- data()
@@ -694,35 +696,61 @@ colocalization_module_server <- function(id, data) {
       div(class = "small text-muted mb-2", "Heatmap settings are applied.")
     })
 
-    colocalization_diff_results <- reactive({
+    colocalization_diff_sample_data <- reactive({
       current_data <- data()
       config <- colocalization_diff_config()
       req(current_data, config, config$group_a, config$group_b)
 
+      sample_summary <- current_data$colocalization_sample_summary %||%
+        summarize_colocalization_by_sample(current_data$colocalization)
+      prepare_colocalization_differential_samples(
+        sample_summary,
+        current_data$metadata,
+        conditions = c(config$group_a, config$group_b),
+        celltype = config$celltype_filter[1],
+        mean_type = config$mean_type %||% "population"
+      )
+    })
+
+    colocalization_diff_results <- reactive({
+      config <- colocalization_diff_config()
+      req(config, config$group_a, config$group_b)
+
       calculate_differential_readout(
-        current_data$colocalization,
+        colocalization_diff_sample_data(),
         feature_cols = c("marker_pair", "marker_1", "marker_2"),
-        value_col = "log2_ratio",
+        value_col = "mean_log2_ratio",
         group_a = config$group_a,
         group_b = config$group_b,
         celltype_filter = config$celltype_filter,
-        stratify_by_celltype = config$stratify_by_celltype,
+        stratify_by_celltype = FALSE,
         min_cells = config$min_cells,
         fdr_cutoff = config$fdr_cutoff
       )
     })
 
-    colocalization_diff_anchor_results <- reactive({
+    colocalization_diff_display_results <- reactive({
       result <- colocalization_diff_results()
-      config <- colocalization_diff_config()
-      req(config$anchor_marker)
+      if (!identical(input$colocalization_diff_pair_scope, "anchor")) {
+        return(result)
+      }
 
-      result[
-        result$marker_1 == config$anchor_marker |
-          result$marker_2 == config$anchor_marker,
-        ,
-        drop = FALSE
-      ]
+      anchor <- input$colocalization_diff_anchor_marker
+      result[result$marker_1 == anchor | result$marker_2 == anchor, , drop = FALSE]
+    })
+
+    colocalization_diff_thresholds <- reactive(list(
+      fdr = numeric_input_value(input$colocalization_diff_fdr, 0.05),
+      effect = numeric_input_value(input$colocalization_diff_effect, 0.25)
+    ))
+
+    observe({
+      choices <- sort(unique(as.character(colocalization_diff_display_results()$marker_pair)))
+      selected <- input$colocalization_diff_pair
+      if (is.null(selected) || !selected %in% choices) {
+        selected <- choices[1]
+      }
+      updateSelectizeInput(session, "colocalization_diff_pair", choices = choices, selected = selected, server = TRUE)
     })
 
     colocalization_all_marker_summary <- reactive({
@@ -1170,20 +1198,47 @@ colocalization_module_server <- function(id, data) {
     }, striped = TRUE, bordered = FALSE, width = "100%")
 
     output$colocalization_diff_summary <- renderUI({
-      config <- colocalization_diff_config()
-      req(config)
-      result <- colocalization_diff_anchor_results()
+      thresholds <- colocalization_diff_thresholds()
+      result <- colocalization_diff_display_results()
       differential_summary_row(
         result,
-        fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff
+        fdr_cutoff = thresholds$fdr,
+        effect_cutoff = thresholds$effect
+      )
+    })
+
+    output$colocalization_diff_method <- renderUI({
+      config <- colocalization_diff_config()
+      sample_data <- colocalization_diff_sample_data()
+      req(config)
+      sample_counts <- vapply(c(config$group_a, config$group_b), function(group) {
+        length(unique(sample_data$sample_alias[sample_data$condition == group]))
+      }, integer(1))
+      replicated <- all(sample_counts >= config$min_cells)
+
+      div(
+        class = paste("alert py-2 mb-3", if (replicated) "alert-info" else "alert-warning"),
+        tags$strong("Sample-aware analysis. "),
+        paste0(
+          colocalization_mean_label(config$mean_type),
+          " is calculated within each sample; effects compare median sample values. ",
+          config$group_a, ": ", sample_counts[1], " sample(s); ",
+          config$group_b, ": ", sample_counts[2], " sample(s)."
+        ),
+        if (!replicated) {
+          paste0(" At least ", config$min_cells, " samples per group are required for p-values and FDR; effects remain descriptive.")
+        }
       )
     })
 
     colocalization_diff_volcano_x_label <- reactive({
       config <- colocalization_diff_config()
       req(config)
-      paste("Difference in medians:", config$group_a, "minus", config$group_b, "(reference)")
+      paste(
+        "Median difference in sample-level",
+        paste0(tolower(colocalization_mean_label(config$mean_type)), ":"),
+        config$group_a, "minus", config$group_b, "(reference)"
+      )
     })
 
     colocalization_diff_volcano_dimensions <- reactive({
@@ -1195,16 +1250,17 @@ colocalization_module_server <- function(id, data) {
 
     colocalization_diff_volcano_ggplot <- reactive({
       config <- colocalization_diff_config()
+      thresholds <- colocalization_diff_thresholds()
       req(config)
-      result <- colocalization_diff_anchor_results()
-      validate(need(nrow(result) > 0, "Choose two different groups with enough colocalization data."))
+      result <- colocalization_diff_display_results()
+      validate(need(nrow(result) > 0, "Choose two different groups with sample-level colocalization data."))
 
       differential_volcano_ggplot(
         result,
         label_col = "marker_pair",
         x_label = colocalization_diff_volcano_x_label(),
-        fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff
+        fdr_cutoff = thresholds$fdr,
+        effect_cutoff = thresholds$effect
       )
     })
 
@@ -1232,35 +1288,37 @@ colocalization_module_server <- function(id, data) {
     observeEvent(plotly::event_data("plotly_click", source = "colocalization_diff"), {
       event <- plotly::event_data("plotly_click", source = "colocalization_diff")
       if (!is.null(event$key) && nzchar(event$key)) {
-        updateSelectInput(session, "colocalization_diff_pair", selected = event$key)
+        updateSelectizeInput(session, "colocalization_diff_pair", selected = event$key, server = TRUE)
       }
     })
 
     colocalization_diff_detail_data <- reactive({
-      current_data <- data()
       config <- colocalization_diff_config()
-      req(current_data, config, input$colocalization_diff_pair, config$group_a, config$group_b)
+      req(config, input$colocalization_diff_pair, config$group_a, config$group_b)
 
-      plot_data <- current_data$colocalization[
-        current_data$colocalization$marker_pair == input$colocalization_diff_pair &
-          current_data$colocalization$condition %in% c(config$group_a, config$group_b) &
-          current_data$colocalization$celltype_manual %in% config$celltype_filter,
+      plot_data <- colocalization_diff_sample_data()
+      plot_data <- plot_data[
+        plot_data$marker_pair == input$colocalization_diff_pair,
         ,
         drop = FALSE
       ]
-      validate(need(nrow(plot_data) > 0, "No colocalization values are available for the selected pair and contrast."))
+      validate(need(nrow(plot_data) > 0, "No sample-level values are available for the selected pair and contrast."))
 
       plot_data$hover <- paste0(
-        "Cell: ", plot_data$component,
+        "Sample: ", plot_data$sample_alias,
         "<br>Analysis group: ", plot_data$condition,
-        "<br>Cell type: ", plot_data$celltype_manual,
-        "<br>Colocalization log2 ratio: ", round(plot_data$log2_ratio, 3)
+        "<br>Cell population: ", plot_data$celltype_manual,
+        "<br>", colocalization_mean_label(config$mean_type), ": ", round(plot_data$mean_log2_ratio, 3),
+        "<br>Pair status: ", ifelse(plot_data$pair_observed, "Detected pair", "No detected pair"),
+        "<br>Detected cells: ", plot_data$n_detected, " / ", plot_data$n_total,
+        "<br>Detected fraction: ", format_percent(plot_data$pct_detected)
       )
+      plot_data$display_value <- ifelse(plot_data$pair_observed, plot_data$mean_log2_ratio, 0)
 
-      y_label <- paste(input$colocalization_diff_pair, "colocalization log2 ratio")
+      y_label <- paste(input$colocalization_diff_pair, colocalization_mean_label(config$mean_type))
       base_dimensions <- differential_detail_dimensions(
         plot_data,
-        stratify_by_celltype = isTRUE(config$stratify_by_celltype),
+        stratify_by_celltype = FALSE,
         y_label = y_label
       )
       dimensions <- plot_options_view_overrides(input, "colocalization_diff_detail", base_dimensions)
@@ -1278,21 +1336,21 @@ colocalization_module_server <- function(id, data) {
     colocalization_diff_detail_ggplot <- reactive({
       detail <- colocalization_diff_detail_data()
       plot_data <- detail$plot_data
-      config <- detail$config
+      observed <- plot_data[plot_data$pair_observed, , drop = FALSE]
+      missing <- plot_data[!plot_data$pair_observed, , drop = FALSE]
 
-      p <- ggplot(plot_data, aes(condition, log2_ratio, color = condition, text = hover)) +
+      ggplot(plot_data, aes(condition, color = condition, text = hover)) +
         geom_hline(yintercept = 0, color = "#8a9699", linewidth = 0.5) +
-        geom_boxplot(outlier.shape = NA, alpha = 0.18, linewidth = 0.5) +
-        geom_jitter(width = 0.18, height = 0, alpha = 0.5, size = 1.4) +
-        labs(x = NULL, y = detail$y_label) +
+        geom_boxplot(aes(y = mean_log2_ratio), outlier.shape = NA, alpha = 0.18, linewidth = 0.5, na.rm = TRUE) +
+        geom_jitter(data = observed, aes(y = mean_log2_ratio), width = 0.1, height = 0, alpha = 0.8, size = 2.8) +
+        geom_point(data = missing, aes(y = display_value), shape = 4, color = "#8a9493", size = 2.8, stroke = 0.9) +
+        labs(x = NULL, y = detail$y_label, caption = "Each point = one sample; × = no detected pair") +
         theme_minimal(base_size = 12) +
-        theme(panel.grid.minor = element_blank(), legend.position = "none")
-
-      if (isTRUE(config$stratify_by_celltype)) {
-        p <- p + facet_wrap(~celltype_manual, scales = "free_y")
-      }
-
-      p
+        theme(
+          panel.grid.minor = element_blank(),
+          plot.caption = element_text(color = "#5f6b6a", hjust = 0),
+          legend.position = "none"
+        )
     })
 
     output$colocalization_diff_detail <- renderPlotly({
@@ -1305,24 +1363,146 @@ colocalization_module_server <- function(id, data) {
       output,
       "colocalization_diff_detail",
       colocalization_diff_detail_ggplot,
-      filename_prefix = function() paste("colocalization-differential-detail", input$colocalization_diff_pair %||% "pair", sep = "-"),
+      filename_prefix = function() paste(
+        "colocalization-differential-detail",
+        input$colocalization_diff_pair %||% "pair",
+        colocalization_mean_label(colocalization_diff_config()$mean_type),
+        sep = "-"
+      ),
       width = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$export_dimensions)$width,
       height = function() plot_download_size_from_dimensions(colocalization_diff_detail_data()$export_dimensions)$height
     )
 
     output$colocalization_diff_table <- renderTable({
       config <- colocalization_diff_config()
+      thresholds <- colocalization_diff_thresholds()
       req(config)
-      result <- filter_differential_hits(
-        colocalization_diff_anchor_results(),
-        fdr_cutoff = config$fdr_cutoff,
-        effect_cutoff = config$effect_cutoff
+      result <- colocalization_diff_display_results()
+      validate(need(nrow(result) > 0, "No marker pairs are available for the selected differential comparison."))
+      result$threshold_status <- differential_threshold_status(
+        result,
+        fdr_cutoff = thresholds$fdr,
+        effect_cutoff = thresholds$effect
       )
-      validate(need(nrow(result) > 0, "No colocalization pairs pass the selected differential thresholds."))
+      result$is_significant <- NULL
 
-      format_differential_table(result, effect_label = "diff_median_vs_reference")
+      result <- format_differential_table(
+        result,
+        effect_label = paste0("median_sample_", config$mean_type, "_difference")
+      )
+      names(result)[names(result) == "n_a"] <- "samples_a"
+      names(result)[names(result) == "n_b"] <- "samples_b"
+      result
     }, striped = TRUE, bordered = FALSE, width = "100%")
   })
+}
+
+prepare_colocalization_differential_samples <- function(
+  sample_summary,
+  metadata,
+  conditions,
+  celltype,
+  mean_type = "population"
+) {
+  metadata_cols <- c("component", "sample_alias", "condition", "celltype_manual")
+  summary_cols <- c(
+    "sample_alias", "celltype_manual", "marker_1", "marker_2",
+    "sum_log2_ratio", "n_detected"
+  )
+  missing_cols <- unique(c(
+    setdiff(metadata_cols, names(metadata)),
+    setdiff(summary_cols, names(sample_summary))
+  ))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Missing columns for sample-aware differential colocalization: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  require_namespace("data.table")
+  celltype <- as.character(celltype)[1]
+  conditions <- unique(as.character(conditions))
+  metadata_dt <- unique(data.table::as.data.table(metadata)[, ..metadata_cols], by = "component")
+  metadata_dt <- metadata_dt[
+    as.character(condition) %in% conditions &
+      as.character(celltype_manual) == celltype
+  ]
+  totals <- metadata_dt[, .(n_total = data.table::uniqueN(component)), keyby = .(sample_alias, condition, celltype_manual)]
+
+  empty_result <- data.frame(
+    sample_alias = character(),
+    condition = character(),
+    celltype_manual = character(),
+    marker_pair = character(),
+    marker_1 = character(),
+    marker_2 = character(),
+    mean_log2_ratio = numeric(),
+    pct_detected = numeric(),
+    n_detected = integer(),
+    n_total = integer(),
+    pair_observed = logical(),
+    stringsAsFactors = FALSE
+  )
+  if (nrow(totals) == 0) {
+    return(empty_result)
+  }
+
+  summary_dt <- data.table::as.data.table(sample_summary[, summary_cols, drop = FALSE])[
+    as.character(sample_alias) %in% totals$sample_alias &
+      as.character(celltype_manual) == celltype &
+      as.character(marker_1) != as.character(marker_2)
+  ]
+  if (nrow(summary_dt) == 0) {
+    return(empty_result)
+  }
+
+  summary_dt[, original_marker_1 := as.character(marker_1)]
+  summary_dt[, original_marker_2 := as.character(marker_2)]
+  summary_dt[, marker_1 := ifelse(original_marker_1 <= original_marker_2, original_marker_1, original_marker_2)]
+  summary_dt[, marker_2 := ifelse(original_marker_1 <= original_marker_2, original_marker_2, original_marker_1)]
+  summary_dt[, preferred_orientation := original_marker_1 == marker_1]
+  data.table::setorderv(
+    summary_dt,
+    c("sample_alias", "celltype_manual", "marker_1", "marker_2", "preferred_orientation"),
+    c(1L, 1L, 1L, 1L, -1L)
+  )
+  summary_dt <- unique(
+    summary_dt,
+    by = c("sample_alias", "celltype_manual", "marker_1", "marker_2")
+  )
+  summary_dt[, c("original_marker_1", "original_marker_2", "preferred_orientation") := NULL]
+
+  pairs <- unique(summary_dt[, .(marker_1, marker_2)])
+  totals[, cross_key := 1L]
+  pairs[, cross_key := 1L]
+  grid <- pairs[totals, on = "cross_key", allow.cartesian = TRUE]
+  grid[, cross_key := NULL]
+  detail <- summary_dt[grid, on = c("sample_alias", "celltype_manual", "marker_1", "marker_2")]
+  detail[is.na(sum_log2_ratio), sum_log2_ratio := 0]
+  detail[is.na(n_detected), n_detected := 0L]
+  detail[, n_detected := as.integer(n_detected)]
+  detail[, pair_observed := n_detected > 0]
+  denominator <- if (identical(mean_type, "detected")) detail$n_detected else detail$n_total
+  detail[, mean_log2_ratio := ifelse(denominator > 0, sum_log2_ratio / denominator, NA_real_)]
+  detail[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
+  detail[, marker_pair := paste(marker_1, marker_2, sep = " / ")]
+  data.table::setorderv(detail, c("marker_pair", "condition", "sample_alias"))
+
+  as.data.frame(detail[, .(
+    sample_alias,
+    condition,
+    celltype_manual,
+    marker_pair,
+    marker_1,
+    marker_2,
+    mean_log2_ratio,
+    pct_detected,
+    n_detected,
+    n_total,
+    pair_observed
+  )])
 }
 
 resolve_colocalization_pair_selection <- function(plot_data, selection = NULL, condition_col = "condition") {
