@@ -746,10 +746,11 @@ colocalization_module_server <- function(id, data) {
 
     observe({
       choices <- sort(unique(as.character(colocalization_diff_display_results()$marker_pair)))
-      selected <- input$colocalization_diff_pair
+      selected <- isolate(input$colocalization_diff_pair)
       if (is.null(selected) || !selected %in% choices) {
         selected <- choices[1]
       }
+      freezeReactiveValue(input, "colocalization_diff_pair")
       updateSelectizeInput(session, "colocalization_diff_pair", choices = choices, selected = selected, server = TRUE)
     })
 

@@ -236,6 +236,29 @@ test_that("differential views include plot, detail, and table outputs", {
   expect_false(grepl('id="colocalization_diff_heatmap"', html, fixed = TRUE))
 })
 
+test_that("colocalization detail pair selector does not react to its own updates", {
+  module_source <- paste(
+    readLines(file.path(APP_DIR, "R", "colocalization_module.R"), warn = FALSE),
+    collapse = "\n"
+  )
+
+  expect_true(grepl(
+    "selected <- isolate(input$colocalization_diff_pair)",
+    module_source,
+    fixed = TRUE
+  ))
+  expect_true(grepl(
+    'freezeReactiveValue(input, "colocalization_diff_pair")',
+    module_source,
+    fixed = TRUE
+  ))
+  expect_false(grepl(
+    "selected <- input$colocalization_diff_pair",
+    module_source,
+    fixed = TRUE
+  ))
+})
+
 test_that("differential volcano and box plots share a side-by-side row", {
   html <- htmltools::renderTags(ui)$html
   css_source <- paste(readLines(file.path(APP_DIR, "www", "proixome.css"), warn = FALSE), collapse = "\n")
