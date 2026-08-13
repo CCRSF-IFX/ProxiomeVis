@@ -75,6 +75,7 @@ colocalization_sidebar <- function(id) {
           ),
           numericInput(ns("colocalization_legend_min"), "Legend minimum", value = -1, step = 0.1),
           numericInput(ns("colocalization_legend_max"), "Legend maximum", value = 1, step = 0.1),
+          helpText("Color shows the population mean; cells without a detected pair contribute zero. Dot size shows the fraction of cells with that pair."),
           helpText("Report style applies 15 variable markers, a comparison grid, Ward D2 ordering, and a -0.75 to 0.75 legend."),
           conditionalPanel(
             condition = "input.colocalization_heatmap_preset == 'custom'",

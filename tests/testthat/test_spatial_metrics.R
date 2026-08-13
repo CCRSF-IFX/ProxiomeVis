@@ -30,6 +30,28 @@ test_that("sample-level spatial heatmap summary uses stored log2 ratios", {
   expect_equal(cd3_cd4_s1$pct_detected, 1)
 })
 
+test_that("spatial heatmap population means include undetected cells as zero", {
+  proximity <- data.frame(
+    component = c("cell-a", "cell-b"),
+    sample_alias = "S1",
+    condition = "UNT",
+    marker_1 = c("CD3e", "CD19"),
+    marker_2 = c("CD4", "CD20"),
+    log2_ratio = c(2, 3),
+    stringsAsFactors = FALSE
+  )
+
+  result <- summarize_spatial_heatmap_by_sample(
+    proximity,
+    selected_markers = c("CD3e", "CD4")
+  )
+
+  expect_equal(result$mean_log2_ratio, 1)
+  expect_equal(result$n_detected, 1L)
+  expect_equal(result$n_total, 2L)
+  expect_equal(result$pct_detected, 0.5)
+})
+
 test_that("per-cell-type spatial summary groups by sample and cell type", {
   proximity <- data.frame(
     component = c("cell-a", "cell-b", "cell-c", "cell-d"),
@@ -84,6 +106,38 @@ test_that("cached sample summaries regroup without raw proximity rows", {
   expect_equal(result$n_detected, 4L)
   expect_equal(result$n_total, 4L)
   expect_equal(result$pct_detected, 1)
+})
+
+test_that("cached spatial heatmap population means include metadata cells without a pair", {
+  sample_summary <- data.frame(
+    sample_alias = "S1",
+    celltype_manual = "T",
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    sum_log2_ratio = 4,
+    n_values = 1L,
+    n_detected = 1L,
+    stringsAsFactors = FALSE
+  )
+  metadata <- data.frame(
+    component = c("cell-a", "cell-b"),
+    sample_alias = "S1",
+    condition = "UNT",
+    celltype_manual = "T",
+    stringsAsFactors = FALSE
+  )
+
+  result <- summarize_cached_spatial_heatmap(
+    sample_summary,
+    metadata,
+    selected_markers = c("CD3e", "CD4"),
+    group_cols = "condition"
+  )
+
+  expect_equal(result$mean_log2_ratio, 2)
+  expect_equal(result$n_detected, 1L)
+  expect_equal(result$n_total, 2L)
+  expect_equal(result$pct_detected, 0.5)
 })
 
 test_that("spatial heatmap completion mirrors observed marker pairs before filling missing pairs", {

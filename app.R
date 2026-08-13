@@ -995,7 +995,7 @@ apply_coloc_heatmap_square_layout <- function(widget, dimensions) {
   widget
 }
 
-coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Mean log2 ratio", dimensions = NULL) {
+coloc_heatmap_plotly <- function(coloc_result, colorbar_title = "Population mean log2 ratio", dimensions = NULL) {
   dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(
     coloc_result$plot_data,
     facet_columns = coloc_result$facet_columns %||% 2L
@@ -1141,7 +1141,7 @@ prepare_coloc_heatmap_plot_data <- function(
     condition_label, ": ", plot_data[[condition_col]],
     "<br>Marker 1: ", plot_data[[marker1_col]],
     "<br>Marker 2: ", plot_data[[marker2_col]],
-    "<br>Mean log2 ratio: ", ifelse(is.na(plot_data$plot_value), "No data", round(plot_data$plot_value, 3)),
+    "<br>Population mean log2 ratio: ", ifelse(is.na(plot_data$plot_value), "No data", round(plot_data$plot_value, 3)),
     "<br>Detected cells: ", plot_data$n_detected,
     "<br>Fraction detected: ", format_percent(plot_data$plot_size)
   )
@@ -1193,7 +1193,7 @@ build_coloc_heatmap_plot <- function(
       limits = legend_range,
       oob = squish_to_limits,
       na.value = "#e3e8e7",
-      name = "Mean log2 ratio"
+      name = "Population mean log2 ratio"
     ) +
     scale_size_continuous(
       range = size_range,

@@ -43,6 +43,9 @@ summarize_spatial_heatmap <- function(
   selected_markers <- as.character(selected_markers)
   require_spatial_namespace("data.table")
   proximity_dt <- data.table::as.data.table(proximity[required_cols])
+  totals <- proximity_dt[, .(
+    n_total = data.table::uniqueN(get(component_col))
+  ), keyby = group_cols]
   rows <- proximity_dt[
     get(marker1_col) %in% selected_markers &
       get(marker2_col) %in% selected_markers &
@@ -56,15 +59,13 @@ summarize_spatial_heatmap <- function(
 
   split_cols <- unique(c(group_cols, marker1_col, marker2_col))
   result <- rows[, .(
-    mean_log2_ratio = mean(as.numeric(get(value_col)), na.rm = TRUE),
+    sum_log2_ratio = sum(as.numeric(get(value_col)), na.rm = TRUE),
     n_detected = data.table::uniqueN(get(component_col))
   ), keyby = split_cols]
-  totals <- rows[, .(
-    n_total = data.table::uniqueN(get(component_col))
-  ), keyby = group_cols]
 
   result <- totals[result, on = group_cols]
   result <- result[n_detected >= min_cells_detected]
+  result[, mean_log2_ratio := ifelse(n_total > 0, sum_log2_ratio / n_total, NA_real_)]
   result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
   output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
   as.data.frame(result[, ..output_cols])
@@ -79,7 +80,7 @@ summarize_cached_spatial_heatmap <- function(
 ) {
   summary_cols <- c(
     "sample_alias", "celltype_manual", "marker_1", "marker_2",
-    "sum_log2_ratio", "n_values", "n_detected"
+    "sum_log2_ratio", "n_detected"
   )
   metadata_cols <- unique(c("component", "sample_alias", "condition", "celltype_manual", group_cols))
   missing_summary_cols <- setdiff(summary_cols, names(sample_summary))
@@ -119,14 +120,12 @@ summarize_cached_spatial_heatmap <- function(
   split_cols <- unique(c(group_cols, "marker_1", "marker_2"))
   result <- summary_dt[, .(
     sum_log2_ratio = sum(as.numeric(sum_log2_ratio)),
-    n_values = sum(as.numeric(n_values)),
     n_detected = sum(as.integer(n_detected))
   ), keyby = split_cols]
-  result[, mean_log2_ratio := sum_log2_ratio / n_values]
-
   totals <- metadata_dt[, .(n_total = data.table::uniqueN(component)), keyby = group_cols]
   result <- totals[result, on = group_cols]
   result <- result[n_detected >= min_cells_detected]
+  result[, mean_log2_ratio := ifelse(n_total > 0, sum_log2_ratio / n_total, NA_real_)]
   result[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
   output_cols <- c(split_cols, "mean_log2_ratio", "n_detected", "n_total", "pct_detected")
   as.data.frame(result[, ..output_cols])
