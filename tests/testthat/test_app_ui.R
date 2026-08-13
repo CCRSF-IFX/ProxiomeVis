@@ -81,6 +81,11 @@ test_that("each readout tab has only the controls it needs", {
   expect_true(grepl('id="colocalization-colocalization_background_threshold_count"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_min_cells_count"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_heatmap_display"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_pair_detail_display"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_pair_detail_title"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_pair_detail_metrics"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_pair_detail"', html, fixed = TRUE))
+  expect_true(grepl('id="colocalization-colocalization_pair_detail_table"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-colocalization_heatmap_preset"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_coloc_scope"', html, fixed = TRUE))
   expect_true(grepl('id="colocalization-spatial_celltype_focus"', html, fixed = TRUE))
@@ -1099,7 +1104,83 @@ test_that("colocalization heatmap helper follows the notebook shared-order contr
   expect_s3_class(result$plot, "ggplot")
   expect_equal(result$plot$coordinates$ratio, 1)
   expect_true(inherits(result$plot$theme$panel.border, "element_rect"))
-  expect_true(all(c("marker_1", "marker_2", "mean_log2_ratio", "pct_detected", "hover") %in% names(result$plot_data)))
+  expect_true(all(c("marker_1", "marker_2", "mean_log2_ratio", "pct_detected", "pair_key", "hover") %in% names(result$plot_data)))
+})
+
+test_that("colocalization pair detail preserves the selected mean and missing-pair status", {
+  metadata <- data.frame(
+    component = paste0("cell", 1:5),
+    sample_alias = c("S1", "S1", "S1", "S2", "S2"),
+    condition = c("A", "A", "A", "B", "B"),
+    celltype_manual = c("T", "T", "B", "T", "T"),
+    stringsAsFactors = FALSE
+  )
+  sample_summary <- data.frame(
+    sample_alias = c("S1", "S2"),
+    celltype_manual = c("T", "T"),
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    sum_log2_ratio = c(2, -1),
+    n_detected = c(1L, 1L),
+    stringsAsFactors = FALSE
+  )
+
+  population <- summarize_colocalization_pair_detail(
+    sample_summary,
+    metadata,
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    mean_type = "population"
+  )
+  detected <- summarize_colocalization_pair_detail(
+    sample_summary,
+    metadata,
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    mean_type = "detected"
+  )
+  s1_t <- population$sample_alias == "S1" & population$celltype_manual == "T"
+  s1_b <- population$sample_alias == "S1" & population$celltype_manual == "B"
+
+  expect_equal(population$mean_log2_ratio[s1_t], 1)
+  expect_equal(detected$mean_log2_ratio[s1_t], 2)
+  expect_equal(population$pct_detected[s1_t], 0.5)
+  expect_false(population$pair_observed[s1_b])
+  expect_equal(population$mean_log2_ratio[s1_b], 0)
+  expect_true(is.na(detected$mean_log2_ratio[s1_b]))
+
+  plot <- plot_colocalization_pair_detail(
+    population,
+    marker_1 = "CD3e",
+    marker_2 = "CD4",
+    value_label = colocalization_mean_label("population")
+  )
+  expect_s3_class(plot, "ggplot")
+  expect_equal(plot$scales$get_scales("fill")$name, "Population mean log2 ratio")
+  expect_match(plot$labels$caption, "no detected pair", fixed = TRUE)
+})
+
+test_that("colocalization pair selection follows clicks and defaults to the strongest observed pair", {
+  plot_data <- data.frame(
+    condition = c("A", "A", "B"),
+    marker_1 = c("CD3e", "CD3e", "CD4"),
+    marker_2 = c("CD4", "CD8", "CD8"),
+    plot_value = c(0.2, NA, -0.8),
+    plot_size = c(0.5, 0, 0.4),
+    pair_observed = c(TRUE, FALSE, TRUE),
+    n_detected = c(5L, 0L, 4L),
+    n_total = 10L,
+    stringsAsFactors = FALSE
+  )
+
+  default <- resolve_colocalization_pair_selection(plot_data)
+  clicked <- resolve_colocalization_pair_selection(
+    plot_data,
+    selection = list(marker_1 = "CD3e", marker_2 = "CD4", group = "A")
+  )
+
+  expect_equal(c(default$marker_1, default$marker_2, default$group), c("CD4", "CD8", "B"))
+  expect_equal(c(clicked$marker_1, clicked$marker_2, clicked$group), c("CD3e", "CD4", "A"))
 })
 
 test_that("colocalization heatmap labels the detected-cell mean explicitly", {

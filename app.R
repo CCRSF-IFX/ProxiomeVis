@@ -1018,7 +1018,7 @@ apply_coloc_heatmap_square_layout <- function(widget, dimensions) {
   widget
 }
 
-coloc_heatmap_plotly <- function(coloc_result, colorbar_title = NULL, dimensions = NULL) {
+coloc_heatmap_plotly <- function(coloc_result, colorbar_title = NULL, dimensions = NULL, source = "colocalization_heatmap") {
   colorbar_title <- colorbar_title %||% coloc_result$value_label %||% "Population mean log2 ratio"
   dimensions <- dimensions %||% coloc_heatmap_widget_dimensions(
     coloc_result$plot_data,
@@ -1027,6 +1027,7 @@ coloc_heatmap_plotly <- function(coloc_result, colorbar_title = NULL, dimensions
   widget <- ggplotly(
     coloc_result$plot,
     tooltip = "text",
+    source = source,
     width = dimensions$width,
     height = dimensions$height
   )
@@ -1171,6 +1172,7 @@ prepare_coloc_heatmap_plot_data <- function(
   plot_data$plot_value[!plot_data$pair_observed] <- NA_real_
   plot_data$plot_size <- as.numeric(plot_data[[size_col]])
   plot_data$pair_status <- ifelse(plot_data$pair_observed, "Detected pair", "No detected pair")
+  plot_data$pair_key <- paste0("colocalization-pair-", seq_len(nrow(plot_data)))
   condition_label <- if (identical(condition_col, "sample_alias")) "Sample" else "Analysis group"
   plot_data$hover <- paste0(
     condition_label, ": ", plot_data[[condition_col]],
@@ -1220,7 +1222,7 @@ build_coloc_heatmap_plot <- function(
   missing_pairs <- plot_data[!plot_data$pair_observed, , drop = FALSE]
   observed_pairs <- plot_data[plot_data$pair_observed, , drop = FALSE]
 
-  p <- ggplot(plot_data, aes(plot_marker_1, plot_marker_2, text = hover)) +
+  p <- ggplot(plot_data, aes(plot_marker_1, plot_marker_2, text = hover, key = pair_key)) +
     geom_point(data = missing_pairs, shape = 4, color = "#8a9493", size = 2.2, stroke = 0.8, show.legend = FALSE) +
     geom_point(data = observed_pairs, aes(fill = plot_value, size = plot_size), shape = 21, color = "#263238", stroke = 0.18, alpha = 0.9, na.rm = TRUE) +
     scale_x_discrete(drop = FALSE, labels = wrap_coloc_marker_labels) +

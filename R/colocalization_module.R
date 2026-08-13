@@ -301,6 +301,31 @@ colocalization_module_ui <- function(id) {
             ),
             plotlyOutput(ns("colocalization_heatmap"), height = "auto")
           ),
+          card(
+            class = "mt-3",
+            card_header("Pair detail"),
+            card_body(
+              p(class = "text-muted mb-2", "Click a heatmap point to inspect that marker pair by sample and cell population."),
+              uiOutput(ns("colocalization_pair_detail_title")),
+              uiOutput(ns("colocalization_pair_detail_metrics")),
+              plot_pane(
+                size = "wide",
+                download_id = "colocalization_pair_detail",
+                ns = ns,
+                controls = plot_options_controls(
+                  ns,
+                  "colocalization_pair_detail_width",
+                  "colocalization_pair_detail_height",
+                  width_value = 900,
+                  height_value = 520,
+                  max_value = 5000,
+                  show_view_dimensions = FALSE
+                ),
+                plotlyOutput(ns("colocalization_pair_detail"), height = "auto")
+              ),
+              div(class = "table-pane", tableOutput(ns("colocalization_pair_detail_table")))
+            )
+          ),
           div(class = "table-pane", tableOutput(ns("colocalization_table")))
         ),
         nav_panel(
@@ -336,6 +361,7 @@ colocalization_module_server <- function(id, data) {
     colocalization_heatmap_config <- reactiveVal(NULL)
     custom_colocalization_heatmap_config <- reactiveVal(NULL)
     colocalization_heatmap_summary_config <- reactiveVal(NULL)
+    colocalization_pair_selection <- reactiveVal(NULL)
     colocalization_pixelator_filter_config <- debounce(reactive(list(
       enabled = isTRUE(input$colocalization_pixelator_filter_enabled),
       background_threshold_pct = numeric_input_value(input$colocalization_background_threshold_pct, 0.001),
@@ -864,9 +890,183 @@ colocalization_module_server <- function(id, data) {
     output$colocalization_heatmap <- renderPlotly({
       coloc_heatmap_plotly(
         colocalization_heatmap_result(),
-        dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())
+        dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions()),
+        source = "colocalization_heatmap"
       )
     })
+
+    observeEvent(plotly::event_data("plotly_click", source = "colocalization_heatmap"), {
+      event <- plotly::event_data("plotly_click", source = "colocalization_heatmap")
+      result <- isolate(colocalization_heatmap_result())
+      clicked <- result$plot_data[
+        as.character(result$plot_data$pair_key) == as.character(event$key),
+        ,
+        drop = FALSE
+      ]
+      if (nrow(clicked) > 0) {
+        colocalization_pair_selection(list(
+          marker_1 = as.character(clicked$marker_1[1]),
+          marker_2 = as.character(clicked$marker_2[1]),
+          group = as.character(clicked[[result$condition_col]][1])
+        ))
+      }
+    }, ignoreInit = TRUE)
+
+    selected_colocalization_pair <- reactive({
+      result <- colocalization_heatmap_result()
+      resolve_colocalization_pair_selection(
+        result$plot_data,
+        selection = colocalization_pair_selection(),
+        condition_col = result$condition_col
+      )
+    })
+
+    colocalization_pair_detail_data <- reactive({
+      current_data <- data()
+      result <- colocalization_heatmap_result()
+      selection <- selected_colocalization_pair()
+      filter_config <- colocalization_pixelator_filter_config()
+      req(current_data, selection, filter_config)
+
+      metadata <- colocalization_metadata()
+      if (identical(result$scope, "celltype")) {
+        focus_celltype <- colocalization_heatmap_config()$focus_celltype
+        metadata <- metadata[metadata$celltype_manual == focus_celltype, , drop = FALSE]
+      }
+      displayed_groups <- unique(as.character(result$summary[[result$condition_col]]))
+      metadata <- metadata[
+        as.character(metadata[[result$condition_col]]) %in% displayed_groups,
+        ,
+        drop = FALSE
+      ]
+      validate(need(nrow(metadata) > 0, "No cells are available for the selected pair detail."))
+
+      sample_summary <- current_data$colocalization_sample_summary
+      if (isTRUE(filter_config$enabled) || is.null(sample_summary)) {
+        pair_scores <- filter_colocalization_marker_pair(
+          current_data$colocalization,
+          selection$marker_1,
+          selection$marker_2
+        )
+        if (isTRUE(filter_config$enabled) && nrow(pair_scores) > 0) {
+          pair_scores <- tryCatch(
+            filter_pixelator_proximity_scores(
+              pair_scores,
+              metadata,
+              current_data$abundance,
+              background_threshold_pct = filter_config$background_threshold_pct,
+              background_threshold_count = filter_config$background_threshold_count,
+              min_cells_count = filter_config$min_cells_count
+            ),
+            error = function(error) validate(need(FALSE, conditionMessage(error)))
+          )
+        }
+        sample_summary <- summarize_colocalization_by_sample(pair_scores)
+      }
+
+      detail <- summarize_colocalization_pair_detail(
+        sample_summary,
+        metadata,
+        marker_1 = selection$marker_1,
+        marker_2 = selection$marker_2,
+        mean_type = colocalization_heatmap_config()$mean_type
+      )
+      validate(need(nrow(detail) > 0, "No sample or cell-population detail is available for this pair."))
+
+      list(
+        summary = detail,
+        selection = selection,
+        value_label = result$value_label,
+        legend_range = colocalization_legend_range(
+          colocalization_heatmap_config()$legend_min,
+          colocalization_heatmap_config()$legend_max
+        )
+      )
+    })
+
+    output$colocalization_pair_detail_title <- renderUI({
+      selection <- selected_colocalization_pair()
+      tags$h4(class = "mb-3", paste(selection$marker_1, "↔", selection$marker_2))
+    })
+
+    output$colocalization_pair_detail_metrics <- renderUI({
+      selection <- selected_colocalization_pair()
+      result <- colocalization_heatmap_result()
+      group_label <- if (identical(result$condition_col, "sample_alias")) "Selected sample" else "Selected analysis group"
+      score <- if (isTRUE(selection$pair_observed)) {
+        format(round(selection$plot_value, 3), trim = TRUE)
+      } else {
+        "Not available"
+      }
+
+      metric_row(
+        metric_tile(group_label, selection$group),
+        metric_tile(result$value_label, score),
+        metric_tile("Detected cells", paste0(format(selection$n_detected, big.mark = ","), " / ", format(selection$n_total, big.mark = ","))),
+        metric_tile("Detected fraction", format_percent(selection$plot_size))
+      )
+    })
+
+    colocalization_pair_detail_ggplot <- reactive({
+      detail <- colocalization_pair_detail_data()
+      plot_colocalization_pair_detail(
+        detail$summary,
+        marker_1 = detail$selection$marker_1,
+        marker_2 = detail$selection$marker_2,
+        value_label = detail$value_label,
+        legend_range = detail$legend_range
+      )
+    })
+    colocalization_pair_detail_dimensions <- reactive({
+      plot_options_view_overrides(
+        input,
+        "colocalization_pair_detail",
+        colocalization_pair_detail_base_dimensions(colocalization_pair_detail_data()$summary)
+      )
+    })
+    colocalization_pair_detail_export_dimensions <- reactive({
+      plot_options_export_overrides(
+        input,
+        "colocalization_pair_detail",
+        colocalization_pair_detail_base_dimensions(colocalization_pair_detail_data()$summary)
+      )
+    })
+
+    output$colocalization_pair_detail <- renderPlotly({
+      dimensions <- plotly_display_dimensions(colocalization_pair_detail_dimensions())
+      ggplotly(
+        colocalization_pair_detail_ggplot(),
+        tooltip = "text",
+        width = dimensions$width,
+        height = dimensions$height
+      ) |>
+        apply_proxiome_plot_frame(
+          colorbar_title = colocalization_pair_detail_data()$value_label,
+          dimensions = dimensions
+        )
+    })
+    register_ggplot_downloads(
+      output,
+      "colocalization_pair_detail",
+      colocalization_pair_detail_ggplot,
+      filename_prefix = function() {
+        detail <- colocalization_pair_detail_data()
+        paste(
+          "colocalization-pair-detail",
+          detail$selection$marker_1,
+          detail$selection$marker_2,
+          detail$value_label,
+          sep = "-"
+        )
+      },
+      width = function() plot_download_size_from_dimensions(colocalization_pair_detail_export_dimensions())$width,
+      height = function() plot_download_size_from_dimensions(colocalization_pair_detail_export_dimensions())$height
+    )
+
+    output$colocalization_pair_detail_table <- renderTable({
+      detail <- colocalization_pair_detail_data()
+      format_colocalization_pair_detail_table(detail$summary, detail$value_label)
+    }, striped = TRUE, bordered = FALSE, width = "100%")
 
     colocalization_heatmap_ggplot <- reactive({
       colocalization_heatmap_result()$plot
@@ -1123,6 +1323,232 @@ colocalization_module_server <- function(id, data) {
       format_differential_table(result, effect_label = "diff_median_vs_reference")
     }, striped = TRUE, bordered = FALSE, width = "100%")
   })
+}
+
+resolve_colocalization_pair_selection <- function(plot_data, selection = NULL, condition_col = "condition") {
+  required_cols <- c(
+    condition_col, "marker_1", "marker_2", "plot_value", "plot_size",
+    "pair_observed", "n_detected", "n_total"
+  )
+  if (!is.data.frame(plot_data) || nrow(plot_data) == 0 || !all(required_cols %in% names(plot_data))) {
+    return(NULL)
+  }
+
+  selected_rows <- plot_data[FALSE, , drop = FALSE]
+  if (!is.null(selection) && all(c("marker_1", "marker_2") %in% names(selection))) {
+    selected_rows <- plot_data[
+      as.character(plot_data$marker_1) == as.character(selection$marker_1)[1] &
+        as.character(plot_data$marker_2) == as.character(selection$marker_2)[1],
+      ,
+      drop = FALSE
+    ]
+    if (nrow(selected_rows) > 0 && "group" %in% names(selection)) {
+      group_rows <- selected_rows[
+        as.character(selected_rows[[condition_col]]) == as.character(selection$group)[1],
+        ,
+        drop = FALSE
+      ]
+      if (nrow(group_rows) > 0) {
+        selected_rows <- group_rows
+      }
+    }
+  }
+
+  if (nrow(selected_rows) == 0) {
+    selected_rows <- plot_data[plot_data$pair_observed, , drop = FALSE]
+    if (nrow(selected_rows) == 0) {
+      selected_rows <- plot_data
+    }
+    selected_rows <- selected_rows[
+      order(abs(selected_rows$plot_value), selected_rows$plot_size, decreasing = TRUE, na.last = TRUE),
+      ,
+      drop = FALSE
+    ]
+  }
+
+  selected <- as.list(selected_rows[1, , drop = FALSE])
+  selected$marker_1 <- as.character(selected$marker_1)
+  selected$marker_2 <- as.character(selected$marker_2)
+  selected$group <- as.character(selected_rows[[condition_col]][1])
+  selected
+}
+
+filter_colocalization_marker_pair <- function(data, marker_1, marker_2) {
+  if (!is.data.frame(data) || nrow(data) == 0 || !all(c("marker_1", "marker_2") %in% names(data))) {
+    return(data)
+  }
+
+  marker_1_values <- as.character(data$marker_1)
+  marker_2_values <- as.character(data$marker_2)
+  keep <- (marker_1_values == marker_1 & marker_2_values == marker_2) |
+    (marker_1_values == marker_2 & marker_2_values == marker_1)
+  data[keep, , drop = FALSE]
+}
+
+summarize_colocalization_pair_detail <- function(
+  sample_summary,
+  metadata,
+  marker_1,
+  marker_2,
+  mean_type = "population"
+) {
+  metadata_cols <- c("component", "sample_alias", "condition", "celltype_manual")
+  summary_cols <- c(
+    "sample_alias", "celltype_manual", "marker_1", "marker_2",
+    "sum_log2_ratio", "n_detected"
+  )
+  missing_metadata_cols <- setdiff(metadata_cols, names(metadata))
+  missing_summary_cols <- setdiff(summary_cols, names(sample_summary))
+  if (length(missing_metadata_cols) > 0 || length(missing_summary_cols) > 0) {
+    stop(
+      "Missing columns for colocalization pair detail: ",
+      paste(unique(c(missing_metadata_cols, missing_summary_cols)), collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  require_namespace("data.table")
+  metadata_dt <- unique(data.table::as.data.table(metadata)[, ..metadata_cols], by = "component")
+  totals <- metadata_dt[, .(n_total = data.table::uniqueN(component)), keyby = .(condition, sample_alias, celltype_manual)]
+  if (nrow(totals) == 0) {
+    return(data.frame())
+  }
+
+  pair_rows <- filter_colocalization_marker_pair(sample_summary, marker_1, marker_2)
+  pair_dt <- data.table::as.data.table(pair_rows[, summary_cols, drop = FALSE])
+  if (nrow(pair_dt) > 0) {
+    pair_dt[, preferred_orientation := marker_1 == ..marker_1 & marker_2 == ..marker_2]
+    data.table::setorderv(
+      pair_dt,
+      c("sample_alias", "celltype_manual", "preferred_orientation"),
+      c(1L, 1L, -1L)
+    )
+    pair_dt <- unique(pair_dt, by = c("sample_alias", "celltype_manual"))
+    pair_dt[, preferred_orientation := NULL]
+  }
+
+  detail <- merge(
+    totals,
+    pair_dt[, .(sample_alias, celltype_manual, sum_log2_ratio, n_detected)],
+    by = c("sample_alias", "celltype_manual"),
+    all.x = TRUE,
+    sort = FALSE
+  )
+  detail[is.na(sum_log2_ratio), sum_log2_ratio := 0]
+  detail[is.na(n_detected), n_detected := 0L]
+  detail[, n_detected := as.integer(n_detected)]
+  detail[, pair_observed := n_detected > 0]
+  denominator <- if (identical(mean_type, "detected")) detail$n_detected else detail$n_total
+  detail[, mean_log2_ratio := ifelse(denominator > 0, sum_log2_ratio / denominator, NA_real_)]
+  detail[, pct_detected := ifelse(n_total > 0, n_detected / n_total, NA_real_)]
+  data.table::setorderv(detail, c("condition", "sample_alias", "celltype_manual"))
+
+  as.data.frame(detail[, .(
+    condition,
+    sample_alias,
+    celltype_manual,
+    mean_log2_ratio,
+    pct_detected,
+    n_detected,
+    n_total,
+    pair_observed
+  )])
+}
+
+colocalization_pair_detail_base_dimensions <- function(summary) {
+  group_count <- max(1L, length(unique(as.character(summary$condition))))
+  facet_columns <- min(2L, group_count)
+  facet_rows <- ceiling(group_count / facet_columns)
+  samples_per_group <- table(as.character(summary$condition), as.character(summary$sample_alias)) > 0
+  max_samples <- if (length(samples_per_group) == 0) 1L else max(rowSums(samples_per_group))
+  population_count <- max(1L, length(unique(as.character(summary$celltype_manual))))
+
+  list(
+    width = min(1800, max(760, facet_columns * max(340, max_samples * 82) + 210)),
+    height = min(3000, max(480, facet_rows * max(230, population_count * 42) + 150)),
+    margin = list(l = 120, r = 180, t = 64, b = 120)
+  )
+}
+
+plot_colocalization_pair_detail <- function(
+  summary,
+  marker_1,
+  marker_2,
+  value_label = "Population mean log2 ratio",
+  legend_range = c(-1, 1)
+) {
+  plot_data <- summary
+  plot_data$plot_condition <- factor(plot_data$condition, levels = unique(plot_data$condition))
+  plot_data$plot_sample <- factor(plot_data$sample_alias, levels = unique(plot_data$sample_alias))
+  plot_data$plot_celltype <- factor(plot_data$celltype_manual, levels = rev(unique(plot_data$celltype_manual)))
+  plot_data$plot_value <- plot_data$mean_log2_ratio
+  plot_data$plot_value[!plot_data$pair_observed] <- NA_real_
+  plot_data$hover <- paste0(
+    "Analysis group: ", plot_data$condition,
+    "<br>Sample: ", plot_data$sample_alias,
+    "<br>Cell population: ", plot_data$celltype_manual,
+    "<br>", value_label, ": ", ifelse(plot_data$pair_observed, round(plot_data$plot_value, 3), "Not available"),
+    "<br>Pair status: ", ifelse(plot_data$pair_observed, "Detected pair", "No detected pair"),
+    "<br>Detected cells: ", plot_data$n_detected, " / ", plot_data$n_total,
+    "<br>Detected fraction: ", format_percent(plot_data$pct_detected)
+  )
+
+  missing_pairs <- plot_data[!plot_data$pair_observed, , drop = FALSE]
+  observed_pairs <- plot_data[plot_data$pair_observed, , drop = FALSE]
+  ggplot(plot_data, aes(plot_sample, plot_celltype, text = hover)) +
+    geom_point(data = missing_pairs, shape = 4, color = "#8a9493", size = 2.8, stroke = 0.9, show.legend = FALSE) +
+    geom_point(data = observed_pairs, aes(fill = plot_value, size = pct_detected), shape = 21, color = "#263238", stroke = 0.25) +
+    scale_fill_gradient2(
+      low = "#176d73",
+      mid = "#f7f8f7",
+      high = "#c7503e",
+      midpoint = 0,
+      limits = legend_range,
+      oob = squish_to_limits,
+      name = value_label
+    ) +
+    scale_size_continuous(
+      range = c(2.5, 9),
+      limits = c(0, 1),
+      breaks = c(0.25, 0.5, 0.75, 1),
+      labels = qc_percent_axis_labels,
+      name = "Detected fraction"
+    ) +
+    facet_wrap(~plot_condition, ncol = min(2L, length(unique(plot_data$plot_condition))), scales = "free_x") +
+    labs(
+      title = paste(marker_1, "↔", marker_2, "by sample and cell population"),
+      x = "Sample",
+      y = "Cell population",
+      caption = "× = no detected pair; dot size = detected fraction"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.minor = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text = element_text(face = "bold"),
+      plot.caption = element_text(color = "#5f6b6a", hjust = 0),
+      legend.position = "right"
+    )
+}
+
+format_colocalization_pair_detail_table <- function(summary, value_label, max_rows = 100L) {
+  result <- head(summary, max_rows)
+  result$mean_log2_ratio <- ifelse(
+    result$pair_observed,
+    round(result$mean_log2_ratio, 3),
+    NA_real_
+  )
+  result$pct_detected <- format_percent(result$pct_detected)
+  result$pair_status <- ifelse(result$pair_observed, "Detected pair", "No detected pair")
+  result <- result[, c(
+    "condition", "sample_alias", "celltype_manual", "mean_log2_ratio",
+    "pct_detected", "n_detected", "n_total", "pair_status"
+  ), drop = FALSE]
+  names(result) <- c(
+    "analysis_group", "sample", "cell_population", value_label,
+    "detected_fraction", "detected_cells", "total_cells", "pair_status"
+  )
+  result
 }
 
 colocalization_3d_sample_column <- function(metadata) {
