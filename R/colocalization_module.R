@@ -849,7 +849,7 @@ colocalization_module_server <- function(id, data) {
       output,
       "colocalization_heatmap",
       colocalization_heatmap_ggplot,
-      filename_prefix = "colocalization-heatmap",
+      filename_prefix = function() paste("colocalization-heatmap", colocalization_heatmap_result()$value_label, sep = "-"),
       width = function() plot_download_size_from_dimensions(colocalization_heatmap_export_dimensions())$width,
       height = function() plot_download_size_from_dimensions(colocalization_heatmap_export_dimensions())$height
     )

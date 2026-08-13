@@ -1115,6 +1115,51 @@ test_that("colocalization heatmap labels the detected-cell mean explicitly", {
   expect_equal(result$value_label, "Detected-cell mean log2 ratio")
   expect_true(all(grepl("Detected-cell mean log2 ratio", result$plot_data$hover, fixed = TRUE)))
   expect_equal(result$plot$scales$get_scales("fill")$name, "Detected-cell mean log2 ratio")
+  expect_equal(
+    plot_download_filename(paste("colocalization-heatmap", result$value_label, sep = "-"), "png"),
+    "colocalization-heatmap-Detected-cell-mean-log2-ratio.png"
+  )
+})
+
+test_that("colocalization heatmap distinguishes missing pairs from observed zeros", {
+  completed_summary <- complete_spatial_marker_pairs(
+    data.frame(
+      condition = "UNT",
+      marker_1 = "CD3e",
+      marker_2 = "CD4",
+      mean_log2_ratio = 0,
+      pct_detected = 0.5,
+      n_detected = 1L,
+      n_total = 2L,
+      stringsAsFactors = FALSE
+    ),
+    selected_markers = c("CD3e", "CD4", "CD8"),
+    group_cols = "condition"
+  )
+
+  result <- make_coloc_heatmaps(
+    data = completed_summary,
+    selected_markers = c("CD3e", "CD4", "CD8"),
+    cell_label = "selected cells",
+    conditions = "UNT"
+  )
+  pair <- function(marker_1, marker_2) {
+    result$plot_data[
+      as.character(result$plot_data$marker_1) == marker_1 &
+        as.character(result$plot_data$marker_2) == marker_2,
+      ,
+      drop = FALSE
+    ]
+  }
+
+  observed_zero <- pair("CD3e", "CD4")
+  missing_pair <- pair("CD3e", "CD8")
+  expect_true(observed_zero$pair_observed)
+  expect_equal(observed_zero$plot_value, 0)
+  expect_false(missing_pair$pair_observed)
+  expect_true(is.na(missing_pair$plot_value))
+  expect_match(missing_pair$hover, "No detected pair", fixed = TRUE)
+  expect_equal(result$plot$labels$caption, "× = no detected pair")
 })
 
 test_that("colocalization heatmap mirrors completed one-direction marker pairs", {
@@ -1211,6 +1256,7 @@ test_that("colocalization observed heatmap uses one Plotly renderer without plot
   expect_lt(result_start, plotly_start)
   expect_true(grepl("colocalization_heatmap_result()", colocalization_module_source, fixed = TRUE))
   expect_true(grepl("coloc_heatmap_plotly(", colocalization_module_source, fixed = TRUE))
+  expect_true(grepl('filename_prefix = function() paste("colocalization-heatmap", colocalization_heatmap_result()$value_label, sep = "-")', colocalization_module_source, fixed = TRUE))
   expect_true(grepl("dimensions = plotly_display_dimensions(colocalization_heatmap_dimensions())", colocalization_module_source, fixed = TRUE))
 })
 

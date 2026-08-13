@@ -1130,6 +1130,13 @@ prepare_coloc_heatmap_plot_data <- function(
     ,
     drop = FALSE
   ]
+  if (!"pair_observed" %in% names(data)) {
+    data$pair_observed <- if ("n_detected" %in% names(data)) {
+      as.numeric(data$n_detected) > 0
+    } else {
+      is.finite(as.numeric(data[[value_col]]))
+    }
+  }
   data <- symmetrise_coloc_pairs(
     data,
     condition_col = condition_col,
@@ -1138,7 +1145,7 @@ prepare_coloc_heatmap_plot_data <- function(
   )
 
   merge_cols <- intersect(
-    unique(c(condition_col, marker1_col, marker2_col, value_col, size_col, "n_detected", "n_total")),
+    unique(c(condition_col, marker1_col, marker2_col, value_col, size_col, "n_detected", "n_total", "pair_observed")),
     names(data)
   )
 
@@ -1159,14 +1166,18 @@ prepare_coloc_heatmap_plot_data <- function(
   plot_data$plot_condition <- factor(plot_data[[condition_col]], levels = conditions)
   plot_data$plot_marker_1 <- factor(plot_data[[marker1_col]], levels = marker_order)
   plot_data$plot_marker_2 <- factor(plot_data[[marker2_col]], levels = rev(marker_order))
+  plot_data$pair_observed <- !is.na(plot_data$pair_observed) & as.logical(plot_data$pair_observed)
   plot_data$plot_value <- as.numeric(plot_data[[value_col]])
+  plot_data$plot_value[!plot_data$pair_observed] <- NA_real_
   plot_data$plot_size <- as.numeric(plot_data[[size_col]])
+  plot_data$pair_status <- ifelse(plot_data$pair_observed, "Detected pair", "No detected pair")
   condition_label <- if (identical(condition_col, "sample_alias")) "Sample" else "Analysis group"
   plot_data$hover <- paste0(
     condition_label, ": ", plot_data[[condition_col]],
     "<br>Marker 1: ", plot_data[[marker1_col]],
     "<br>Marker 2: ", plot_data[[marker2_col]],
-    "<br>", value_label, ": ", ifelse(is.na(plot_data$plot_value), "No data", round(plot_data$plot_value, 3)),
+    "<br>", value_label, ": ", ifelse(plot_data$pair_observed, round(plot_data$plot_value, 3), "Not available"),
+    "<br>Pair status: ", plot_data$pair_status,
     "<br>Detected cells: ", plot_data$n_detected,
     "<br>Fraction detected: ", format_percent(plot_data$plot_size)
   )
@@ -1206,9 +1217,12 @@ build_coloc_heatmap_plot <- function(
   value_label = "Population mean log2 ratio"
 ) {
   size_range <- coloc_heatmap_size_range(plot_data)
+  missing_pairs <- plot_data[!plot_data$pair_observed, , drop = FALSE]
+  observed_pairs <- plot_data[plot_data$pair_observed, , drop = FALSE]
 
-  p <- ggplot(plot_data, aes(plot_marker_1, plot_marker_2, fill = plot_value, size = plot_size, text = hover)) +
-    geom_point(shape = 21, color = "#263238", stroke = 0.18, alpha = 0.9, na.rm = TRUE) +
+  p <- ggplot(plot_data, aes(plot_marker_1, plot_marker_2, text = hover)) +
+    geom_point(data = missing_pairs, shape = 4, color = "#8a9493", size = 2.2, stroke = 0.8, show.legend = FALSE) +
+    geom_point(data = observed_pairs, aes(fill = plot_value, size = plot_size), shape = 21, color = "#263238", stroke = 0.18, alpha = 0.9, na.rm = TRUE) +
     scale_x_discrete(drop = FALSE, labels = wrap_coloc_marker_labels) +
     scale_y_discrete(drop = FALSE, labels = wrap_coloc_marker_labels) +
     scale_fill_gradient2(
@@ -1232,7 +1246,8 @@ build_coloc_heatmap_plot <- function(
     labs(
       title = title %||% paste("Colocalization in", cell_label),
       x = "Marker 1",
-      y = "Marker 2"
+      y = "Marker 2",
+      caption = "× = no detected pair"
     ) +
     theme_minimal(base_size = 12) +
     theme(
@@ -1241,6 +1256,7 @@ build_coloc_heatmap_plot <- function(
       axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
       axis.text = element_text(size = 9),
       strip.text = element_text(face = "bold"),
+      plot.caption = element_text(color = "#5f6b6a", hjust = 0),
       legend.position = "right"
     )
 
