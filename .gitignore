@@ -24,6 +24,10 @@ runtime/
 *.sqlite3
 
 # Keep source-controlled renv metadata, ignore generated environments
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
 renv/library/
 renv/local/
 renv/cellar/
@@ -46,6 +50,7 @@ reports/
 output/
 exports/
 site/
+python-cache/
 
 # Editor, OS, and temporary files
 .DS_Store

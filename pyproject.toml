@@ -1,0 +1,25 @@
+[project]
+name = "proxiomevis"
+version = "0.1.0"
+description = "Python Shiny explorer for Pixelator PNA data"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+  "kaleido",
+  "numpy",
+  "pandas",
+  "pixelgen-pixelator",
+  "plotly",
+  "scanpy",
+  "scipy",
+  "shiny",
+  "shinywidgets",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests_python"]

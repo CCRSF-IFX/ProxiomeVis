@@ -5,6 +5,9 @@ single-cell protein spatial data. It focuses on marker abundance, cell
 annotation, differential readouts, self-clustering, and marker-pair
 colocalization from Pixelator v4.1.1 Seurat objects.
 
+The repository contains both the original R application (`app.R`) and a Python
+Shiny port (`app.py`). The Python app reads Pixelator `.pxl` files directly.
+
 ## Features
 
 - **QC**: cell filtering summaries, cell-calling rank plots, QC metric
@@ -37,6 +40,40 @@ RnD_CS041188_BaoTran_XiaolinWu_3_Pixelgen_042126/notebooks/r/pg_data_combined_fi
 
 ## Run The App
 
+### Python
+
+Pixelator currently supports Python 3.10 and 3.11. From this directory, create
+the environment and start the Python Shiny app with:
+
+```bash
+uv sync --extra test
+uv run shiny run --reload app.py
+```
+
+Open the app's **Data** panel to enter one or more `.pxl` paths. The input
+accepts a file, directory, glob, or comma/newline-separated list. Alternatively,
+set the default before starting the app:
+
+```bash
+export PROXIOME_PXL='/path/to/data/*.pxl'
+uv run shiny run app.py
+```
+
+Loading multiple files follows Pixelator's aggregation model: each file becomes
+a sample in the combined dataset. The Python app uses the PXL `adata()`,
+`proximity()`, and component-layout interfaces for abundance, spatial metrics,
+and 3D views. Its first load can take several minutes; compact processed data
+are cached under `$HOME/.ProxiomeVis/python-cache`.
+
+Raw PXL files do not necessarily contain the experiment labels or curated cell
+types present in the R demo's Seurat object. To restore them, provide an optional
+annotation CSV in the **Data** panel. It must contain `component` plus any of
+`sample`, `sample_alias`, `condition`, `cell_type`, or `celltype_manual`.
+Optional patch-analysis sidecars can also be supplied as a directory containing
+`patch_markers.csv`, `patch_raji_signal.csv`, and/or `patch_burden.csv`.
+
+### R
+
 From the parent analysis repository:
 
 ```bash
@@ -61,7 +98,13 @@ demo dataset. Otherwise it writes a user-local cache under `$HOME/.ProxiomeVis`.
 
 ## Tests
 
-From the parent analysis repository:
+Run the Python tests with:
+
+```bash
+uv run --extra test pytest -q
+```
+
+Run the R tests from the parent analysis repository:
 
 ```bash
 pixi run -e r test-shiny-proxiome
