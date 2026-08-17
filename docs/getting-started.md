@@ -1,47 +1,33 @@
 # Getting Started
 
-## Launch the app
+## Launch the Python app
 
-From the parent analysis repository, launch ProxiomeVis with:
-
-```bash
-pixi run -e r serve-shiny-proxiome
-```
-
-From this Shiny app directory, if the R environment is already restored:
+From this directory:
 
 ```bash
-Rscript -e "shiny::runApp('.')"
+uv sync --extra test
+uv run shiny run --reload app.py
 ```
-
-The app opens in a browser. On Open OnDemand, use the URL provided by the
-interactive session.
 
 ## Load data
 
-The app starts with the configured demo dataset when available. To load another
-dataset, use the **Data source** controls and enter the full path to a readable
-`.rds` file.
-
-The first load of a new RDS can take several minutes. ProxiomeVis builds compact
-tables for interactive plotting and stores them in a user-local cache. Loading
-the same RDS again should be faster if the cache is still valid.
+Open **Data**, enter the full path to one readable processed `.h5ad` file, and
+click **Load Data**. The reference dataset is prefilled unless
+`PROXIOME_H5AD` overrides it.
 
 ## Navigate the app
 
-The main tabs are:
+The Python app contains two analysis tabs:
 
-- **QC**
-- **Abundance**
-- **Spatial Metrics**
+- **QC** for filtering history, molecule-rank curves, distributions, and metadata
+- **Abundance** for embeddings, marker distributions, annotations, and differential abundance
 
-Each tab has a left sidebar for filters and data-changing controls. Plot size
-and download controls are placed next to plots in the **Options** popover.
+It intentionally has no PXL, proximity, colocalization, patch-analysis, or 3D
+layout workflow.
 
 ## Recommended first checks
 
-1. Open **QC > Filtering** and confirm the expected samples are present.
-2. Open **QC > Cell Calling** and check cell-rank curves.
-3. Open **Abundance > Observed** and inspect marker signal on UMAP.
-4. Open **Spatial Metrics > Colocalization > Observed** for marker-pair spatial
-   patterns.
+1. Open **QC > Filtering** and confirm the expected samples and retained counts.
+2. Open **QC > Cell Calling** and inspect the stored `n_umi` values.
+3. Open **Abundance > Observed** and inspect marker signal on a stored embedding.
+4. Open **Abundance > Cell Annotation** to verify the cell populations.

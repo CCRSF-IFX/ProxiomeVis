@@ -1,71 +1,37 @@
 # Data Input
 
-## RDS requirements
+## Python app: processed H5AD only
 
-ProxiomeVis expects a Pixelator-compatible Seurat object saved as an RDS file.
-The object should include:
+The Python Shiny app accepts one server-visible `.h5ad` file. It does not read
+Pixelator `.pxl` files or run Pixelator analysis.
 
-- cell metadata
-- embeddings such as UMAP
-- PNA assay abundance data
-- stored Pixelator proximity outputs for clustering and colocalization
-
-RDS loading reads stored proximity values. It does **not** call
-`pixelatorR::ProximityScores()` again.
-
-## Demo data
-
-The CCRSF deployment is configured around a Pixelator v4.1.1 demo RDS:
+The reference dataset is:
 
 ```text
-RnD_CS041188_BaoTran_XiaolinWu_3_Pixelgen_042126/notebooks/r/pg_data_combined_fil.pixelator_v4.1.1.rds
+/Volumes/ccrsf-static/illumina/CCRSFIFX-23_MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/python_results/pg_data_combined_filtered_annotated.h5ad
 ```
 
-Deployments can override the demo RDS with:
+Override the default path before launch when needed:
 
 ```bash
-export PROXIOME_DEMO_RDS=/path/to/demo.rds
+export PROXIOME_H5AD=/path/to/processed_data.h5ad
 ```
 
-## 3D layout files
+## Expected AnnData content
 
-The 3D layout view uses Pixelator `.layout.pxl` files. These files are separate
-from the RDS and are usually found under a Pixelator results directory, for
-example:
+- `X`: component-by-marker counts
+- `obs`: sample, condition, cell annotation, and QC metadata
+- `var_names`: antibody marker names
+- `layers["clr"]`: normalized abundance when available
+- `obsm`: stored two-dimensional or higher embeddings such as UMAP, PCA, or Harmony
+- `uns["qc_cell_counts_by_step"]`: optional notebook-generated QC retention history
 
-```text
-results/run_pixelator-4.1.1_merged_pixelator_v0.27.2/pixelator/3_CD3CD28.layout.pxl
-```
-
-The app searches for `<sample>.layout.pxl` near the loaded RDS. If files are in
-a separate directory, set:
-
-```bash
-export PROXIOME_LAYOUT_DIR=/path/to/pixelator/layout/files
-```
-
-If a matching `.layout.pxl` is not found, the 3D Layout tab shows a message
-instead of a plot.
-
-## User cache
-
-Processed app data are cached under:
-
-```text
-$HOME/.ProxiomeVis/cache
-```
-
-The cache avoids repeated conversion work for the same RDS. It does not replace
-the source RDS.
+Missing `sample_alias`, `condition`, or `celltype_manual` fields receive safe
+fallback values. The app uses stored processed values and does not calculate
+PXL proximity, colocalization, patch, or 3D layout data.
 
 ## Analysis grouping
 
-Use **Data > Analysis grouping…** after loading a dataset to choose the metadata
-column used as the global analysis group. Only columns with one value per
-sample are offered. Choose **Edit sample groups** to assign a custom group to
-each sample instead.
-
-The selection applies to abundance, clustering, colocalization, QC labels,
-filters, heatmaps, and differential comparisons. Changes are session-local:
-the source RDS and processed cache are not modified. Loading another dataset
-resets grouping to its `condition` column when available.
+Use **Data > Analysis grouping** after loading a dataset to choose a metadata
+column that is constant within each sample, or assign custom sample groups.
+Grouping changes are session-local and do not modify the H5AD file.

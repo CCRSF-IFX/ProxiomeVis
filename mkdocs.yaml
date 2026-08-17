@@ -2,8 +2,8 @@
 site_name: ProxiomeVis Documentation
 site_author: CCRSF-IFX
 site_description: >-
-  ProxiomeVis is an interactive Shiny application for exploring Pixelator-derived
-  single-cell protein abundance and spatial metrics.
+  ProxiomeVis Python is an interactive Shiny application for exploring processed
+  Pixelgen AnnData QC, abundance, and annotations.
 
 # Repository
 repo_name: CCRSF-IFX/ProxiomeVis
@@ -34,7 +34,6 @@ nav:
   - App guide:
       - QC: qc.md
       - Abundance: abundance.md
-      - Spatial Metrics: spatial-metrics.md
       - Downloads and plot options: downloads.md
   - Help:
       - Troubleshooting: troubleshooting.md

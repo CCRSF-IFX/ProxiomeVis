@@ -3,7 +3,7 @@
 Most static plots include controls next to the figure:
 
 - **PNG**: download a raster image.
-- **SVG**: download a vector image.
+- **PDF**: download a vector document.
 - **Options**: adjust plot width, height, and plot-specific point settings.
 
 The options live next to each plot so sizing and export controls stay close to
@@ -19,11 +19,3 @@ useful when there are many facets, samples, or cell types.
 
 Some plots include **Options > Points**. Depending on the plot, this can include
 dot size or a jitter-dot toggle.
-
-## 3D layout exports
-
-The 3D Layout view is an interactive Plotly widget. It currently supports canvas
-size controls but does not expose app-level PNG/SVG buttons.
-
-To save a view, use browser or Plotly toolbar options if available in your
-runtime.

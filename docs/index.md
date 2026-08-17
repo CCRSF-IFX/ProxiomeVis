@@ -1,31 +1,22 @@
-# ProxiomeVis
+# ProxiomeVis Python
 
-ProxiomeVis is an interactive Shiny application for exploring Pixelator-derived
-single-cell protein data. It is designed for reviewing QC, marker abundance,
-cell annotation, differential readouts, marker self-clustering, marker-pair
-colocalization, and selected Pixelator graph layouts.
-
-![ProxiomeVis overview](assets/overview.png)
+ProxiomeVis Python is an interactive Shiny application for reviewing processed
+Pixelgen AnnData. It accepts one `.h5ad` file and uses the stored counts,
+normalized abundance, QC history, annotations, and embeddings.
 
 ## What the app shows
 
-- **QC**: filtering summaries, cell-calling rank plots, QC metric distributions,
-  and original metadata.
-- **Abundance**: marker abundance on embeddings, marker distributions, cell-type
-  composition, annotation heatmaps, and differential abundance.
-- **Spatial Metrics**: clustering and colocalization readouts from stored
-  Pixelator proximity outputs, plus an interactive 3D layout view when
-  `.layout.pxl` files are available.
+- **QC**: filtering summaries, molecule-rank plots, QC distributions, and metadata
+- **Abundance**: marker abundance on embeddings, distributions, cell-type composition, annotation heatmaps, and differential abundance
 
-The app reads values already stored in the loaded Pixelator-compatible RDS file.
-It does not rerun expensive Pixelator proximity calculations during app use.
+The Python app does not read `.pxl` files and does not expose proximity,
+clustering, colocalization, patch-analysis, or 3D-layout views.
 
 ## Typical workflow
 
 1. Open the app.
-2. Load the demo data or enter a readable RDS path.
-3. Review QC first.
+2. Load a processed H5AD path from **Data**.
+3. Review QC.
 4. Explore abundance and annotation.
-5. Use Spatial Metrics for clustering, colocalization, heatmaps, differential
-   comparisons, and 3D layouts.
-6. Adjust plot Options and download figures where download buttons are available.
+5. Optionally change the session-local analysis grouping.
+6. Download figures or tables as needed.

@@ -9,12 +9,10 @@ from proxiome import (
     adjust_bh,
     apply_analysis_grouping,
     calculate_differential,
-    filter_pixelator_proximity,
+    load_h5ad_data,
     parse_group_mapping,
-    resolve_pxl_paths,
+    resolve_h5ad_path,
     sample_level_columns,
-    select_markers,
-    summarize_spatial,
 )
 
 
@@ -31,20 +29,6 @@ def make_data() -> AppData:
             "umap_2": [0, 1, 0, 1],
         }
     )
-    proximity = pd.DataFrame(
-        {
-            "component": ["c1", "c3"],
-            "marker_1": ["A", "A"],
-            "marker_2": ["B", "B"],
-            "log2_ratio": [2.0, 4.0],
-            "marker_1_freq": [0.2, 0.2],
-            "marker_2_freq": [0.2, 0.01],
-            "min_count": [20, 3],
-            "sample_alias": ["s1", "s2"],
-            "condition": ["A", "B"],
-            "celltype_manual": ["T", "T"],
-        }
-    )
     qc_counts = pd.DataFrame(
         {
             "sample": ["s1", "s2"],
@@ -58,27 +42,46 @@ def make_data() -> AppData:
         marker_options=("A", "B"),
         metadata=metadata,
         abundance=pd.DataFrame(),
-        proximity=proximity,
-        clustering=pd.DataFrame(),
-        colocalization=proximity,
-        qc_origin=metadata,
-        qc_filtered=metadata,
         qc_filter_counts=qc_counts,
-        patch={},
-        pxl_files=(),
     )
 
 
-def test_resolve_pxl_paths_and_marker_selection(tmp_path: Path):
-    first = tmp_path / "a.layout.pxl"
-    second = tmp_path / "b.layout.pxl"
-    first.touch()
-    second.touch()
-    assert resolve_pxl_paths(tmp_path) == [first.resolve(), second.resolve()]
-    assert resolve_pxl_paths(f"{first},{second}") == [first.resolve(), second.resolve()]
-    assert select_markers(["CD8", "CD3e", "X"]) == ["CD3e", "CD8"]
-    with pytest.raises(ValueError, match="No .pxl"):
-        resolve_pxl_paths(tmp_path / "missing*.pxl")
+def test_h5ad_is_the_only_supported_input(tmp_path: Path):
+    from anndata import AnnData
+
+    path = tmp_path / "processed.h5ad"
+    adata = AnnData(
+        X=np.array([[1, 2], [3, 4]], dtype=np.uint32),
+        obs=pd.DataFrame(
+            {
+                "sample": ["s1", "s2"],
+                "sample_alias": ["s1", "s2"],
+                "condition": ["A", "B"],
+                "celltype_manual": ["T", "B"],
+                "n_umi": [10, 20],
+            },
+            index=["c1", "c2"],
+        ),
+        var=pd.DataFrame(index=["CD3", "CD19"]),
+    )
+    adata.layers["clr"] = np.log1p(adata.X).astype(np.float32)
+    adata.obsm["X_umap"] = np.array([[0, 0], [1, 1]], dtype=float)
+    adata.uns["qc_cell_counts_by_step"] = {
+        "sample": ["s1", "s2", "s1", "s2"],
+        "step": ["00_loaded", "00_loaded", "03_after_isotype_filter", "03_after_isotype_filter"],
+        "n_cells": [2, 2, 1, 1],
+        "fraction_loaded": [1.0, 1.0, 0.5, 0.5],
+    }
+    adata.write_h5ad(path)
+
+    data = load_h5ad_data(path)
+    assert resolve_h5ad_path(path) == path.resolve()
+    assert data.source["source_type"] == "h5ad"
+    assert data.marker_options == ("CD3", "CD19")
+    assert set(data.metadata) >= {"component", "umap_1", "umap_2"}
+    assert data.qc_filter_counts["n_cells"].sum() == 6
+    with pytest.raises(ValueError, match="Expected an .h5ad"):
+        resolve_h5ad_path(tmp_path / "input.pxl")
 
 
 def test_analysis_grouping_updates_every_sample_backed_table():
@@ -86,32 +89,8 @@ def test_analysis_grouping_updates_every_sample_backed_table():
     assert set(sample_level_columns(data.metadata)) >= {"condition", "batch"}
     grouped = apply_analysis_grouping(data, {"s1": "baseline", "s2": "treated"}, "Custom")
     assert grouped.metadata["condition"].tolist() == ["baseline", "baseline", "treated", "treated"]
-    assert grouped.proximity["condition"].tolist() == ["baseline", "treated"]
     assert grouped.qc_filter_counts["condition"].tolist() == ["baseline", "treated"]
     assert parse_group_mapping("s1=baseline\ns2=treated") == {"s1": "baseline", "s2": "treated"}
-
-
-def test_population_spatial_mean_includes_undetected_cells_and_symmetrizes():
-    data = make_data()
-    summary = summarize_spatial(
-        data.proximity,
-        data.metadata,
-        group_col="condition",
-        markers=["A", "B"],
-        mean_type="population",
-    )
-    a_to_b = summary[(summary.condition == "A") & (summary.marker_1 == "A") & (summary.marker_2 == "B")].iloc[0]
-    b_to_a = summary[(summary.condition == "A") & (summary.marker_1 == "B") & (summary.marker_2 == "A")].iloc[0]
-    assert a_to_b.mean_log2_ratio == 1.0
-    assert a_to_b.pct_detected == 0.5
-    assert b_to_a.mean_log2_ratio == a_to_b.mean_log2_ratio
-
-
-def test_pixelator_filters_use_native_fraction_count_and_cell_thresholds():
-    rows = make_data().proximity
-    filtered = filter_pixelator_proximity(rows, min_marker_fraction=0.05, min_marker_count=10)
-    assert filtered.component.tolist() == ["c1"]
-    assert filter_pixelator_proximity(rows, min_cells=3).empty
 
 
 def test_differential_uses_median_effect_and_bh_adjustment():
@@ -137,17 +116,18 @@ def test_differential_uses_median_effect_and_bh_adjustment():
     assert np.allclose(adjust_bh([0.01, 0.04, 0.03]), [0.03, 0.04, 0.04])
 
 
-def test_python_app_contains_all_r_app_sections():
+def test_python_app_exposes_only_h5ad_qc_and_abundance():
     import app
 
     html = str(app.app_ui)
     for label in (
         "QC", "Filtering", "Cell Calling", "Distributions", "Metadata",
         "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
-        "Spatial Metrics", "Clustering", "Summary Heatmap", "Colocalization", "Pair detail", "3D Layout",
-        "Patch Analysis", "Markers", "Raji Signal", "Patch Burden", "Data source", "Analysis grouping",
+        "Processed .h5ad path", "Data source", "Analysis grouping",
     ):
         assert label in html
+    for label in (".layout.pxl", "Spatial Metrics", "Patch Analysis", "3D Layout"):
+        assert label not in html
 
     embeddings = app.embedding_columns(
         pd.DataFrame(columns=["umap_1", "umap_2", "k_core_1", "k_core_2"])

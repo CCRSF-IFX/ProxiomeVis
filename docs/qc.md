@@ -1,16 +1,13 @@
 # QC
 
-Use the QC tab to check whether the loaded data look reasonable before
-interpreting abundance or spatial metrics.
+Use the QC tab to check whether the processed H5AD looks reasonable before
+interpreting abundance.
 
 ## Filtering
 
 The **Filtering** view summarizes how many cells remain after each QC step. Use
 the sidebar to choose samples and switch the y-axis between number of cells and
 fraction of loaded cells.
-
-The line plot shows sample trajectories only. `TOTAL` rows can still be included
-in the table, but totals are not drawn as a separate line.
 
 ## Cell Calling
 
@@ -26,5 +23,5 @@ biological readouts.
 
 ## Metadata
 
-The **Metadata** view shows original metadata rows for inspection. This is useful
+The **Metadata** view shows the processed `obs` rows for inspection. This is useful
 when validating sample labels, conditions, and cell annotations.

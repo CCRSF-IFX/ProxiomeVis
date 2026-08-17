@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.cluster.hierarchy import leaves_list, linkage
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
@@ -19,17 +17,13 @@ from proxiome import (
     AppData,
     apply_analysis_grouping,
     calculate_differential,
-    default_pxl_spec,
-    filter_pixelator_proximity,
-    load_pxl_data,
+    default_h5ad_path,
+    load_h5ad_data,
     mapping_for_column,
     parse_group_mapping,
-    read_component_layout,
-    resolve_pxl_paths,
-    sample_colocalization,
+    resolve_h5ad_path,
     sample_level_columns,
     summarize_numeric,
-    summarize_spatial,
 )
 
 
@@ -77,7 +71,6 @@ def qc_ui():
             ui.accordion_panel(
                 "Filters",
                 selectize("qc_sample_filter", "Sample", multiple=True),
-                ui.input_select("qc_metadata_source", "Metadata", {"origin": "Original cells", "filtered": "Filtered cells"}),
             ),
             ui.accordion_panel(
                 "Cutoffs",
@@ -87,7 +80,6 @@ def qc_ui():
             ui.accordion_panel(
                 "Display",
                 ui.input_select("qc_filter_y", "Filter count y-axis", {"count": "Number of cells", "fraction_loaded": "Fraction of loaded cells"}),
-                ui.input_checkbox("qc_filter_include_total", "Include TOTAL rows in table", True),
                 ui.input_select("qc_metric", "Distribution metric", []),
             ),
             open=["Filters", "Cutoffs", "Display"],
@@ -198,204 +190,16 @@ def differential_controls(prefix: str, detail_label: str):
     )
 
 
-def clustering_ui():
-    sidebar = ui.sidebar(
-        ui.panel_conditional(
-            "input.clustering_mode === 'Observed' || input.clustering_mode === 'Per Marker'",
-            ui.accordion(
-                ui.accordion_panel("Display", selectize("clustering_marker", "Marker")),
-                ui.accordion_panel(
-                    "Filters",
-                    selectize("clustering_condition_filter", "Analysis group", multiple=True),
-                    selectize("clustering_celltype_filter", "Cell type", multiple=True),
-                ),
-                open=["Display", "Filters"],
-            ),
-        ),
-        ui.panel_conditional(
-            "input.clustering_mode === 'Summary Heatmap'",
-            ui.accordion(
-                ui.accordion_panel("Display", ui.input_numeric("clustering_heatmap_marker_count", "Top markers", 20, min=2, max=40)),
-                ui.accordion_panel(
-                    "Filters",
-                    selectize("clustering_heatmap_condition_filter", "Analysis group", multiple=True),
-                    selectize("clustering_heatmap_celltype_filter", "Cell type", multiple=True),
-                ),
-                open=["Display", "Filters"],
-            ),
-        ),
-        ui.panel_conditional("input.clustering_mode === 'Differential'", differential_controls("clustering", "marker")),
-        title="Clustering controls",
-        width=300,
-    )
-    return ui.nav_panel(
-        "Clustering",
-        ui.layout_sidebar(
-            sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel("Observed", plot_pane("clustering_plot"), table_pane("clustering_table")),
-                ui.nav_panel("Per Marker", plot_pane("clustering_per_marker"), table_pane("clustering_per_marker_table")),
-                ui.nav_panel("Summary Heatmap", plot_pane("clustering_summary_heatmap", height="680px"), table_pane("clustering_summary_table")),
-                ui.nav_panel("Differential", differential_panel("clustering_diff")),
-                id="clustering_mode",
-                title="Clustering",
-                full_screen=True,
-            ),
-        ),
-    )
-
-
-def colocalization_ui():
-    sidebar = ui.sidebar(
-        ui.panel_conditional(
-            "input.colocalization_mode === 'Observed'",
-            ui.accordion(
-                ui.accordion_panel("Cell population", selectize("coloc_celltype_filter", "Cell population", multiple=True)),
-                ui.accordion_panel(
-                    "Display",
-                    ui.input_select("coloc_preset", "Heatmap preset", {"custom": "Custom", "report": "Report style"}),
-                    ui.input_select("coloc_scope", "Heatmap scope", {"condition": "Analysis group summary", "sample_alias": "Sample summary", "celltype": "Cell type focus"}),
-                    selectize("coloc_celltype_focus", "Cell type focus"),
-                    ui.input_select("coloc_view", "Group display", {"focused": "Focused group", "compare": "Compare groups"}),
-                    selectize("coloc_focus_group", "Displayed group"),
-                    selectize("coloc_compare_groups", "Groups to compare", multiple=True),
-                    ui.input_select("coloc_marker_mode", "Marker set", {"auto": "Variable detected markers", "manual": "Selected markers"}),
-                    selectize("coloc_markers", "Heatmap markers", multiple=True),
-                    ui.input_numeric("coloc_top_markers", "Top markers", 20, min=2, max=40),
-                    ui.input_numeric("coloc_min_detected", "Minimum fraction detected", 0.25, min=0, max=1, step=0.05),
-                    ui.input_numeric("coloc_min_range", "Minimum log2 range", 0.2, min=0, step=0.05),
-                    ui.input_select("coloc_reference", "Reference group", []),
-                    ui.input_select("coloc_ordering", "Marker ordering", {"ward": "Ward", "complete": "Complete", "average": "Average", "single": "Single"}),
-                    ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
-                    ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
-                    selectize("coloc_detail_pair", "Pair detail"),
-                    ui.input_action_button("apply_coloc", "Apply heatmap settings", class_="btn-primary w-100"),
-                ),
-                ui.accordion_panel(
-                    "Filters",
-                    selectize("coloc_condition_filter", "Analysis group", multiple=True),
-                    ui.input_checkbox("coloc_pixelator_filter", "Apply Pixelator proximity filters", False),
-                    ui.input_numeric("coloc_min_fraction", "Minimum marker fraction", 0.001, min=0, max=1, step=0.0005),
-                    ui.input_numeric("coloc_min_count", "Minimum marker count", 0, min=0),
-                    ui.input_numeric("coloc_min_cells", "Minimum cells per pair", 1, min=1),
-                ),
-                ui.accordion_panel(
-                    "Advanced",
-                    ui.input_select("coloc_mean_type", "Heatmap mean", {"population": "Population mean", "detected": "Detected-cell mean"}),
-                ),
-                ui.accordion_panel(
-                    "Interpretation",
-                    ui.p(ui.strong("Positive:"), " closer than expected by chance."),
-                    ui.p(ui.strong("Zero:"), " approximately random spatial organization."),
-                    ui.p(ui.strong("Negative:"), " spatial segregation."),
-                ),
-                open=["Cell population", "Display"],
-            ),
-        ),
-        ui.panel_conditional(
-            "input.colocalization_mode === 'Differential'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Cell population",
-                    selectize("coloc_diff_celltype_filter", "Cell population", multiple=True),
-                    ui.input_select("coloc_diff_mean", "Sample summary", {"population": "Population mean", "detected": "Detected-cell mean"}),
-                ),
-                ui.accordion_panel(
-                    "Contrast",
-                    ui.input_select("coloc_diff_group_a", "Group A", []),
-                    ui.input_select("coloc_diff_group_b", "Group B (reference)", []),
-                    ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=1),
-                    ui.input_action_button("coloc_run_differential", "Run differential analysis", class_="btn-primary w-100"),
-                ),
-                ui.accordion_panel(
-                    "Pair display",
-                    ui.input_select("coloc_diff_pair_scope", "Pairs shown", {"all": "All marker pairs", "anchor": "Pairs containing one marker"}),
-                    selectize("coloc_diff_anchor", "Marker"),
-                    selectize("coloc_diff_pair", "Detail pair"),
-                ),
-                ui.accordion_panel(
-                    "Thresholds",
-                    ui.input_numeric("coloc_diff_fdr", "FDR threshold", 0.05, min=0, max=1, step=0.01),
-                    ui.input_numeric("coloc_diff_effect", "Minimum median-sample difference", 0.25, min=0, step=0.05),
-                ),
-                open=["Cell population", "Contrast", "Pair display"],
-            ),
-        ),
-        ui.panel_conditional(
-            "input.colocalization_mode === '3D Layout'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Cell",
-                    selectize("coloc_3d_sample", "Sample"),
-                    selectize("coloc_3d_celltypes", "Cell type", multiple=True),
-                    selectize("coloc_3d_component", "Cell/component"),
-                    ui.input_numeric("coloc_3d_max_background", "Max background nodes", 7000, min=0, max=50000, step=500),
-                ),
-                ui.accordion_panel("Markers", selectize("coloc_3d_markers", "Highlighted markers", multiple=True)),
-                open=["Cell", "Markers"],
-            ),
-        ),
-        title="Colocalization controls",
-        width=300,
-    )
-    return ui.nav_panel(
-        "Colocalization",
-        ui.layout_sidebar(
-            sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel(
-                    "Observed",
-                    ui.output_ui("coloc_notice"),
-                    plot_pane("coloc_heatmap", height="900px"),
-                    ui.card(
-                        ui.card_header("Pair detail"),
-                        ui.card_body(ui.output_ui("coloc_pair_metrics"), plot_pane("coloc_pair_detail"), table_pane("coloc_pair_table")),
-                    ),
-                    table_pane("coloc_table"),
-                ),
-                ui.nav_panel("Differential", ui.output_ui("coloc_diff_method"), differential_panel("coloc_diff")),
-                ui.nav_panel("3D Layout", plot_pane("coloc_3d_layout", height="640px"), table_pane("coloc_3d_table")),
-                id="colocalization_mode",
-                title="Colocalization",
-                full_screen=True,
-            ),
-        ),
-    )
-
-
-def patch_ui():
-    sidebar = ui.sidebar(
-        ui.accordion(ui.accordion_panel("Markers", selectize("patch_label_filter", "Marker class", multiple=True)), open="Markers"),
-        title="Patch controls",
-        width=300,
-    )
-    return ui.nav_panel(
-        "Patch Analysis",
-        ui.layout_sidebar(
-            sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel("Markers", ui.output_ui("patch_metric_row"), plot_pane("patch_marker_plot"), table_pane("patch_marker_table")),
-                ui.nav_panel("Raji Signal", plot_pane("patch_raji_plot"), table_pane("patch_raji_table")),
-                ui.nav_panel("Patch Burden", table_pane("patch_burden_table")),
-                id="patch_mode",
-                title="Patch Analysis",
-                full_screen=True,
-            ),
-        ),
-    )
-
 
 def data_popover():
     return ui.nav_control(
         ui.popover(
             ui.input_action_button("data_button", "Data", class_="btn btn-outline-light data-source-button"),
             ui.div(
-                ui.input_text_area("pxl_spec", ".layout.pxl path(s), directory, or glob", default_pxl_spec(), rows=4),
-                ui.input_text("annotation_path", "Optional cell annotation CSV", os.getenv("PROXIOME_ANNOTATIONS", "")),
-                ui.input_text("patch_dir", "Optional patch-analysis directory", os.getenv("PROXIOME_PATCH_DIR", "")),
+                ui.input_text_area("h5ad_path", "Processed .h5ad path", default_h5ad_path(), rows=4),
                 ui.layout_columns(
-                    ui.input_action_button("inspect_pxl", "Inspect", class_="btn-outline-secondary w-100"),
-                    ui.input_task_button("load_pxl", "Load Data", class_="w-100"),
+                    ui.input_action_button("inspect_h5ad", "Inspect", class_="btn-outline-secondary w-100"),
+                    ui.input_task_button("load_h5ad", "Load Data", class_="w-100"),
                     col_widths=(5, 7),
                 ),
                 ui.output_ui("load_status"),
@@ -418,19 +222,17 @@ def data_popover():
 app_ui = ui.page_navbar(
     qc_ui(),
     abundance_ui(),
-    ui.nav_panel("Spatial Metrics", ui.navset_tab(clustering_ui(), colocalization_ui(), id="spatial_metric_readout")),
-    patch_ui(),
     ui.nav_spacer(),
     data_popover(),
     title="ProxiomeVis",
     id="readout_tab",
-    fillable=["QC", "Abundance", "Spatial Metrics", "Patch Analysis"],
+    fillable=["QC", "Abundance"],
     header=ui.include_css(APP_DIR / "www" / "proixome.css"),
     navbar_options=ui.navbar_options(bg=TEAL, theme="dark", underline=True),
 )
 
 
-def empty_figure(message: str = "Load PXL data from the Data menu.") -> go.Figure:
+def empty_figure(message: str = "Load a processed H5AD from the Data menu.") -> go.Figure:
     figure = go.Figure()
     figure.add_annotation(text=message, x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False)
     figure.update_xaxes(visible=False)
@@ -482,39 +284,32 @@ def server(input: Inputs, output: Outputs, session: Session):
     data_state: reactive.Value[AppData | None] = reactive.Value(None)
     inspect_message = reactive.Value("No data loaded.")
 
-    @ui.bind_task_button(button_id="load_pxl")
+    @ui.bind_task_button(button_id="load_h5ad")
     @reactive.extended_task
-    async def load_task(spec: str, annotations: str, patch_dir: str, force: bool) -> AppData:
-        return await asyncio.to_thread(
-            load_pxl_data,
-            spec,
-            annotation_path=annotations or None,
-            patch_dir=patch_dir or None,
-            force=force,
-        )
+    async def load_task(path: str) -> AppData:
+        return await asyncio.to_thread(load_h5ad_data, path)
 
     @reactive.effect
-    @reactive.event(input.inspect_pxl)
-    def _inspect_pxl():
+    @reactive.event(input.inspect_h5ad)
+    def _inspect_h5ad():
         try:
-            paths = resolve_pxl_paths(input.pxl_spec())
-            size = sum(path.stat().st_size for path in paths)
-            inspect_message.set(f"Ready: {len(paths)} PXL file(s), {size / 1024**3:.1f} GiB total.")
+            path = resolve_h5ad_path(input.h5ad_path())
+            inspect_message.set(f"Ready: {path.name}, {path.stat().st_size / 1024**2:.1f} MiB.")
         except Exception as error:
             inspect_message.set(str(error))
 
     @reactive.effect
-    @reactive.event(input.load_pxl)
+    @reactive.event(input.load_h5ad)
     def _start_load():
-        inspect_message.set("Loading PXL modalities and building the compact app cache…")
-        load_task.invoke(input.pxl_spec(), input.annotation_path(), input.patch_dir(), False)
+        inspect_message.set("Loading processed AnnData…")
+        load_task.invoke(input.h5ad_path())
 
     @reactive.effect
     def _activate_loaded_data():
         loaded = load_task.result()
         data_state.set(loaded)
         inspect_message.set(
-            f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} selected markers."
+            f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers."
         )
         samples = loaded.metadata[["sample_alias", "condition"]].drop_duplicates("sample_alias")
         mapping_text = "\n".join(f"{row.sample_alias}={row.condition}" for row in samples.itertuples())
@@ -530,11 +325,11 @@ def server(input: Inputs, output: Outputs, session: Session):
     def source_summary():
         data = data_state.get()
         if data is None:
-            return ui.p("Load one or more PXL files to begin.", class_="text-muted small")
+            return ui.p("Load a processed H5AD file to begin.", class_="text-muted small")
         return ui.div(
             ui.hr(),
-            ui.p(ui.strong(data.source.get("display_name", "PXL data"))),
-            ui.p(f"{data.source['n_cells']:,} cells · {data.source['n_markers']:,} available markers"),
+            ui.p(ui.strong(data.source.get("display_name", "AnnData"))),
+            ui.p(f"{data.source['n_cells']:,} cells · {data.source['n_markers']:,} markers"),
             ui.p(f"Grouping: {data.source.get('analysis_group_label', 'condition')}"),
             class_="source-chip",
         )
@@ -550,58 +345,28 @@ def server(input: Inputs, output: Outputs, session: Session):
         celltypes = sorted(metadata["celltype_manual"].dropna().astype(str).unique())
         samples = sorted(metadata["sample_alias"].dropna().astype(str).unique())
         embeddings = list(embedding_columns(metadata))
-        pairs = sorted(data.colocalization["marker_pair"].dropna().astype(str).unique())
         numeric_qc = [
             column for column in ("n_umi", "n_edges", "reads_in_component", "isotype_fraction", "tau")
-            if column in data.qc_origin and pd.api.types.is_numeric_dtype(data.qc_origin[column])
+            if column in metadata and pd.api.types.is_numeric_dtype(metadata[column])
         ]
 
         ui.update_selectize("qc_sample_filter", choices=samples, selected=samples, server=True)
         ui.update_select("qc_metric", choices=numeric_qc, selected=numeric_qc[0] if numeric_qc else None)
         ui.update_select("abundance_embedding", choices=embeddings, selected=embeddings[0] if embeddings else None)
-
-        single_marker_ids = [
-            "abundance_marker", "abundance_distribution_marker", "abundance_diff_feature",
-            "clustering_marker", "clustering_diff_feature", "coloc_diff_anchor",
-        ]
-        for input_id in single_marker_ids:
+        for input_id in ("abundance_marker", "abundance_distribution_marker", "abundance_diff_feature"):
             ui.update_selectize(input_id, choices=markers, selected=markers[0] if markers else None, server=True)
-        multiple_marker_ids = ["coloc_markers", "coloc_3d_markers"]
-        for input_id in multiple_marker_ids:
-            ui.update_selectize(input_id, choices=markers, selected=markers[: min(15, len(markers))], server=True)
-
-        for input_id in (
-            "abundance_condition_filter", "clustering_condition_filter", "clustering_heatmap_condition_filter",
-            "coloc_condition_filter",
-        ):
-            ui.update_selectize(input_id, choices=conditions, selected=conditions, server=True)
-        for input_id in (
-            "abundance_celltype_filter", "abundance_diff_celltype_filter", "clustering_celltype_filter",
-            "clustering_heatmap_celltype_filter", "clustering_diff_celltype_filter", "coloc_celltype_filter",
-            "coloc_diff_celltype_filter", "coloc_3d_celltypes",
-        ):
+        ui.update_selectize("abundance_condition_filter", choices=conditions, selected=conditions, server=True)
+        for input_id in ("abundance_celltype_filter", "abundance_diff_celltype_filter"):
             ui.update_selectize(input_id, choices=celltypes, selected=celltypes, server=True)
-
-        for prefix in ("abundance", "clustering"):
-            ui.update_select(f"{prefix}_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
-            ui.update_select(f"{prefix}_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
-        ui.update_select("coloc_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
-        ui.update_select("coloc_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
-        ui.update_select("coloc_reference", choices=conditions, selected=conditions[0] if conditions else None)
-        ui.update_selectize("coloc_celltype_focus", choices=celltypes, selected=celltypes[0] if celltypes else None, server=True)
-        ui.update_selectize("coloc_focus_group", choices=conditions, selected=conditions[0] if conditions else None, server=True)
-        ui.update_selectize("coloc_compare_groups", choices=conditions, selected=conditions[:6], server=True)
-        ui.update_selectize("coloc_detail_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
-        ui.update_selectize("coloc_diff_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
-        ui.update_selectize("coloc_3d_sample", choices=samples, selected=samples[0] if samples else None, server=True)
+        ui.update_select("abundance_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
+        ui.update_select(
+            "abundance_diff_group_b",
+            choices=conditions,
+            selected=conditions[min(1, len(conditions) - 1)] if conditions else None,
+        )
         grouping_columns = sample_level_columns(metadata)
-        ui.update_select("grouping_column", choices=grouping_columns, selected="condition" if "condition" in grouping_columns else (grouping_columns[0] if grouping_columns else None))
-
-        labels = []
-        marker_table = data.patch.get("marker_unmixing")
-        if marker_table is not None and "label" in marker_table:
-            labels = sorted(marker_table["label"].dropna().astype(str).unique())
-        ui.update_selectize("patch_label_filter", choices=labels, selected=labels, server=True)
+        selected_grouping = "condition" if "condition" in grouping_columns else (grouping_columns[0] if grouping_columns else None)
+        ui.update_select("grouping_column", choices=grouping_columns, selected=selected_grouping)
 
     @reactive.effect
     @reactive.event(input.apply_grouping)
@@ -624,20 +389,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         except Exception as error:
             ui.notification_show(str(error), type="error", duration=None)
 
-    @reactive.effect
-    def _update_3d_components():
-        data = data_state.get()
-        if data is None:
-            return
-        sample = input.coloc_3d_sample()
-        if not sample:
-            return
-        rows = data.metadata[data.metadata["sample_alias"].astype(str) == str(sample)]
-        celltypes = selected(input.coloc_3d_celltypes(), rows["celltype_manual"])
-        rows = rows[rows["celltype_manual"].astype(str).isin(celltypes)]
-        components = rows["component"].astype(str).tolist()
-        ui.update_selectize("coloc_3d_component", choices=components, selected=components[0] if components else None, server=True)
-
     def get_data() -> AppData | None:
         return data_state.get()
 
@@ -659,7 +410,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         data = get_data()
         if data is None:
             return pd.DataFrame()
-        frame = data.qc_origin if input.qc_metadata_source() == "origin" else data.qc_filtered
+        frame = data.metadata
         samples = selected(input.qc_sample_filter(), frame["sample_alias"])
         return frame[frame["sample_alias"].astype(str).isin(samples)].copy()
 
@@ -669,13 +420,15 @@ def server(input: Inputs, output: Outputs, session: Session):
         data = get_data()
         if data is None:
             return metric_boxes([("Loaded Cells", "—"), ("Final Cells", "—"), ("Retained", "—"), ("Samples", "—")])
-        samples = selected(input.qc_sample_filter(), data.qc_origin["sample_alias"])
-        origin = data.qc_origin[data.qc_origin["sample_alias"].astype(str).isin(samples)]
-        filtered = data.qc_filtered[data.qc_filtered["sample_alias"].astype(str).isin(samples)]
-        retained = len(filtered) / len(origin) if len(origin) else math.nan
+        samples = selected(input.qc_sample_filter(), data.metadata["sample_alias"])
+        history = data.qc_filter_counts[data.qc_filter_counts["sample"].astype(str).isin(samples)]
+        loaded = history.loc[history["step"].astype(str) == "00_loaded", "n_cells"].sum()
+        final = len(data.metadata[data.metadata["sample_alias"].astype(str).isin(samples)])
+        loaded = int(loaded) if loaded else final
+        retained = final / loaded if loaded else math.nan
         return metric_boxes([
-            ("Loaded Cells", f"{len(origin):,}"), ("Final Cells", f"{len(filtered):,}"),
-            ("Retained", f"{retained:.1%}" if np.isfinite(retained) else "—"), ("Samples", f"{origin['sample_alias'].nunique():,}"),
+            ("Loaded Cells", f"{loaded:,}"), ("Final Cells", f"{final:,}"),
+            ("Retained", f"{retained:.1%}" if np.isfinite(retained) else "—"), ("Samples", f"{len(samples):,}"),
         ])
 
     def fig_qc_filter():
@@ -1031,609 +784,6 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.data_frame
     def abundance_diff_table():
         return grid(abundance_diff_result())
-
-    def filtered_clustering(condition_input, celltype_input) -> pd.DataFrame:
-        data = get_data()
-        if data is None:
-            return pd.DataFrame()
-        conditions = selected(condition_input, data.clustering["condition"])
-        celltypes = selected(celltype_input, data.clustering["celltype_manual"])
-        return data.clustering[
-            data.clustering["condition"].astype(str).isin(conditions)
-            & data.clustering["celltype_manual"].astype(str).isin(celltypes)
-        ].copy()
-
-    def clustering_marker_rows() -> pd.DataFrame:
-        rows = filtered_clustering(input.clustering_condition_filter(), input.clustering_celltype_filter())
-        marker = input.clustering_marker()
-        return rows[rows["marker"].astype(str) == str(marker)] if not rows.empty and marker else pd.DataFrame()
-
-    def fig_clustering_observed():
-        data = get_data()
-        rows = clustering_marker_rows()
-        if data is None or rows.empty:
-            return empty_figure("No self-proximity values match the selected filters.")
-        embedding = next(iter(embedding_columns(data.metadata)), None)
-        if not embedding:
-            return empty_figure("No two-dimensional embedding is available.")
-        x, y = embedding_columns(data.metadata)[embedding]
-        plot_data = rows.merge(data.metadata[["component", x, y]], on="component", how="inner")
-        figure = px.scatter(
-            plot_data, x=x, y=y, color="log2_ratio", hover_data=["component", "condition", "celltype_manual"],
-            color_continuous_scale="RdBu_r", color_continuous_midpoint=0, render_mode="webgl",
-        )
-        figure.update_traces(marker={"size": 4, "opacity": 0.82})
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def clustering_plot():
-        return fig_clustering_observed()
-
-    register_downloads("clustering_plot", fig_clustering_observed)
-
-    @output
-    @render.data_frame
-    def clustering_table():
-        return grid(summarize_numeric(clustering_marker_rows(), ["marker", "condition", "celltype_manual"], "log2_ratio"))
-
-    def fig_clustering_per_marker():
-        rows = clustering_marker_rows()
-        if rows.empty:
-            return empty_figure("No self-proximity values match the selected filters.")
-        figure = px.violin(rows, x="celltype_manual", y="log2_ratio", color="condition", box=True, points="all", hover_data=["component"])
-        figure.add_hline(y=0, line_color="#7b8588")
-        figure.update_traces(jitter=0.25, marker={"size": 3, "opacity": 0.5})
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def clustering_per_marker():
-        return fig_clustering_per_marker()
-
-    register_downloads("clustering_per_marker", fig_clustering_per_marker)
-
-    @output
-    @render.data_frame
-    def clustering_per_marker_table():
-        return grid(summarize_numeric(clustering_marker_rows(), ["marker", "condition", "celltype_manual"], "log2_ratio"))
-
-    def clustering_heatmap_data() -> pd.DataFrame:
-        rows = filtered_clustering(input.clustering_heatmap_condition_filter(), input.clustering_heatmap_celltype_filter())
-        if rows.empty:
-            return rows
-        summary = rows.groupby(["marker", "condition", "celltype_manual"], observed=True)["log2_ratio"].mean().rename("mean_log2_ratio").reset_index()
-        count = max(2, int(input.clustering_heatmap_marker_count() or 20))
-        ranking = summary.groupby("marker", observed=True)["mean_log2_ratio"].std().fillna(0).sort_values(ascending=False)
-        return summary[summary["marker"].isin(ranking.head(count).index)]
-
-    def fig_clustering_heatmap():
-        rows = clustering_heatmap_data()
-        if rows.empty:
-            return empty_figure("No clustering summary is available.")
-        rows["population"] = rows["condition"].astype(str) + " · " + rows["celltype_manual"].astype(str)
-        matrix = rows.pivot(index="population", columns="marker", values="mean_log2_ratio")
-        figure = px.imshow(matrix, color_continuous_scale="RdBu_r", color_continuous_midpoint=0, aspect="auto", labels={"color": "Mean log2 ratio"})
-        return style_figure(figure, height=max(520, 26 * len(matrix)))
-
-    @output
-    @render_plotly
-    def clustering_summary_heatmap():
-        return fig_clustering_heatmap()
-
-    register_downloads("clustering_summary_heatmap", fig_clustering_heatmap)
-
-    @output
-    @render.data_frame
-    def clustering_summary_table():
-        return grid(clustering_heatmap_data())
-
-    def clustering_diff_result():
-        data = get_data()
-        return differential_result("clustering", data.clustering if data is not None else pd.DataFrame(), ["marker"])
-
-    @output
-    @render.ui
-    def clustering_diff_summary():
-        return diff_summary(clustering_diff_result(), float(input.clustering_diff_fdr() or 0.05), float(input.clustering_diff_effect() or 0.25))
-
-    def fig_clustering_diff_volcano():
-        return volcano_figure(
-            clustering_diff_result(), "marker", float(input.clustering_diff_fdr() or 0.05),
-            float(input.clustering_diff_effect() or 0.25),
-            f"Clustering effect: {input.clustering_diff_group_a()} minus {input.clustering_diff_group_b()} (reference)",
-        )
-
-    @output
-    @render_plotly
-    def clustering_diff_volcano():
-        return fig_clustering_diff_volcano()
-
-    register_downloads("clustering_diff_volcano", fig_clustering_diff_volcano)
-
-    def fig_clustering_diff_detail():
-        data = get_data()
-        if data is None:
-            return empty_figure()
-        marker = input.clustering_diff_feature()
-        rows = data.clustering[
-            (data.clustering["marker"].astype(str) == str(marker))
-            & data.clustering["condition"].isin([input.clustering_diff_group_a(), input.clustering_diff_group_b()])
-        ]
-        celltypes = selected(input.clustering_diff_celltype_filter(), rows["celltype_manual"])
-        rows = rows[rows["celltype_manual"].astype(str).isin(celltypes)]
-        if rows.empty:
-            return empty_figure("No clustering values are available for this marker.")
-        figure = px.violin(
-            rows, x="condition", y="log2_ratio", color="condition",
-            facet_col="celltype_manual" if input.clustering_diff_stratify() else None,
-            box=True, points="all", hover_data=["component"],
-        )
-        figure.add_hline(y=0, line_color="#7b8588")
-        figure.update_traces(jitter=0.25, marker={"size": 3, "opacity": 0.55})
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def clustering_diff_detail():
-        return fig_clustering_diff_detail()
-
-    register_downloads("clustering_diff_detail", fig_clustering_diff_detail)
-
-    @output
-    @render.data_frame
-    def clustering_diff_table():
-        return grid(clustering_diff_result())
-
-    @reactive.effect
-    def _apply_report_preset():
-        if input.coloc_preset() != "report":
-            return
-        ui.update_select("coloc_view", selected="compare")
-        ui.update_select("coloc_marker_mode", selected="auto")
-        ui.update_numeric("coloc_top_markers", value=15)
-        ui.update_numeric("coloc_min_detected", value=0.25)
-        ui.update_numeric("coloc_min_range", value=0.2)
-        ui.update_select("coloc_mean_type", selected="population")
-        ui.update_select("coloc_ordering", selected="ward")
-        ui.update_numeric("coloc_legend_min", value=-0.75)
-        ui.update_numeric("coloc_legend_max", value=0.75)
-
-    def colocalization_scores() -> tuple[pd.DataFrame, pd.DataFrame]:
-        data = get_data()
-        if data is None:
-            return pd.DataFrame(), pd.DataFrame()
-        metadata = data.metadata.copy()
-        conditions = selected(input.coloc_condition_filter(), metadata["condition"])
-        celltypes = selected(input.coloc_celltype_filter(), metadata["celltype_manual"])
-        metadata = metadata[
-            metadata["condition"].astype(str).isin(conditions)
-            & metadata["celltype_manual"].astype(str).isin(celltypes)
-        ]
-        if input.coloc_scope() == "celltype" and input.coloc_celltype_focus():
-            metadata = metadata[metadata["celltype_manual"].astype(str) == str(input.coloc_celltype_focus())]
-        scores = data.proximity[data.proximity["component"].isin(metadata["component"])].copy()
-        if input.coloc_pixelator_filter():
-            scores = filter_pixelator_proximity(
-                scores,
-                min_marker_fraction=float(input.coloc_min_fraction() or 0),
-                min_marker_count=float(input.coloc_min_count() or 0),
-                min_cells=int(input.coloc_min_cells() or 1),
-            )
-        return scores, metadata
-
-    def auto_coloc_markers(scores: pd.DataFrame, metadata: pd.DataFrame, group_col: str) -> list[str]:
-        data = get_data()
-        if data is None or scores.empty:
-            return []
-        candidates = list(data.marker_options)
-        pair_summary = scores.groupby([group_col, "marker_1", "marker_2"], observed=True).agg(
-            mean=("log2_ratio", "mean"), detected=("component", "nunique")
-        ).reset_index()
-        totals = metadata.groupby(group_col, observed=True)["component"].nunique()
-        pair_summary["pct"] = pair_summary.apply(lambda row: row.detected / max(1, totals.get(row[group_col], 1)), axis=1)
-        ranges = pair_summary.groupby(["marker_1", "marker_2"], observed=True).agg(
-            value_range=("mean", lambda values: values.max() - values.min()), max_pct=("pct", "max")
-        ).reset_index()
-        ranges = ranges[
-            (ranges["max_pct"] >= float(input.coloc_min_detected() or 0))
-            & (ranges["value_range"] >= float(input.coloc_min_range() or 0))
-        ]
-        marker_scores = pd.concat([
-            ranges[["marker_1", "value_range"]].rename(columns={"marker_1": "marker"}),
-            ranges[["marker_2", "value_range"]].rename(columns={"marker_2": "marker"}),
-        ]).groupby("marker", observed=True)["value_range"].max().sort_values(ascending=False)
-        selected_markers = [marker for marker in marker_scores.index if marker in candidates]
-        count = max(2, int(input.coloc_top_markers() or 20))
-        return (selected_markers + [marker for marker in candidates if marker not in selected_markers])[:count]
-
-    def ordered_coloc_markers(summary: pd.DataFrame, markers: list[str], group_col: str) -> list[str]:
-        if len(markers) < 3 or summary.empty:
-            return markers
-        reference = input.coloc_reference()
-        group = reference if reference in set(summary[group_col].astype(str)) else str(summary[group_col].iloc[0])
-        rows = summary[summary[group_col].astype(str) == group]
-        matrix = rows.pivot(index="marker_1", columns="marker_2", values="mean_log2_ratio").reindex(index=markers, columns=markers).fillna(0)
-        method = input.coloc_ordering() or "ward"
-        try:
-            return [markers[index] for index in leaves_list(linkage(matrix.to_numpy(), method=method))]
-        except Exception:
-            return markers
-
-    def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
-        scores, metadata = colocalization_scores()
-        if scores.empty or metadata.empty:
-            return pd.DataFrame(), "condition", []
-        scope = input.coloc_scope() or "condition"
-        group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        manual = selected(input.coloc_markers(), scores["marker_1"])
-        markers = manual if input.coloc_marker_mode() == "manual" else auto_coloc_markers(scores, metadata, group_col)
-        markers = [marker for marker in markers if marker in set(scores["marker_1"]).union(scores["marker_2"])]
-        summary = summarize_spatial(
-            scores,
-            metadata,
-            group_col=group_col,
-            markers=markers,
-            mean_type=input.coloc_mean_type() or "population",
-        )
-        if summary.empty:
-            return summary, group_col, markers
-        available_groups = list(summary[group_col].dropna().astype(str).unique())
-        if input.coloc_view() == "compare":
-            groups = selected(input.coloc_compare_groups(), available_groups)
-            if len(markers) > 20:
-                groups = [str(input.coloc_focus_group() or available_groups[0])]
-        else:
-            groups = [str(input.coloc_focus_group() or available_groups[0])]
-        summary = summary[summary[group_col].astype(str).isin(groups)]
-        markers = ordered_coloc_markers(summary, markers, group_col)
-        summary["marker_1"] = pd.Categorical(summary["marker_1"], markers, ordered=True)
-        summary["marker_2"] = pd.Categorical(summary["marker_2"], list(reversed(markers)), ordered=True)
-        return summary, group_col, markers
-
-    @output
-    @render.ui
-    def coloc_notice():
-        summary, group_col, markers = colocalization_heatmap_data()
-        if summary.empty:
-            return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
-        notices = [f"Showing {len(markers)} markers across {summary[group_col].nunique()} {group_col.replace('_', ' ')} group(s)."]
-        if input.coloc_view() == "compare" and len(markers) > 20:
-            notices.append("Comparison view supports up to 20 markers; one focused group is shown.")
-        elif input.coloc_view() == "compare" and len(markers) > 15:
-            notices.append("For clearer comparison labels, use 15 or fewer markers.")
-        return ui.div(" ".join(notices), class_="alert alert-info py-2")
-
-    def fig_coloc_heatmap():
-        summary, group_col, markers = colocalization_heatmap_data()
-        if summary.empty:
-            return empty_figure("No colocalization rows match the selected settings.")
-        legend_min = float(input.coloc_legend_min() or -1)
-        legend_max = float(input.coloc_legend_max() or 1)
-        if legend_min >= legend_max:
-            legend_min, legend_max = -1, 1
-        figure = px.scatter(
-            summary,
-            x="marker_1",
-            y="marker_2",
-            color="mean_log2_ratio",
-            size="pct_detected",
-            facet_col=group_col,
-            facet_col_wrap=2 if input.coloc_view() == "compare" else 1,
-            color_continuous_scale="RdBu_r",
-            range_color=(legend_min, legend_max),
-            hover_data=["n_detected", "n_total", "pct_detected"],
-            category_orders={"marker_1": markers, "marker_2": list(reversed(markers))},
-            labels={"mean_log2_ratio": "Mean log2 ratio", "pct_detected": "Detected fraction"},
-        )
-        figure.update_traces(marker={"sizemin": 2, "line": {"width": 0.4, "color": "#556264"}})
-        panels = max(1, summary[group_col].nunique())
-        return style_figure(figure, height=max(620, 34 * len(markers) * math.ceil(panels / 2)))
-
-    @output
-    @render_plotly
-    def coloc_heatmap():
-        return fig_coloc_heatmap()
-
-    register_downloads("coloc_heatmap", fig_coloc_heatmap)
-
-    @output
-    @render.data_frame
-    def coloc_table():
-        summary, _, _ = colocalization_heatmap_data()
-        return grid(summary)
-
-    def pair_markers(pair: str | None) -> tuple[str, str] | None:
-        if not pair or " / " not in pair:
-            return None
-        marker_1, marker_2 = pair.split(" / ", 1)
-        return marker_1, marker_2
-
-    def pair_detail_data() -> pd.DataFrame:
-        scores, metadata = colocalization_scores()
-        pair = pair_markers(input.coloc_detail_pair())
-        if scores.empty or metadata.empty or pair is None:
-            return pd.DataFrame()
-        marker_1, marker_2 = pair
-        rows = scores[
-            ((scores["marker_1"].astype(str) == marker_1) & (scores["marker_2"].astype(str) == marker_2))
-            | ((scores["marker_1"].astype(str) == marker_2) & (scores["marker_2"].astype(str) == marker_1))
-        ].copy()
-        totals = metadata.groupby(["sample_alias", "condition", "celltype_manual"], observed=True)["component"].nunique().rename("n_total").reset_index()
-        detected = rows.groupby(["sample_alias", "condition", "celltype_manual"], observed=True).agg(
-            sum_log2_ratio=("log2_ratio", "sum"), detected_mean=("log2_ratio", "mean"), n_detected=("component", "nunique")
-        ).reset_index()
-        detail = totals.merge(detected, on=["sample_alias", "condition", "celltype_manual"], how="left")
-        detail[["sum_log2_ratio", "n_detected"]] = detail[["sum_log2_ratio", "n_detected"]].fillna(0)
-        detail["pct_detected"] = detail["n_detected"] / detail["n_total"]
-        detail["mean_log2_ratio"] = np.where(
-            input.coloc_mean_type() == "detected",
-            detail["detected_mean"],
-            detail["sum_log2_ratio"] / detail["n_total"],
-        )
-        detail["marker_pair"] = input.coloc_detail_pair()
-        return detail
-
-    @output
-    @render.ui
-    def coloc_pair_metrics():
-        rows = pair_detail_data()
-        if rows.empty:
-            return metric_boxes([("Marker pair", "—"), ("Samples", "—"), ("Detected cells", "—"), ("Detected fraction", "—")])
-        return metric_boxes([
-            ("Marker pair", str(input.coloc_detail_pair())), ("Samples", f"{rows['sample_alias'].nunique():,}"),
-            ("Detected cells", f"{int(rows['n_detected'].sum()):,} / {int(rows['n_total'].sum()):,}"),
-            ("Detected fraction", f"{rows['n_detected'].sum() / rows['n_total'].sum():.1%}"),
-        ])
-
-    def fig_coloc_pair_detail():
-        rows = pair_detail_data()
-        if rows.empty:
-            return empty_figure("No sample or cell-population detail is available for this pair.")
-        figure = px.scatter(
-            rows, x="sample_alias", y="celltype_manual", color="mean_log2_ratio", size="pct_detected",
-            facet_col="condition", color_continuous_scale="RdBu_r", color_continuous_midpoint=0,
-            hover_data=["n_detected", "n_total", "pct_detected"],
-        )
-        figure.update_traces(marker={"sizemin": 2, "line": {"width": 0.5, "color": "#556264"}})
-        return style_figure(figure, height=max(500, 34 * rows["celltype_manual"].nunique()))
-
-    @output
-    @render_plotly
-    def coloc_pair_detail():
-        return fig_coloc_pair_detail()
-
-    register_downloads("coloc_pair_detail", fig_coloc_pair_detail)
-
-    @output
-    @render.data_frame
-    def coloc_pair_table():
-        return grid(pair_detail_data())
-
-    def coloc_sample_data() -> pd.DataFrame:
-        data = get_data()
-        if data is None:
-            return pd.DataFrame()
-        celltypes = selected(input.coloc_diff_celltype_filter(), data.metadata["celltype_manual"])
-        summary = sample_colocalization(
-            data.colocalization,
-            data.metadata,
-            celltypes=celltypes,
-            mean_type=input.coloc_diff_mean() or "population",
-        )
-        summary = summary[
-            summary["marker_1"].astype(str) < summary["marker_2"].astype(str)
-        ].copy()
-        summary["celltype_manual"] = "Pooled cell types"
-        summary["sample_value"] = summary["mean_log2_ratio"]
-        return summary
-
-    def coloc_diff_result() -> pd.DataFrame:
-        rows = coloc_sample_data()
-        if rows.empty or input.coloc_diff_group_a() == input.coloc_diff_group_b():
-            return pd.DataFrame()
-        result = calculate_differential(
-            rows,
-            feature_cols=["marker_pair"],
-            value_col="sample_value",
-            group_a=input.coloc_diff_group_a(),
-            group_b=input.coloc_diff_group_b(),
-            min_observations=max(1, int(input.coloc_diff_min_samples() or 2)),
-        )
-        if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor():
-            anchor = str(input.coloc_diff_anchor())
-            result = result[result["marker_pair"].str.split(" / ").apply(lambda pair: anchor in pair)]
-        return result
-
-    @output
-    @render.ui
-    def coloc_diff_method():
-        rows = coloc_sample_data()
-        if rows.empty:
-            return ui.div("Load data to run sample-aware differential colocalization.", class_="alert alert-warning")
-        counts = rows.groupby("condition", observed=True)["sample_alias"].nunique()
-        a, b = input.coloc_diff_group_a(), input.coloc_diff_group_b()
-        minimum = int(input.coloc_diff_min_samples() or 2)
-        replicated = counts.get(a, 0) >= minimum and counts.get(b, 0) >= minimum
-        message = (
-            f"Sample-aware analysis. Effects compare median sample-level {input.coloc_diff_mean()} means. "
-            f"{a}: {counts.get(a, 0)} sample(s); {b}: {counts.get(b, 0)} sample(s)."
-        )
-        if not replicated:
-            message += f" At least {minimum} samples per group are required for p-values and FDR."
-        return ui.div(ui.strong("Sample-aware analysis. "), message.removeprefix("Sample-aware analysis. "), class_=f"alert {'alert-info' if replicated else 'alert-warning'}")
-
-    @output
-    @render.ui
-    def coloc_diff_summary():
-        return diff_summary(coloc_diff_result(), float(input.coloc_diff_fdr() or 0.05), float(input.coloc_diff_effect() or 0.25))
-
-    def fig_coloc_diff_volcano():
-        return volcano_figure(
-            coloc_diff_result(), "marker_pair", float(input.coloc_diff_fdr() or 0.05),
-            float(input.coloc_diff_effect() or 0.25),
-            f"Median sample effect: {input.coloc_diff_group_a()} minus {input.coloc_diff_group_b()} (reference)",
-        )
-
-    @output
-    @render_plotly
-    def coloc_diff_volcano():
-        return fig_coloc_diff_volcano()
-
-    register_downloads("coloc_diff_volcano", fig_coloc_diff_volcano)
-
-    def fig_coloc_diff_detail():
-        rows = coloc_sample_data()
-        pair = input.coloc_diff_pair()
-        if rows.empty or not pair:
-            return empty_figure("Select a detail pair.")
-        rows = rows[
-            (rows["marker_pair"].astype(str) == str(pair))
-            & rows["condition"].isin([input.coloc_diff_group_a(), input.coloc_diff_group_b()])
-        ]
-        if rows.empty:
-            return empty_figure("No sample-level values are available for this pair.")
-        figure = px.box(rows, x="condition", y="sample_value", color="condition", points="all", hover_data=["sample_alias", "n_detected", "n_total"])
-        figure.add_hline(y=0, line_color="#7b8588")
-        figure.update_yaxes(title=f"{pair} {input.coloc_diff_mean()} mean")
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def coloc_diff_detail():
-        return fig_coloc_diff_detail()
-
-    register_downloads("coloc_diff_detail", fig_coloc_diff_detail)
-
-    @output
-    @render.data_frame
-    def coloc_diff_table():
-        return grid(coloc_diff_result())
-
-    def fig_coloc_3d():
-        data = get_data()
-        sample = input.coloc_3d_sample()
-        component = input.coloc_3d_component()
-        if data is None or not sample or not component:
-            return empty_figure("Choose a sample and component with a stored 3D layout.")
-        try:
-            nodes = read_component_layout(data, str(sample), str(component))
-        except Exception as error:
-            return empty_figure(str(error))
-        if "marker" not in nodes:
-            nodes["marker"] = "unlabeled"
-        highlights = selected(input.coloc_3d_markers(), nodes["marker"])
-        foreground = nodes[nodes["marker"].astype(str).isin(highlights)].copy()
-        background = nodes[~nodes["marker"].astype(str).isin(highlights)].copy()
-        maximum = max(0, int(input.coloc_3d_max_background() or 7000))
-        if len(background) > maximum:
-            background = background.sample(maximum, random_state=42)
-        background["marker_group"] = "Other"
-        foreground["marker_group"] = foreground["marker"].astype(str)
-        nodes = pd.concat([background, foreground], ignore_index=True)
-        for axis in ("x", "y", "z"):
-            values = pd.to_numeric(nodes[axis], errors="coerce")
-            centered = values - values.median()
-            scale = centered.abs().max() or 1
-            nodes[axis] = centered / scale
-        figure = px.scatter_3d(
-            nodes, x="x", y="y", z="z", color="marker_group", hover_data=[column for column in ("marker", "umi") if column in nodes],
-            color_discrete_map={"Other": "#c8cecd"}, opacity=0.78,
-        )
-        figure.update_traces(marker={"size": 2})
-        figure.update_layout(scene=dict(xaxis_visible=False, yaxis_visible=False, zaxis_visible=False))
-        return style_figure(figure, height=620)
-
-    @output
-    @render_plotly
-    def coloc_3d_layout():
-        return fig_coloc_3d()
-
-    register_downloads("coloc_3d_layout", fig_coloc_3d)
-
-    @output
-    @render.data_frame
-    def coloc_3d_table():
-        data = get_data()
-        if data is None or not input.coloc_3d_component():
-            return grid(pd.DataFrame())
-        columns = [column for column in ("sample", "sample_alias", "condition", "celltype_manual", "component", "n_umi", "n_edges") if column in data.metadata]
-        return grid(data.metadata.loc[data.metadata["component"].astype(str) == str(input.coloc_3d_component()), columns])
-
-    def patch_table(name: str) -> pd.DataFrame:
-        data = get_data()
-        if data is None or data.patch.get(name) is None:
-            return pd.DataFrame()
-        return data.patch[name].copy()
-
-    @output
-    @render.ui
-    def patch_metric_row():
-        plan = patch_table("run_plan")
-        if plan.empty:
-            return metric_boxes([("Patch Detection", "Unavailable"), ("Cells Selected", "—"), ("Patch Markers", "—"), ("Receiver Markers", "—")])
-        row = plan.iloc[0]
-        cells = row.get("n_cart_cells_selected", row.get("n_cd8t_cells_selected", 0))
-        return metric_boxes([
-            ("Patch Detection", "Run" if bool(row.get("run_patch_detection", False)) else "Skipped"),
-            ("Cells Selected", f"{int(cells):,}"), ("Patch Markers", f"{int(row.get('n_patch_markers', 0)):,}"),
-            ("Receiver Markers", f"{int(row.get('n_receiver_markers', 0)):,}"),
-        ])
-
-    def filtered_marker_unmixing() -> pd.DataFrame:
-        rows = patch_table("marker_unmixing")
-        if rows.empty:
-            return rows
-        labels = selected(input.patch_label_filter(), rows["label"]) if "label" in rows else []
-        return rows[rows["label"].astype(str).isin(labels)] if labels else rows
-
-    def fig_patch_marker():
-        rows = filtered_marker_unmixing()
-        if rows.empty or not {"receiver_freq", "target_freq"}.issubset(rows):
-            return empty_figure("Patch analysis is available when PROXIOME_PATCH_DIR contains the patch tables.")
-        figure = px.scatter(rows, x="receiver_freq", y="target_freq", color="label" if "label" in rows else None, hover_name="marker" if "marker" in rows else None)
-        maximum = max(rows["receiver_freq"].max(), rows["target_freq"].max())
-        figure.add_shape(type="line", x0=0, y0=0, x1=maximum, y1=maximum, line={"dash": "dash", "color": "#7b8588"})
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def patch_marker_plot():
-        return fig_patch_marker()
-
-    register_downloads("patch_marker_plot", fig_patch_marker)
-
-    @output
-    @render.data_frame
-    def patch_marker_table():
-        return grid(filtered_marker_unmixing())
-
-    def fig_patch_raji():
-        rows = patch_table("raji_marker_proximity")
-        if rows.empty or not {"raji_marker_count", "log2_ratio"}.issubset(rows):
-            return empty_figure("No Raji joint-proximity table is available.")
-        color = "celltype_condition" if "celltype_condition" in rows else None
-        figure = px.scatter(rows, x="raji_marker_count", y="log2_ratio", color=color, hover_data=[column for column in ("component", "join_count") if column in rows], opacity=0.65)
-        figure.add_hline(y=0, line_color="#7b8588")
-        figure.update_xaxes(type="log")
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def patch_raji_plot():
-        return fig_patch_raji()
-
-    register_downloads("patch_raji_plot", fig_patch_raji)
-
-    @output
-    @render.data_frame
-    def patch_raji_table():
-        return grid(patch_table("raji_marker_abundance"))
-
-    @output
-    @render.data_frame
-    def patch_burden_table():
-        return grid(patch_table("patch_burden"))
 
 
 app = App(app_ui, server, static_assets=APP_DIR / "www")
