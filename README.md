@@ -7,7 +7,8 @@ colocalization from Pixelator v4.1.1 Seurat objects.
 
 The repository contains both the original R application (`app.R`) and a Python
 Shiny port (`app.py`). The Python app accepts one processed `.h5ad` file and
-does not load or analyze Pixelator `.pxl` files.
+can optionally read precomputed component layouts from assigned `.layout.pxl`
+files for the 3D cellgraph view. It does not rerun Pixelator analysis.
 
 ## Features
 
@@ -15,10 +16,15 @@ does not load or analyze Pixelator `.pxl` files.
   distributions, and original metadata inspection.
 - **Abundance**: UMAP marker abundance views, marker distribution plots,
   cell-type composition, annotation heatmaps, and differential abundance.
-- **H5AD-only Python input**: load processed AnnData by server-visible path,
-  with no PXL ingestion or proximity analysis.
+- **Spatial Metrics**: clustering and colocalization views when precomputed
+  marker-pair proximity scores are stored in the H5AD.
+- **Patch Analysis**: marker unmixing, Raji signal, and patch-burden views when
+  their precomputed tables are stored in the H5AD.
+- **On-demand cellgraphs**: assign optional PXL paths for stored 3D layouts;
+  all analysis data still come from the H5AD.
 - **Global analysis grouping**: choose a sample-level metadata column or assign
-  custom sample groups for filters, summaries, heatmaps, and comparisons.
+  custom sample groups for filters, summaries, heatmaps, and comparisons, with
+  one-click reset to the H5AD's original `condition` values.
 
 ## Data Model
 
@@ -49,10 +55,12 @@ uv run shiny run --reload app.py
 ```
 
 Open the app's **Data** panel and enter the path to one processed `.h5ad` file.
+Optionally assign one or more `.layout.pxl` paths for the 3D cellgraph view.
 Alternatively, set the default before starting the app:
 
 ```bash
 export PROXIOME_H5AD='/path/to/processed_data.h5ad'
+export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
 uv run shiny run app.py
 ```
 
@@ -63,8 +71,11 @@ The default reference is:
 ```
 
 The Python app reads stored observations, marker names, abundance layers, QC
-history, cell annotations, and embeddings. It does not rerun Pixelator or
-provide proximity, colocalization, patch-analysis, or 3D-layout views.
+history, cell annotations, embeddings, and optional `uns["proxiome"]` spatial
+and patch tables. The reference H5AD currently lacks those optional tables, so
+its Spatial Metrics and Patch Analysis tabs report that the data are
+unavailable. Assigned PXL files are used only to read an already-computed
+component layout for the selected cellgraph.
 
 ### R
 

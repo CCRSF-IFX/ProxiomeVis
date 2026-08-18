@@ -8,6 +8,7 @@ dependencies = [
   "kaleido",
   "numpy",
   "pandas",
+  "pixelgen-pixelator",
   "plotly",
   "scipy",
   "shiny",

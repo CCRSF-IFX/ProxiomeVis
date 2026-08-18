@@ -3,7 +3,7 @@ site_name: ProxiomeVis Documentation
 site_author: CCRSF-IFX
 site_description: >-
   ProxiomeVis Python is an interactive Shiny application for exploring processed
-  Pixelgen AnnData QC, abundance, and annotations.
+  Pixelgen AnnData QC, abundance, spatial metrics, patch results, and cellgraphs.
 
 # Repository
 repo_name: CCRSF-IFX/ProxiomeVis
@@ -34,6 +34,8 @@ nav:
   - App guide:
       - QC: qc.md
       - Abundance: abundance.md
+      - Spatial metrics: spatial-metrics.md
+      - Patch analysis: patch-analysis.md
       - Downloads and plot options: downloads.md
   - Help:
       - Troubleshooting: troubleshooting.md

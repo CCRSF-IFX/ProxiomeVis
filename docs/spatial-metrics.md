@@ -5,8 +5,10 @@ Spatial Metrics contains two readouts:
 - **Clustering**: marker self-proximity within each cell graph.
 - **Colocalization**: marker-pair proximity between two different proteins.
 
-These readouts use stored Pixelator proximity values from the loaded data. The
-app does not recompute proximity scores during interactive use.
+These readouts use the precomputed table at
+`uns["proxiome"]["proximity"]` in the loaded H5AD. The app does not recompute
+proximity scores during interactive use. If that table is absent, the module
+remains visible and reports that spatial data are unavailable.
 
 ## Clustering
 
@@ -39,9 +41,9 @@ pairs containing one marker, and click a volcano point to update the sample-leve
 detail plot. Missing pairs are included as zero only for the population mean.
 
 Use **Colocalization > 3D Layout** to inspect one selected Pixelator cell graph
-in 3D. The app reads stored `wpmds_3d` coordinates from `.layout.pxl`, labels
-nodes with marker names from the edge list, and renders an interactive Plotly
-scatter plot.
+in 3D. Assign one or more `.layout.pxl` paths in **Data**. The app reads that
+component's stored layout on demand and renders an interactive Plotly scatter
+plot. PXL is not used for any analysis table.
 
 Controls for the 3D layout:
 

@@ -22,14 +22,15 @@ cells after filtering.
 
 ## The 3D Layout tab cannot find a layout file
 
-The app needs a matching `<sample>.layout.pxl` file. Either place the Pixelator
-layout files near the loaded RDS in the expected results directory, or set:
+In the Python app, assign a matching `.layout.pxl` file, directory, or glob in
+the **Data** menu, or set:
 
 ```bash
-export PROXIOME_LAYOUT_DIR=/path/to/pixelator/layout/files
+export PROXIOME_PXL='/path/to/pixelator/layout/files/*.layout.pxl'
 ```
 
-Then restart the app.
+Then reload the H5AD. The PXL filename must contain the selected sample name
+unless only one PXL file is assigned.
 
 ## The 3D Layout plot is slow
 

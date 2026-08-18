@@ -1,4 +1,6 @@
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -7,12 +9,18 @@ import pytest
 from proxiome import (
     AppData,
     adjust_bh,
+    analysis_grouping_summary,
     apply_analysis_grouping,
     calculate_differential,
     load_h5ad_data,
-    parse_group_mapping,
+    new_analysis_grouping_config,
+    read_component_layout,
+    resolve_pxl_paths,
     resolve_h5ad_path,
     sample_level_columns,
+    select_colocalization_heatmap_markers,
+    summarize_spatial,
+    update_analysis_grouping_config,
 )
 
 
@@ -31,10 +39,10 @@ def make_data() -> AppData:
     )
     qc_counts = pd.DataFrame(
         {
-            "sample": ["s1", "s2"],
-            "condition": ["A", "B"],
-            "step": ["loaded", "loaded"],
-            "n_cells": [2, 2],
+            "sample": ["s1", "s2", "TOTAL"],
+            "condition": ["A", "B", "TOTAL"],
+            "step": ["loaded", "loaded", "loaded"],
+            "n_cells": [2, 2, 4],
         }
     )
     return AppData(
@@ -46,7 +54,7 @@ def make_data() -> AppData:
     )
 
 
-def test_h5ad_is_the_only_supported_input(tmp_path: Path):
+def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypatch):
     from anndata import AnnData
 
     path = tmp_path / "processed.h5ad"
@@ -72,25 +80,96 @@ def test_h5ad_is_the_only_supported_input(tmp_path: Path):
         "n_cells": [2, 2, 1, 1],
         "fraction_loaded": [1.0, 1.0, 0.5, 0.5],
     }
+    adata.uns["proxiome"] = {
+        "proximity": pd.DataFrame(
+            {
+                "component": ["c1", "c1", "c2"],
+                "marker_1": ["CD3", "CD3", "CD19"],
+                "marker_2": ["CD3", "CD19", "CD19"],
+                "log2_ratio": [0.4, -0.2, 0.6],
+            },
+            index=["p1", "p2", "p3"],
+        ),
+        "patch": {
+            "run_plan": pd.DataFrame(
+                {"run_patch_detection": [True], "n_patch_markers": [1]}, index=["plan"]
+            ),
+            "marker_unmixing": pd.DataFrame(
+                {"marker": ["CD19"], "label": ["patch"], "receiver_freq": [0.1], "target_freq": [0.8]},
+                index=["CD19"],
+            ),
+        },
+        "component_layouts": {
+            "c1": pd.DataFrame(
+                {"x": [0.0], "y": [0.0], "z": [0.0], "marker": ["CD3"]}, index=["node1"]
+            )
+        },
+    }
     adata.write_h5ad(path)
+    pxl_path = tmp_path / "s1.layout.pxl"
+    pxl_path.write_bytes(b"")
 
-    data = load_h5ad_data(path)
+    data = load_h5ad_data(path, pxl_spec=pxl_path)
     assert resolve_h5ad_path(path) == path.resolve()
     assert data.source["source_type"] == "h5ad"
     assert data.marker_options == ("CD3", "CD19")
     assert set(data.metadata) >= {"component", "umap_1", "umap_2"}
     assert data.qc_filter_counts["n_cells"].sum() == 6
+    assert len(data.clustering) == 2
+    assert data.colocalization["marker_pair"].tolist() == ["CD3 / CD19"]
+    assert data.patch["marker_unmixing"].iloc[0]["marker"] == "CD19"
+    assert data.component_layouts["c1"].iloc[0]["marker"] == "CD3"
+    assert data.pxl_files == (str(pxl_path.resolve()),)
+    assert resolve_pxl_paths("") == []
+    layout = pd.DataFrame({"x": [1.0], "y": [2.0], "z": [3.0], "marker": ["CD3"]})
+
+    class FakeDataset:
+        def components(self):
+            return {"c1"}
+
+        def filter(self, *, components):
+            assert components == ["c1"]
+            return self
+
+        def precomputed_layouts(self, *, add_marker_counts):
+            assert add_marker_counts is False
+            return SimpleNamespace(to_df=lambda: layout)
+
+    monkeypatch.setitem(__import__("sys").modules, "pixelator", SimpleNamespace(read_pna=lambda _: FakeDataset()))
+    pxl_data = replace(data, component_layouts={})
+    assert read_component_layout(pxl_data, "s1", "c1").equals(layout)
     with pytest.raises(ValueError, match="Expected an .h5ad"):
         resolve_h5ad_path(tmp_path / "input.pxl")
 
 
-def test_analysis_grouping_updates_every_sample_backed_table():
+def test_analysis_grouping_edits_and_resets_conditions_from_preserved_source():
     data = make_data()
-    assert set(sample_level_columns(data.metadata)) >= {"condition", "batch"}
-    grouped = apply_analysis_grouping(data, {"s1": "baseline", "s2": "treated"}, "Custom")
-    assert grouped.metadata["condition"].tolist() == ["baseline", "baseline", "treated", "treated"]
-    assert grouped.qc_filter_counts["condition"].tolist() == ["baseline", "treated"]
-    assert parse_group_mapping("s1=baseline\ns2=treated") == {"s1": "baseline", "s2": "treated"}
+    assert set(sample_level_columns(data.metadata)) >= {"sample_alias", "sample", "condition", "batch"}
+    config = new_analysis_grouping_config(data.metadata)
+    assert config["column"] == "condition"
+    by_sample = update_analysis_grouping_config(config, mode="column", column="sample_alias")
+    assert by_sample["mapping"] == {"s1": "s1", "s2": "s2"}
+    config = update_analysis_grouping_config(
+        config,
+        mode="custom",
+        column="condition",
+        custom_groups={"s1": "baseline", "s2": "stimulated"},
+    )
+    grouped = apply_analysis_grouping(data, config["mapping"], config["label"])
+    assert grouped.metadata["condition"].tolist() == ["baseline", "baseline", "stimulated", "stimulated"]
+    assert grouped.qc_filter_counts["condition"].tolist() == ["baseline", "stimulated", "TOTAL"]
+    assert config["source"]["condition"].tolist() == ["A", "B"]
+    assert analysis_grouping_summary(config) == "Analysis grouping: Custom sample groups · 2 groups"
+    with pytest.raises(ValueError, match="cannot be blank"):
+        update_analysis_grouping_config(
+            config,
+            mode="custom",
+            column="condition",
+            custom_groups={"s1": "", "s2": "stimulated"},
+        )
+    reset = update_analysis_grouping_config(config, mode="column", column="condition")
+    restored = apply_analysis_grouping(grouped, reset["mapping"], reset["label"])
+    assert restored.metadata["condition"].tolist() == ["A", "A", "B", "B"]
 
 
 def test_differential_uses_median_effect_and_bh_adjustment():
@@ -116,18 +195,92 @@ def test_differential_uses_median_effect_and_bh_adjustment():
     assert np.allclose(adjust_bh([0.01, 0.04, 0.03]), [0.03, 0.04, 0.04])
 
 
-def test_python_app_exposes_only_h5ad_qc_and_abundance():
+def test_heatmap_markers_use_equal_sample_weighting_and_manual_override():
+    metadata = pd.DataFrame(
+        {
+            "component": ["s1a", "s1b", "s2a", "s1c", "s2b"],
+            "sample_alias": ["s1", "s1", "s2", "s1", "s2"],
+            "celltype_manual": ["T", "T", "T", "B", "B"],
+        }
+    )
+    values = {
+        "s1a": {"A": 10, "B": 0, "PD-L1": 1},
+        "s1b": {"A": 10, "B": 0, "PD-L1": 1},
+        "s2a": {"A": 0, "B": 12, "PD-L1": 1},
+        "s1c": {"A": 20, "B": 0, "PD-L1": 1},
+        "s2b": {"A": 20, "B": 0, "PD-L1": 1},
+    }
+    abundance = pd.DataFrame(
+        [
+            {"component": component, "marker": marker, "abundance": value}
+            for component, markers in values.items()
+            for marker, value in markers.items()
+        ]
+    )
+    available = ["A", "B", "PD-L1"]
+
+    t_cells = metadata[metadata["celltype_manual"] == "T"]
+    assert select_colocalization_heatmap_markers(
+        abundance, t_cells, available, n_markers=1
+    ) == ["B"]
+    b_cells = metadata[metadata["celltype_manual"] == "B"]
+    assert select_colocalization_heatmap_markers(
+        abundance, b_cells, available, n_markers=1
+    ) == ["A"]
+    assert select_colocalization_heatmap_markers(
+        abundance,
+        metadata,
+        available,
+        plot_markers=["PD-L1", "B"],
+    ) == ["PD-L1", "B"]
+
+
+def test_spatial_summary_requires_both_markers_in_selected_set():
+    metadata = pd.DataFrame(
+        {
+            "component": ["c1", "c2"],
+            "condition": ["control", "control"],
+            "celltype_manual": ["T", "T"],
+        }
+    )
+    scores = pd.DataFrame(
+        {
+            "component": ["c1", "c1", "c2"],
+            "marker_1": ["A", "B", "A"],
+            "marker_2": ["B", "C", "A"],
+            "log2_ratio": [0.5, 0.7, 0.2],
+            "condition": ["control", "control", "control"],
+        }
+    )
+    summary = summarize_spatial(
+        scores,
+        metadata,
+        group_col="condition",
+        markers=["A", "B"],
+    )
+    assert not ((summary["marker_1"] == "C") | (summary["marker_2"] == "C")).any()
+
+
+def test_python_app_exposes_h5ad_spatial_and_patch_modules_without_pxl_input():
     import app
 
     html = str(app.app_ui)
+    source = Path("app.py").read_text()
     for label in (
         "QC", "Filtering", "Cell Calling", "Distributions", "Metadata",
-        "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
-        "Processed .h5ad path", "Data source", "Analysis grouping",
-    ):
-        assert label in html
-    for label in (".layout.pxl", "Spatial Metrics", "Patch Analysis", "3D Layout"):
+            "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
+            "Spatial Metrics", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
+            "Processed .h5ad path", "Optional .layout.pxl path(s) for cellgraph display",
+            "Data source", "Analysis grouping",
+        ):
+            assert label in html
+    for label in ("Optional patch-analysis directory", "Analyze PXL"):
         assert label not in html
+    assert 'id="configure_analysis_grouping"' in html
+    assert 'id="analysis_grouping_summary"' in html
+    assert 'id="custom_grouping"' not in html
+    for token in ("Use metadata column", "Edit sample groups", "Reset to condition", "analysis_group_editor"):
+        assert token in source
 
     embeddings = app.embedding_columns(
         pd.DataFrame(columns=["umap_1", "umap_2", "k_core_1", "k_core_2"])
