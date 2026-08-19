@@ -23,6 +23,8 @@ from proxiome import (
     sample_pxl_colocalization,
     sample_level_columns,
     select_colocalization_heatmap_markers,
+    select_proximity_profile_markers,
+    summarize_sample_colocalization,
     summarize_spatial,
     update_analysis_grouping_config,
 )
@@ -308,6 +310,43 @@ def test_spatial_summary_requires_both_markers_in_selected_set():
         markers=["A", "B"],
     )
     assert not ((summary["marker_1"] == "C") | (summary["marker_2"] == "C")).any()
+    assert len(summary) == 4
+    missing_self = summary[
+        (summary["marker_1"] == "B") & (summary["marker_2"] == "B")
+    ].iloc[0]
+    assert missing_self["mean_log2_ratio"] == 0
+    assert missing_self["pct_detected"] == 0
+
+
+def test_notebook_profile_selects_strong_detected_pairs_and_pools_samples():
+    samples = pd.DataFrame(
+        {
+            "sample_alias": ["s1", "s2", "s1", "s2", "s1", "s2"],
+            "condition": ["A"] * 6,
+            "marker_1": ["A", "A", "A", "A", "B", "B"],
+            "marker_2": ["A", "A", "B", "B", "B", "B"],
+            "sum_log2_ratio": [2.0, 4.0, 1.0, 3.0, 0.0, 0.0],
+            "n_detected": [2, 4, 2, 4, 0, 0],
+            "n_total": [4, 8, 4, 8, 4, 8],
+        }
+    )
+    summary = summarize_sample_colocalization(
+        samples, group_col="condition", markers=["A", "B"]
+    )
+    ab = summary[(summary["marker_1"] == "A") & (summary["marker_2"] == "B")].iloc[0]
+    assert ab["mean_log2_ratio"] == pytest.approx(4 / 12)
+    assert ab["pct_detected"] == pytest.approx(6 / 12)
+    assert len(summary) == 4
+
+    candidates = pd.DataFrame(
+        {
+            "marker_1": ["A", "B", "C", "D"],
+            "marker_2": ["B", "A", "C", "E"],
+            "mean_log2_ratio": [0.8, 0.8, -0.7, 0.9],
+            "pct_detected": [0.6, 0.6, 0.8, 0.4],
+        }
+    )
+    assert select_proximity_profile_markers(candidates, n_pairs=2) == ["A", "C", "B"]
 
 
 def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkeypatch):
@@ -379,6 +418,29 @@ def test_sample_colocalization_query_is_restricted_to_retrieved_markers(monkeypa
     assert set(rows["marker_pair"]) == {"A / B"}
 
 
+def test_volcano_click_selects_its_custom_data(monkeypatch):
+    import app
+    import plotly.graph_objects as go
+    from ipywidgets.widgets.widget import Widget
+
+    monkeypatch.setattr(Widget, "_widget_construction_callback", None)
+    updates = []
+    fake_session = object()
+    monkeypatch.setattr(
+        app.ui,
+        "update_selectize",
+        lambda input_id, *, selected, session: updates.append((input_id, selected, session)),
+    )
+    figure = go.Figure(
+        go.Scatter(x=[1], y=[2], customdata=[["CD81"]])
+    )
+    widget = app.clickable_volcano(figure, "detail_marker", fake_session)
+
+    widget.data[0]._dispatch_on_click(SimpleNamespace(point_inds=[0]), None)
+
+    assert updates == [("detail_marker", "CD81", fake_session)]
+
+
 def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     import app
     import plotly.express as px
@@ -390,7 +452,8 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
             "All markers", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
-            "Activity Log", "Clear log",
+        "Activity Log", "Clear log",
+            "Notebook-compatible", "Notebook proximity profile", "Strongest proximity pairs",
             "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
             "Data source", "Analysis grouping",
         ):

@@ -6,7 +6,7 @@ import glob
 import os
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from itertools import combinations
+from itertools import combinations, combinations_with_replacement
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
 
@@ -326,13 +326,22 @@ def sample_pxl_colocalization(
     markers: Sequence[str] | None = None,
     mean_type: str = "population",
     anchor: str | None = None,
+    pair_type: Literal["all", "self", "nonself"] = "nonself",
+    min_marker_fraction: float = 0,
+    min_marker_count: float = 0,
 ) -> pd.DataFrame:
     """Aggregate PXL colocalization in DuckDB before returning sample rows."""
     metadata = filter_pxl_metadata(data, metadata)
     if metadata.empty:
         return pd.DataFrame()
     components = metadata["component"].dropna().astype(str).drop_duplicates().tolist()
-    conditions = ["component IN $components", "marker_1 != marker_2"]
+    if pair_type not in {"all", "self", "nonself"}:
+        raise ValueError("pair_type must be 'all', 'self', or 'nonself'.")
+    conditions = ["proximity.component IN $components"]
+    if pair_type == "self":
+        conditions.append("marker_1 = marker_2")
+    elif pair_type == "nonself":
+        conditions.append("marker_1 != marker_2")
     parameters: dict[str, object] = {"components": components}
     selected_markers = list(dict.fromkeys(map(str, data.marker_options if markers is None else markers)))
     if not selected_markers:
@@ -342,14 +351,38 @@ def sample_pxl_colocalization(
     if anchor:
         conditions.append("(marker_1 = $anchor OR marker_2 = $anchor)")
         parameters["anchor"] = str(anchor)
+    eligibility_joins = ""
+    eligibility = None
+    if min_marker_fraction > 0 or min_marker_count > 0:
+        counts = data.abundance[["component", "marker", "count"]].copy()
+        counts["component"] = counts["component"].astype(str)
+        counts["marker"] = counts["marker"].astype(str)
+        counts["count"] = pd.to_numeric(counts["count"], errors="coerce").fillna(0)
+        counts = counts[counts["component"].isin(components)]
+        totals_by_cell = counts.groupby("component", observed=True)["count"].transform("sum")
+        counts["marker_fraction"] = counts["count"] / totals_by_cell.replace(0, np.nan)
+        eligibility = counts[
+            counts["marker"].isin(selected_markers)
+            & (counts["count"] >= float(min_marker_count))
+            & (counts["marker_fraction"] >= float(min_marker_fraction))
+        ][["component", "marker"]].drop_duplicates()
+        eligibility_joins = """
+            INNER JOIN marker_eligibility AS marker_1_ok
+                ON proximity.component = marker_1_ok.component
+               AND proximity.marker_1 = marker_1_ok.marker
+            INNER JOIN marker_eligibility AS marker_2_ok
+                ON proximity.component = marker_2_ok.component
+               AND proximity.marker_2 = marker_2_ok.marker
+        """
     query = f"""
         WITH selected AS (
-            SELECT sample, marker_1, marker_2, component,
+            SELECT sample, marker_1, marker_2, proximity.component,
                    log2(
                        greatest(CAST(join_count AS DOUBLE), 1) /
                        greatest(join_count_expected_mean, 1)
                    ) AS log2_ratio
             FROM proximity
+            {eligibility_joins}
             WHERE {' AND '.join(conditions)}
         )
         SELECT sample, marker_1, marker_2,
@@ -361,7 +394,10 @@ def sample_pxl_colocalization(
     """
     dataset = _read_pxl_dataset(data.pxl_files)
     with dataset.view.open() as session:
-        detected = session.get_connection().execute(query, parameters).fetchdf()
+        connection = session.get_connection()
+        if eligibility is not None:
+            connection.register("marker_eligibility", eligibility)
+        detected = connection.execute(query, parameters).fetchdf()
 
     sample_metadata = metadata[["sample", "sample_alias", "condition"]].drop_duplicates("sample").copy()
     sample_metadata["sample"] = sample_metadata["sample"].astype(str)
@@ -372,7 +408,12 @@ def sample_pxl_colocalization(
         .reset_index()
     )
     totals["sample"] = totals["sample"].astype(str)
-    marker_pairs = [pair for pair in combinations(sorted(selected_markers), 2) if not anchor or anchor in pair]
+    pair_builder = combinations_with_replacement if pair_type == "all" else combinations
+    marker_pairs = [
+        pair
+        for pair in pair_builder(sorted(selected_markers), 2)
+        if (pair_type != "self" or pair[0] == pair[1]) and (not anchor or anchor in pair)
+    ]
     if not marker_pairs or totals.empty:
         return pd.DataFrame()
     pair_grid = pd.DataFrame(marker_pairs, columns=["marker_1", "marker_2"])
@@ -424,6 +465,63 @@ def sample_pxl_colocalization(
     result["marker_pair"] = result["marker_1"] + " / " + result["marker_2"]
     result["pair_observed"] = result["n_detected"] > 0
     return result
+
+
+def summarize_sample_colocalization(
+    samples: pd.DataFrame,
+    *,
+    group_col: str,
+    markers: Sequence[str],
+    mean_type: str = "population",
+) -> pd.DataFrame:
+    """Pool sample-level PXL summaries and return a complete symmetric matrix."""
+    if samples.empty or group_col not in samples:
+        return pd.DataFrame()
+    grouped = samples.groupby(
+        [group_col, "marker_1", "marker_2"], observed=True, dropna=False
+    ).agg(
+        sum_log2_ratio=("sum_log2_ratio", "sum"),
+        n_detected=("n_detected", "sum"),
+        n_total=("n_total", "sum"),
+    ).reset_index()
+    grouped["detected_mean"] = grouped["sum_log2_ratio"] / grouped["n_detected"].replace(0, np.nan)
+    grouped["pct_detected"] = grouped["n_detected"] / grouped["n_total"].replace(0, np.nan)
+    grouped["mean_log2_ratio"] = np.where(
+        mean_type == "detected",
+        grouped["detected_mean"],
+        grouped["sum_log2_ratio"] / grouped["n_total"].replace(0, np.nan),
+    )
+    if group_col == "sample_alias":
+        totals = samples[[group_col, "n_total"]].drop_duplicates(group_col)
+    else:
+        sample_totals = samples[["sample_alias", group_col, "n_total"]].drop_duplicates("sample_alias")
+        totals = sample_totals.groupby(group_col, observed=True, as_index=False)["n_total"].sum()
+    return complete_spatial(grouped, group_col, markers, totals)
+
+
+def select_proximity_profile_markers(
+    summary: pd.DataFrame,
+    *,
+    n_pairs: int = 60,
+    min_detected_fraction: float = 0.5,
+) -> list[str]:
+    """Select markers from the strongest detected pairs, matching the notebook."""
+    if summary.empty:
+        return []
+    rows = summary[summary["pct_detected"] > float(min_detected_fraction)].copy()
+    if rows.empty:
+        return []
+    first = rows["marker_1"].astype(str)
+    second = rows["marker_2"].astype(str)
+    rows["pair_1"] = first.where(first <= second, second)
+    rows["pair_2"] = second.where(first <= second, first)
+    rows["absolute_mean"] = pd.to_numeric(rows["mean_log2_ratio"], errors="coerce").abs()
+    rows = (
+        rows.sort_values("absolute_mean", ascending=False, kind="stable")
+        .drop_duplicates(["pair_1", "pair_2"])
+        .head(max(1, int(n_pairs)))
+    )
+    return list(dict.fromkeys([*rows["pair_1"].tolist(), *rows["pair_2"].tolist()]))
 
 
 def load_h5ad_patch(adata) -> dict[str, pd.DataFrame | None]:
@@ -802,6 +900,10 @@ def complete_spatial(
     markers: Sequence[str],
     totals: pd.DataFrame,
 ) -> pd.DataFrame:
+    summary = summary.copy()
+    summary[group_col] = summary[group_col].astype(str)
+    totals = totals.copy()
+    totals[group_col] = totals[group_col].astype(str)
     reverse = summary.rename(columns={"marker_1": "marker_2", "marker_2": "marker_1"})
     summary = pd.concat([summary, reverse], ignore_index=True).drop_duplicates(
         [group_col, "marker_1", "marker_2"], keep="first"
@@ -812,7 +914,9 @@ def complete_spatial(
     result = grid.merge(summary, on=[group_col, "marker_1", "marker_2"], how="left")
     result = result.merge(totals, on=group_col, how="left", suffixes=("", "_grid"))
     result["n_total"] = result["n_total"].fillna(result.pop("n_total_grid"))
-    for column in ("sum_log2_ratio", "n_detected", "pct_detected"):
+    for column in ("sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"):
+        if column not in result:
+            result[column] = 0.0
         result[column] = result[column].fillna(0)
     return result
 

@@ -15,6 +15,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.spatial.distance import pdist
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
@@ -36,7 +37,9 @@ from proxiome import (
     resolve_h5ad_path,
     sample_pxl_colocalization,
     select_colocalization_heatmap_markers,
+    select_proximity_profile_markers,
     summarize_numeric,
+    summarize_sample_colocalization,
     summarize_spatial,
     update_analysis_grouping_config,
 )
@@ -52,7 +55,7 @@ def selectize(id: str, label: str, *, multiple: bool = False):
     return ui.input_selectize(id, label, [], multiple=multiple, remove_button=multiple)
 
 
-def plot_pane(output_id: str, *, height: str = "520px"):
+def plot_pane(output_id: str, *, height: str = "520px", class_: str = "plot-pane-standard"):
     return ui.div(
         ui.div(
             ui.download_button(f"{output_id}_png", "PNG", class_="btn-sm btn-outline-secondary"),
@@ -60,7 +63,7 @@ def plot_pane(output_id: str, *, height: str = "520px"):
             class_="plot-pane-controls",
         ),
         output_widget(output_id, height=height),
-        class_="plot-pane plot-pane-standard",
+        class_=f"plot-pane {class_}",
     )
 
 
@@ -348,18 +351,46 @@ def colocalization_ui():
             ui.accordion(
                 ui.accordion_panel("Cell population", selectize("coloc_celltype_filter", "Cell population", multiple=True)),
                 ui.accordion_panel(
-                    "Display",
-                    ui.input_select("coloc_preset", "Heatmap preset", {"custom": "Custom", "report": "Report style"}),
+                    "View",
+                    ui.input_select("coloc_preset", "Heatmap preset", {"report": "Notebook-compatible", "custom": "Custom"}),
                     ui.input_select("coloc_scope", "Heatmap scope", {"condition": "Analysis group summary", "sample_alias": "Sample summary", "celltype": "Cell type focus"}),
-                    selectize("coloc_celltype_focus", "Cell type focus"),
+                    ui.panel_conditional("input.coloc_scope === 'celltype'", selectize("coloc_celltype_focus", "Cell type focus")),
                     ui.input_select("coloc_view", "Group display", {"focused": "Focused group", "compare": "Compare groups"}),
-                    selectize("coloc_focus_group", "Displayed group"),
-                    selectize("coloc_compare_groups", "Groups to compare", multiple=True),
-                    ui.input_select("coloc_marker_mode", "Marker set", {"auto": "Top abundance markers", "manual": "Selected markers"}),
-                    selectize("coloc_markers", "Heatmap markers", multiple=True),
-                    ui.input_numeric("coloc_top_markers", "Top abundance markers", 40, min=2, max=40),
-                    ui.input_select("coloc_reference", "Reference group", []),
+                    ui.panel_conditional("input.coloc_view === 'focused'", selectize("coloc_focus_group", "Displayed group")),
+                    ui.panel_conditional(
+                        "input.coloc_view === 'compare'",
+                        selectize("coloc_compare_groups", "Groups to compare", multiple=True),
+                        ui.input_select("coloc_reference", "Clustering reference", []),
+                    ),
                     ui.input_select("coloc_ordering", "Marker ordering", {"ward": "Ward", "complete": "Complete", "average": "Average", "single": "Single"}),
+                ),
+                ui.accordion_panel(
+                    "Marker selection",
+                    ui.input_select(
+                        "coloc_marker_mode",
+                        "Marker set",
+                        {
+                            "profile": "Notebook proximity profile",
+                            "abundance": "Top abundance markers",
+                            "manual": "Selected markers",
+                        },
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_marker_mode === 'profile'",
+                        ui.input_numeric("coloc_top_pairs", "Strongest proximity pairs", 60, min=1, max=500),
+                        ui.help_text("Markers are taken from pairs detected in more than 50% of cells."),
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_marker_mode === 'abundance'",
+                        ui.input_numeric("coloc_top_markers", "Top abundance markers", 40, min=2, max=40),
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_marker_mode === 'manual'",
+                        selectize("coloc_markers", "Heatmap markers", multiple=True),
+                    ),
+                ),
+                ui.accordion_panel(
+                    "Appearance",
                     ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
                     ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
                     selectize("coloc_detail_pair", "Pair detail"),
@@ -382,7 +413,7 @@ def colocalization_ui():
                     ui.p(ui.strong("Zero:"), " approximately random spatial organization."),
                     ui.p(ui.strong("Negative:"), " spatial segregation."),
                 ),
-                open=["Cell population", "Display"],
+                open=["Cell population", "View", "Marker selection"],
             ),
         ),
         ui.panel_conditional(
@@ -440,7 +471,11 @@ def colocalization_ui():
                     ui.nav_panel(
                         "Observed",
                         ui.output_ui("coloc_notice"),
-                        plot_pane("coloc_heatmap", height="900px"),
+                        plot_pane(
+                            "coloc_heatmap",
+                            height="auto",
+                            class_="plot-pane-scroll coloc-heatmap-pane",
+                        ),
                         ui.card(
                             ui.card_header("Pair detail"),
                             ui.card_body(ui.output_ui("coloc_pair_metrics"), plot_pane("coloc_pair_detail"), table_pane("coloc_pair_table")),
@@ -572,6 +607,22 @@ def style_figure(figure: go.Figure, *, height: int | None = None) -> go.Figure:
         height=height,
     )
     return figure
+
+
+def clickable_volcano(figure: go.Figure, input_id: str, session: Session):
+    widget = go.FigureWidget(figure)
+
+    def select_point(trace, points, _state):
+        if points.point_inds:
+            ui.update_selectize(
+                input_id,
+                selected=str(trace.customdata[points.point_inds[0]][0]),
+                session=session,
+            )
+
+    for trace in widget.data:
+        trace.on_click(select_point)
+    return widget
 
 
 def selected(value, choices: pd.Series | list[str]) -> list[str]:
@@ -986,6 +1037,23 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.update_selectize("coloc_3d_sample", choices=samples, selected=samples[0] if samples else None, server=True)
 
     @reactive.effect
+    def _refresh_colocalization_groups():
+        retrieval = spatial_retrieval_state.get()
+        if retrieval is None:
+            return
+        scope = input.coloc_scope() or "condition"
+        group_col = "sample_alias" if scope == "sample_alias" else "condition"
+        groups = sorted(retrieval.metadata[group_col].dropna().astype(str).unique())
+        selected_group = groups[0] if groups else None
+        ui.update_selectize(
+            "coloc_focus_group", choices=groups, selected=selected_group, server=True
+        )
+        ui.update_selectize(
+            "coloc_compare_groups", choices=groups, selected=groups[:6], server=True
+        )
+        ui.update_select("coloc_reference", choices=groups, selected=selected_group)
+
+    @reactive.effect
     def _update_3d_components():
         data = data_state.get()
         retrieval = spatial_retrieval_state.get()
@@ -1144,20 +1212,26 @@ def server(input: Inputs, output: Outputs, session: Session):
         log_activity(operation, "Completed", f"Returned {len(rows):,} rows.", perf_counter() - started)
         return rows
 
-    def tracked_sample_colocalization(data: AppData, metadata: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def tracked_sample_colocalization(
+        data: AppData,
+        metadata: pd.DataFrame,
+        *,
+        operation: str = "Differential colocalization",
+        **kwargs,
+    ) -> pd.DataFrame:
         started = perf_counter()
         log_activity(
-            "Differential colocalization",
+            operation,
             "Started",
             f"Aggregating {len(metadata):,} cells inside PXL DuckDB.",
         )
         try:
             rows = sample_pxl_colocalization(data, metadata, **kwargs)
         except Exception as error:
-            log_activity("Differential colocalization", "Failed", str(error), perf_counter() - started)
+            log_activity(operation, "Failed", str(error), perf_counter() - started)
             raise
         log_activity(
-            "Differential colocalization",
+            operation,
             "Completed",
             f"Returned {len(rows):,} sample-pair rows.",
             perf_counter() - started,
@@ -1538,7 +1612,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_plotly
     def abundance_diff_volcano():
-        return fig_abundance_diff_volcano()
+        return clickable_volcano(
+            fig_abundance_diff_volcano(), "abundance_diff_feature", session
+        )
 
     register_downloads("abundance_diff_volcano", fig_abundance_diff_volcano)
 
@@ -1739,7 +1815,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_plotly
     def clustering_diff_volcano():
-        return fig_clustering_diff_volcano()
+        return clickable_volcano(
+            fig_clustering_diff_volcano(), "clustering_diff_feature", session
+        )
 
     register_downloads("clustering_diff_volcano", fig_clustering_diff_volcano)
 
@@ -1781,13 +1859,17 @@ def server(input: Inputs, output: Outputs, session: Session):
     def _apply_report_preset():
         if input.coloc_preset() != "report":
             return
-        ui.update_select("coloc_view", selected="compare")
-        ui.update_select("coloc_marker_mode", selected="auto")
-        ui.update_numeric("coloc_top_markers", value=40)
+        ui.update_select("coloc_view", selected="focused")
+        ui.update_select("coloc_marker_mode", selected="profile")
+        ui.update_numeric("coloc_top_pairs", value=60)
         ui.update_select("coloc_mean_type", selected="population")
         ui.update_select("coloc_ordering", selected="ward")
-        ui.update_numeric("coloc_legend_min", value=-0.75)
-        ui.update_numeric("coloc_legend_max", value=0.75)
+        ui.update_numeric("coloc_legend_min", value=-1)
+        ui.update_numeric("coloc_legend_max", value=1)
+        ui.update_checkbox("coloc_pixelator_filter", value=True)
+        ui.update_numeric("coloc_min_fraction", value=0.001)
+        ui.update_numeric("coloc_min_count", value=0)
+        ui.update_numeric("coloc_min_cells", value=1)
 
     def colocalization_metadata() -> pd.DataFrame:
         retrieval = get_spatial_retrieval()
@@ -1838,17 +1920,30 @@ def server(input: Inputs, output: Outputs, session: Session):
     def ordered_coloc_markers(summary: pd.DataFrame, markers: list[str], group_col: str) -> list[str]:
         if len(markers) < 3 or summary.empty:
             return markers
-        reference = input.coloc_reference()
-        group = reference if reference in set(summary[group_col].astype(str)) else str(summary[group_col].iloc[0])
+        requested_group = (
+            input.coloc_reference()
+            if input.coloc_view() == "compare"
+            else input.coloc_focus_group()
+        )
+        groups = set(summary[group_col].astype(str))
+        group = requested_group if requested_group in groups else str(summary[group_col].iloc[0])
         rows = summary[summary[group_col].astype(str) == group]
         matrix = rows.pivot(index="marker_1", columns="marker_2", values="mean_log2_ratio").reindex(index=markers, columns=markers).fillna(0)
         try:
-            return [markers[index] for index in leaves_list(linkage(matrix.to_numpy(), method=input.coloc_ordering() or "ward"))]
+            distances = pdist(matrix.to_numpy(), metric="euclidean")
+            if not distances.size or np.allclose(distances, 0):
+                return markers
+            tree = linkage(
+                distances,
+                method=input.coloc_ordering() or "ward",
+                optimal_ordering=True,
+            )
+            return [markers[index] for index in leaves_list(tree)]
         except Exception:
             return markers
 
     @reactive.calc
-    def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
+    def colocalization_heatmap_base() -> tuple[pd.DataFrame, str, list[str]]:
         data = get_data()
         retrieval = get_spatial_retrieval()
         metadata = colocalization_metadata()
@@ -1856,39 +1951,97 @@ def server(input: Inputs, output: Outputs, session: Session):
             return pd.DataFrame(), "condition", []
         scope = input.coloc_scope() or "condition"
         group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        markers = heatmap_markers(metadata)
-        scores = tracked_pxl_proximity(
-            "Colocalization heatmap",
-            data,
-            metadata,
-            markers=markers,
-            pair_type="nonself",
-            add_marker_counts=bool(input.coloc_pixelator_filter()),
-        )
-        scores = apply_colocalization_filters(scores)
-        if scores.empty:
-            return pd.DataFrame(), group_col, markers
-        summary = summarize_spatial(
-            scores,
-            metadata,
-            group_col=group_col,
-            markers=markers,
-            mean_type=input.coloc_mean_type() or "population",
-        )
+        mode = input.coloc_marker_mode() or "profile"
+        if mode == "profile":
+            available_markers = list(retrieval.markers)
+            samples = tracked_sample_colocalization(
+                data,
+                metadata,
+                operation="Colocalization heatmap",
+                markers=available_markers,
+                mean_type="population",
+                pair_type="all",
+                min_marker_fraction=(
+                    float(input.coloc_min_fraction() or 0)
+                    if input.coloc_pixelator_filter()
+                    else 0
+                ),
+                min_marker_count=(
+                    float(input.coloc_min_count() or 0)
+                    if input.coloc_pixelator_filter()
+                    else 0
+                ),
+            )
+            summary = summarize_sample_colocalization(
+                samples,
+                group_col=group_col,
+                markers=available_markers,
+                mean_type=input.coloc_mean_type() or "population",
+            )
+            minimum_cells = int(input.coloc_min_cells() or 1)
+            if minimum_cells > 1 and not summary.empty:
+                below_minimum = summary["n_detected"] < minimum_cells
+                summary.loc[
+                    below_minimum,
+                    ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
+                ] = 0
+            markers = select_proximity_profile_markers(
+                summary,
+                n_pairs=max(1, int(input.coloc_top_pairs() or 60)),
+            )
+            summary = summary[
+                summary["marker_1"].isin(markers) & summary["marker_2"].isin(markers)
+            ].copy()
+        else:
+            markers = heatmap_markers(metadata)
+            scores = tracked_pxl_proximity(
+                "Colocalization heatmap",
+                data,
+                metadata,
+                markers=markers,
+                pair_type="all",
+                add_marker_counts=bool(input.coloc_pixelator_filter()),
+            )
+            scores = apply_colocalization_filters(scores)
+            if scores.empty:
+                return pd.DataFrame(), group_col, markers
+            summary = summarize_spatial(
+                scores,
+                metadata,
+                group_col=group_col,
+                markers=markers,
+                mean_type=input.coloc_mean_type() or "population",
+            )
+        if summary.empty:
+            return summary, group_col, markers
+        return summary, group_col, markers
+
+    @reactive.calc
+    def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
+        summary, group_col, markers = colocalization_heatmap_base()
         if summary.empty:
             return summary, group_col, markers
         available_groups = list(summary[group_col].dropna().astype(str).unique())
         if input.coloc_view() == "compare":
             groups = selected(input.coloc_compare_groups(), available_groups)
-            if len(markers) > 20:
-                groups = [str(input.coloc_focus_group() or available_groups[0])]
         else:
             groups = [str(input.coloc_focus_group() or available_groups[0])]
-        summary = summary[summary[group_col].astype(str).isin(groups)]
+        summary = summary[summary[group_col].astype(str).isin(groups)].copy()
         markers = ordered_coloc_markers(summary, markers, group_col)
         summary["marker_1"] = pd.Categorical(summary["marker_1"], markers, ordered=True)
         summary["marker_2"] = pd.Categorical(summary["marker_2"], list(reversed(markers)), ordered=True)
         return summary, group_col, markers
+
+    @reactive.effect
+    def _refresh_colocalization_detail_pairs():
+        _, _, markers = colocalization_heatmap_base()
+        pairs = [f"{first} / {second}" for first, second in combinations(markers, 2)]
+        ui.update_selectize(
+            "coloc_detail_pair",
+            choices=pairs,
+            selected=pairs[0] if pairs else None,
+            server=True,
+        )
 
     @output
     @render.ui
@@ -1901,8 +2054,13 @@ def server(input: Inputs, output: Outputs, session: Session):
         if summary.empty:
             return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
         notices = [f"Showing {len(markers)} markers across {summary[group_col].nunique()} {group_col.replace('_', ' ')} group(s)."]
+        if input.coloc_marker_mode() == "profile":
+            notices.append(
+                f"Markers come from the {int(input.coloc_top_pairs() or 60)} strongest pairs "
+                "detected in more than half of cells."
+            )
         if input.coloc_view() == "compare" and len(markers) > 20:
-            notices.append("Comparison view supports up to 20 markers; one focused group is shown.")
+            notices.append("Large comparison matrices are stacked vertically so labels remain readable.")
         elif input.coloc_view() == "compare" and len(markers) > 15:
             notices.append("For clearer comparison labels, use 15 or fewer markers.")
         return ui.div(" ".join(notices), class_="alert alert-info py-2")
@@ -1922,16 +2080,81 @@ def server(input: Inputs, output: Outputs, session: Session):
             color="mean_log2_ratio",
             size="pct_detected",
             facet_col=group_col,
-            facet_col_wrap=2 if input.coloc_view() == "compare" else 1,
+            facet_col_wrap=(
+                1 if len(markers) > 20 else 2
+            ) if input.coloc_view() == "compare" else 1,
             color_continuous_scale="RdBu_r",
             range_color=(legend_min, legend_max),
-            hover_data=["n_detected", "n_total", "pct_detected"],
+            size_max=18,
+            hover_data={
+                "mean_log2_ratio": ":.3f",
+                "n_detected": True,
+                "n_total": True,
+                "pct_detected": ":.1%",
+            },
             category_orders={"marker_1": markers, "marker_2": list(reversed(markers))},
             labels={"mean_log2_ratio": "Mean log2 ratio", "pct_detected": "Detected fraction"},
         )
-        figure.update_traces(marker={"sizemin": 2, "line": {"width": 0.4, "color": "#556264"}})
+        figure.update_traces(marker={"sizemin": 0, "line": {"width": 0.65, "color": "#222222"}})
         panels = max(1, summary[group_col].nunique())
-        return style_figure(figure, height=max(620, 34 * len(markers) * math.ceil(panels / 2)))
+        facet_columns = 1 if len(markers) > 20 or input.coloc_view() != "compare" else 2
+        panel_rows = math.ceil(panels / facet_columns)
+        figure = style_figure(
+            figure,
+            height=max(720, 26 * len(markers) * panel_rows + 240),
+        )
+        figure.update_xaxes(
+            side="top",
+            tickangle=-45,
+            showgrid=True,
+            gridcolor="#dfe7eb",
+            zeroline=False,
+            title_text=None,
+            tickfont={"size": 10},
+        )
+        figure.update_yaxes(
+            showgrid=True,
+            gridcolor="#dfe7eb",
+            zeroline=False,
+            title_text=None,
+            tickfont={"size": 11},
+        )
+        figure.for_each_annotation(
+            lambda annotation: annotation.update(
+                text="" if panels == 1 else annotation.text.split("=", 1)[-1],
+                font={"size": 15},
+            )
+        )
+        groups = summary[group_col].dropna().astype(str).drop_duplicates().tolist()
+        celltypes = colocalization_metadata()["celltype_manual"].dropna().astype(str).unique()
+        population = str(celltypes[0]) if len(celltypes) == 1 else "selected cells"
+        title = (
+            f"Colocalization in {population} ({groups[0]})"
+            if len(groups) == 1
+            else f"Colocalization in {population}"
+        )
+        figure.update_layout(
+            title={
+                "text": title,
+                "x": 0.01,
+                "xanchor": "left",
+            },
+            margin={"l": 150, "r": 150, "t": 180, "b": 55},
+            legend={
+                "title": {"text": "Detected fraction"},
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.08,
+                "xanchor": "right",
+                "x": 0.84,
+            },
+            coloraxis_colorbar={
+                "title": {"text": "Mean<br>log2 ratio"},
+                "thickness": 22,
+                "len": 0.72,
+            },
+        )
+        return figure
 
     @output
     @render_plotly
@@ -2104,7 +2327,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_plotly
     def coloc_diff_volcano():
-        return fig_coloc_diff_volcano()
+        return clickable_volcano(
+            fig_coloc_diff_volcano(), "coloc_diff_pair", session
+        )
 
     register_downloads("coloc_diff_volcano", fig_coloc_diff_volcano)
 

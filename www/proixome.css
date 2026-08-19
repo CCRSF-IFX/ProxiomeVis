@@ -401,12 +401,19 @@ body {
 }
 
 .coloc-heatmap-pane {
+  width: 100%;
+  max-width: 1480px;
+  min-height: 720px;
+  margin-inline: auto;
   overflow-x: auto;
   overflow-y: visible;
 }
 
 .coloc-heatmap-pane .html-widget,
-.coloc-heatmap-pane .shiny-plot-output {
+.coloc-heatmap-pane .shiny-plot-output,
+.coloc-heatmap-pane .shiny-ipywidget-output {
+  width: 1280px !important;
+  min-width: 1280px;
   max-width: none;
 }
 
