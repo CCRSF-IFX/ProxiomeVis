@@ -57,6 +57,20 @@ def plot_pane(output_id: str, *, height: str = "520px"):
     )
 
 
+def split_umap_height(facet_count: int, facet_columns: int) -> int:
+    columns = max(1, min(facet_columns, max(1, facet_count)))
+    rows = math.ceil(max(1, facet_count) / columns)
+    return max(620, 120 + 320 * rows)
+
+
+def label_embedding_axes(figure: go.Figure) -> go.Figure:
+    for axis in figure.select_xaxes():
+        axis.update(title_text="Embedding 1" if axis.title.text else None, showgrid=False)
+    for axis in figure.select_yaxes():
+        axis.update(title_text="Embedding 2" if axis.title.text else None, showgrid=False)
+    return figure
+
+
 def table_pane(output_id: str):
     return ui.div(ui.output_data_frame(output_id), class_="table-pane")
 
@@ -123,7 +137,10 @@ def abundance_ui():
                     ui.input_select("abundance_color_by", "Color UMAP by", {
                         "abundance": "Marker abundance", "celltype_manual": "Cell type", "condition": "Analysis group", "sample_alias": "Sample"
                     }),
-                    selectize("abundance_marker", "Marker"),
+                    ui.panel_conditional(
+                        "input.abundance_color_by === 'abundance'",
+                        selectize("abundance_marker", "Marker"),
+                    ),
                     ui.input_select("abundance_split_by", "Split UMAP by", {"": "None", "condition": "Analysis group", "sample_alias": "Sample"}),
                     ui.input_numeric("abundance_split_columns", "Split columns", 2, min=1, max=12),
                     ui.input_slider("abundance_point_size", "Dot size", 1, 8, 3, step=0.5),
@@ -160,7 +177,7 @@ def abundance_ui():
         ui.layout_sidebar(
             sidebar,
             ui.navset_card_underline(
-                ui.nav_panel("Observed", ui.output_ui("abundance_metric_row"), plot_pane("abundance_umap"), table_pane("abundance_table")),
+                ui.nav_panel("Observed", ui.output_ui("abundance_metric_row"), plot_pane("abundance_umap", height="auto"), table_pane("abundance_table")),
                 ui.nav_panel("Marker Distributions", plot_pane("abundance_distribution", height="680px"), table_pane("abundance_distribution_table")),
                 ui.nav_panel(
                     "Cell Annotation",
@@ -396,10 +413,10 @@ def data_popover():
                     default_pxl_spec(),
                     rows=3,
                 ),
-                ui.layout_columns(
-                    ui.input_action_button("inspect_h5ad", "Inspect", class_="btn-outline-secondary w-100"),
-                    ui.input_task_button("load_h5ad", "Load Data", class_="w-100"),
-                    col_widths=(5, 7),
+                ui.div(
+                    ui.input_action_button("inspect_h5ad", "Inspect", class_="btn-outline-secondary"),
+                    ui.input_task_button("load_h5ad", "Load Data"),
+                    class_="data-source-actions",
                 ),
                 ui.output_ui("load_status"),
                 ui.hr(),
@@ -907,21 +924,24 @@ def server(input: Inputs, output: Outputs, session: Session):
         color_by = input.abundance_color_by() or "abundance"
         color = "abundance" if color_by == "abundance" else color_by
         split = input.abundance_split_by() or None
+        facet_columns = max(1, int(input.abundance_split_columns() or 2))
         figure = px.scatter(
             plot_data,
             x=x,
             y=y,
             color=color,
             facet_col=split,
-            facet_col_wrap=max(1, int(input.abundance_split_columns() or 2)) if split else 0,
+            facet_col_wrap=facet_columns if split else 0,
+            facet_row_spacing=0.1 if split else None,
             hover_data=[column for column in ("component", "sample_alias", "condition", "celltype_manual") if column in plot_data],
             color_continuous_scale=["#edf7f4", "#78aeb2", "#f0b45b", CORAL] if color == "abundance" else None,
             render_mode="webgl",
         )
         figure.update_traces(marker={"size": float(input.abundance_point_size() or 3), "opacity": 0.82})
-        figure.update_xaxes(title="Embedding 1", showgrid=False)
-        figure.update_yaxes(title="Embedding 2", showgrid=False)
-        return style_figure(figure, height=620 if split else 540)
+        label_embedding_axes(figure)
+        facet_count = plot_data[split].nunique(dropna=False) if split else 0
+        height = split_umap_height(facet_count, facet_columns) if split else 540
+        return style_figure(figure, height=height)
 
     @output
     @render_plotly

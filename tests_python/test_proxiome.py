@@ -263,6 +263,7 @@ def test_spatial_summary_requires_both_markers_in_selected_set():
 
 def test_python_app_exposes_h5ad_spatial_and_patch_modules_without_pxl_input():
     import app
+    import plotly.express as px
 
     html = str(app.app_ui)
     source = Path("app.py").read_text()
@@ -279,8 +280,24 @@ def test_python_app_exposes_h5ad_spatial_and_patch_modules_without_pxl_input():
     assert 'id="configure_analysis_grouping"' in html
     assert 'id="analysis_grouping_summary"' in html
     assert 'id="custom_grouping"' not in html
+    assert 'class="data-source-actions"' in html
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in Path("www/proixome.css").read_text()
     for token in ("Use metadata column", "Edit sample groups", "Reset to condition", "analysis_group_editor"):
         assert token in source
+    assert "input.abundance_color_by === 'abundance'" in source
+    assert (
+        'id="abundance_umap" class="shiny-ipywidget-output '
+        'shiny-report-size shiny-report-theme" style="height:auto;"'
+    ) in html
+
+    facets = pd.DataFrame(
+        {"x": list(range(6)), "y": list(range(6)), "sample": list("ABCDEF")}
+    )
+    figure = px.scatter(facets, x="x", y="y", facet_col="sample", facet_col_wrap=3)
+    app.label_embedding_axes(figure)
+    assert [axis.title.text for axis in figure.select_xaxes()] == ["Embedding 1"] * 3 + [None] * 3
+    assert app.split_umap_height(6, 3) == 760
+    assert app.split_umap_height(6, 1) == 2040
 
     embeddings = app.embedding_columns(
         pd.DataFrame(columns=["umap_1", "umap_2", "k_core_1", "k_core_2"])
