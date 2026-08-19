@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from datetime import datetime
-from itertools import combinations
+from itertools import combinations, combinations_with_replacement
 from pathlib import Path
 from queue import Empty, SimpleQueue
 from time import perf_counter
@@ -347,30 +348,75 @@ def clustering_ui():
 def colocalization_ui():
     sidebar = ui.sidebar(
         ui.panel_conditional(
-            "input.colocalization_mode === 'Observed'",
+            "input.colocalization_mode === 'Observed' || input.colocalization_mode === 'Differential'",
             ui.accordion(
-                ui.accordion_panel("Cell population", selectize("coloc_celltype_filter", "Cell population", multiple=True)),
                 ui.accordion_panel(
-                    "View",
-                    ui.input_select("coloc_preset", "Heatmap preset", {"report": "Notebook-compatible", "custom": "Custom"}),
-                    ui.input_select("coloc_scope", "Heatmap scope", {"condition": "Analysis group summary", "sample_alias": "Sample summary", "celltype": "Cell type focus"}),
-                    ui.panel_conditional("input.coloc_scope === 'celltype'", selectize("coloc_celltype_focus", "Cell type focus")),
-                    ui.input_select("coloc_view", "Group display", {"focused": "Focused group", "compare": "Compare groups"}),
-                    ui.panel_conditional("input.coloc_view === 'focused'", selectize("coloc_focus_group", "Displayed group")),
-                    ui.panel_conditional(
-                        "input.coloc_view === 'compare'",
-                        selectize("coloc_compare_groups", "Groups to compare", multiple=True),
-                        ui.input_select("coloc_reference", "Clustering reference", []),
-                    ),
-                    ui.input_select("coloc_ordering", "Marker ordering", {"ward": "Ward", "complete": "Complete", "average": "Average", "single": "Single"}),
+                    "Population",
+                    selectize("coloc_celltype_filter", "Cell population"),
+                    ui.help_text("One population from the active spatial retrieval."),
                 ),
                 ui.accordion_panel(
-                    "Marker selection",
+                    "Proximity definition",
+                    ui.input_select(
+                        "coloc_mean_type",
+                        "Mean calculation",
+                        {
+                            "population": "Population mean",
+                            "detected": "Detected-cell mean",
+                        },
+                    ),
+                    ui.input_checkbox(
+                        "coloc_pixelator_filter",
+                        "Apply Pixelator marker filters",
+                        True,
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_pixelator_filter",
+                        ui.input_numeric(
+                            "coloc_min_fraction",
+                            "Minimum marker fraction",
+                            0.001,
+                            min=0,
+                            max=1,
+                            step=0.0005,
+                        ),
+                        ui.input_numeric(
+                            "coloc_min_count", "Minimum marker count", 0, min=0
+                        ),
+                    ),
+                    ui.input_action_button(
+                        "coloc_reset_pixelatores",
+                        "Load PixelatorES defaults",
+                        class_="btn-outline-secondary w-100 mb-2",
+                    ),
+                    ui.input_action_button(
+                        "coloc_apply_analysis",
+                        "Apply analysis settings",
+                        class_="btn-primary w-100",
+                    ),
+                    ui.output_ui("coloc_analysis_status"),
+                ),
+                open=["Population", "Proximity definition"],
+            ),
+        ),
+        ui.panel_conditional(
+            "input.colocalization_mode === 'Observed'",
+            ui.accordion(
+                ui.accordion_panel(
+                    "Heatmap analysis",
+                    ui.input_select(
+                        "coloc_scope",
+                        "Summarize by",
+                        {
+                            "condition": "Analysis group",
+                            "sample_alias": "Sample",
+                        },
+                    ),
                     ui.input_select(
                         "coloc_marker_mode",
                         "Marker set",
                         {
-                            "profile": "Notebook proximity profile",
+                            "profile": "PixelatorES proximity profile",
                             "abundance": "Top abundance markers",
                             "manual": "Selected markers",
                         },
@@ -390,22 +436,45 @@ def colocalization_ui():
                     ),
                 ),
                 ui.accordion_panel(
-                    "Appearance",
+                    "Display",
+                    ui.input_select(
+                        "coloc_view",
+                        "Group display",
+                        {"focused": "Focused group", "compare": "Compare groups"},
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_view === 'focused'",
+                        selectize("coloc_focus_group", "Displayed group"),
+                    ),
+                    ui.panel_conditional(
+                        "input.coloc_view === 'compare'",
+                        selectize("coloc_compare_groups", "Groups to compare", multiple=True),
+                    ),
+                    ui.input_select(
+                        "coloc_reference", "Clustering reference group", []
+                    ),
+                    ui.input_select(
+                        "coloc_ordering",
+                        "Marker ordering",
+                        {
+                            "ward": "Ward",
+                            "complete": "Complete",
+                            "average": "Average",
+                            "single": "Single",
+                        },
+                    ),
                     ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
                     ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
                     selectize("coloc_detail_pair", "Pair detail"),
                 ),
                 ui.accordion_panel(
-                    "Filters",
-                    selectize("coloc_condition_filter", "Analysis group", multiple=True),
-                    ui.input_checkbox("coloc_pixelator_filter", "Apply Pixelator proximity filters", False),
-                    ui.input_numeric("coloc_min_fraction", "Minimum marker fraction", 0.001, min=0, max=1, step=0.0005),
-                    ui.input_numeric("coloc_min_count", "Minimum marker count", 0, min=0),
-                    ui.input_numeric("coloc_min_cells", "Minimum cells per pair", 1, min=1),
-                ),
-                ui.accordion_panel(
                     "Advanced",
-                    ui.input_select("coloc_mean_type", "Heatmap mean", {"population": "Population mean", "detected": "Detected-cell mean"}),
+                    ui.input_numeric(
+                        "coloc_min_cells",
+                        "Minimum detected cells per summarized group",
+                        1,
+                        min=1,
+                    ),
                 ),
                 ui.accordion_panel(
                     "Interpretation",
@@ -413,22 +482,17 @@ def colocalization_ui():
                     ui.p(ui.strong("Zero:"), " approximately random spatial organization."),
                     ui.p(ui.strong("Negative:"), " spatial segregation."),
                 ),
-                open=["Cell population", "View", "Marker selection"],
+                open=["Heatmap analysis", "Display"],
             ),
         ),
         ui.panel_conditional(
             "input.colocalization_mode === 'Differential'",
             ui.accordion(
                 ui.accordion_panel(
-                    "Cell population",
-                    selectize("coloc_diff_celltype_filter", "Cell population", multiple=True),
-                    ui.input_select("coloc_diff_mean", "Sample summary", {"population": "Population mean", "detected": "Detected-cell mean"}),
-                ),
-                ui.accordion_panel(
                     "Contrast",
                     ui.input_select("coloc_diff_group_a", "Group A", []),
                     ui.input_select("coloc_diff_group_b", "Group B (reference)", []),
-                    ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=1),
+                    ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=2),
                 ),
                 ui.accordion_panel(
                     "Pair display",
@@ -441,7 +505,7 @@ def colocalization_ui():
                     ui.input_numeric("coloc_diff_fdr", "FDR threshold", 0.05, min=0, max=1, step=0.01),
                     ui.input_numeric("coloc_diff_effect", "Minimum median-sample difference", 0.25, min=0, step=0.05),
                 ),
-                open=["Cell population", "Contrast", "Pair display"],
+                open=["Contrast", "Pair display"],
             ),
         ),
         ui.panel_conditional(
@@ -471,6 +535,14 @@ def colocalization_ui():
                     ui.nav_panel(
                         "Observed",
                         ui.output_ui("coloc_notice"),
+                        ui.div(
+                            ui.download_button(
+                                "coloc_settings_json",
+                                "Settings JSON",
+                                class_="btn-sm btn-outline-secondary",
+                            ),
+                            class_="d-flex justify-content-end mb-2",
+                        ),
                         plot_pane(
                             "coloc_heatmap",
                             height="auto",
@@ -625,6 +697,25 @@ def clickable_volcano(figure: go.Figure, input_id: str, session: Session):
     return widget
 
 
+def clickable_heatmap(figure: go.Figure, input_id: str, session: Session):
+    widget = go.FigureWidget(figure)
+
+    def select_pair(trace, points, _state):
+        if not points.point_inds:
+            return
+        index = points.point_inds[0]
+        pair = sorted((str(trace.x[index]), str(trace.y[index])))
+        ui.update_selectize(
+            input_id,
+            selected=f"{pair[0]} / {pair[1]}",
+            session=session,
+        )
+
+    for trace in widget.data:
+        trace.on_click(select_pair)
+    return widget
+
+
 def selected(value, choices: pd.Series | list[str]) -> list[str]:
     all_values = [str(item) for item in pd.Series(choices).dropna().unique()]
     if value is None or value == "" or value == () or value == []:
@@ -658,6 +749,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     data_state: reactive.Value[AppData | None] = reactive.Value(None)
     grouping_state: reactive.Value[dict | None] = reactive.Value(None)
     spatial_retrieval_state: reactive.Value[SpatialRetrieval | None] = reactive.Value(None)
+    coloc_analysis_state: reactive.Value[dict | None] = reactive.Value(None)
     inspect_message = reactive.Value("No data loaded.")
     activity_queue: SimpleQueue[dict] = SimpleQueue()
     activity_state: reactive.Value[tuple[dict, ...]] = reactive.Value(())
@@ -670,6 +762,79 @@ def server(input: Inputs, output: Outputs, session: Session):
             "details": details,
             "seconds": round(elapsed, 2) if elapsed is not None else None,
         })
+
+    def default_coloc_settings(retrieval: SpatialRetrieval) -> dict:
+        celltypes = sorted(
+            retrieval.metadata["celltype_manual"].dropna().astype(str).unique()
+        )
+        return {
+            "celltype": celltypes[0] if celltypes else None,
+            "scope": "condition",
+            "marker_mode": "profile",
+            "manual_markers": tuple(retrieval.markers[: min(15, len(retrieval.markers))]),
+            "top_pairs": 60,
+            "top_markers": 40,
+            "mean_type": "population",
+            "pixelator_filter": True,
+            "min_fraction": 0.001,
+            "min_count": 0.0,
+            "min_cells": 1,
+        }
+
+    def draft_coloc_settings(retrieval: SpatialRetrieval) -> dict:
+        defaults = default_coloc_settings(retrieval)
+        marker_value = input.coloc_markers()
+        manual_markers = tuple(
+            map(
+                str,
+                marker_value
+                if isinstance(marker_value, (list, tuple))
+                else [marker_value],
+            )
+        ) if marker_value else defaults["manual_markers"]
+        return {
+            "celltype": str(input.coloc_celltype_filter() or defaults["celltype"]),
+            "scope": str(input.coloc_scope() or defaults["scope"]),
+            "marker_mode": str(input.coloc_marker_mode() or defaults["marker_mode"]),
+            "manual_markers": manual_markers,
+            "top_pairs": max(1, int(input.coloc_top_pairs() or defaults["top_pairs"])),
+            "top_markers": max(2, int(input.coloc_top_markers() or defaults["top_markers"])),
+            "mean_type": str(input.coloc_mean_type() or defaults["mean_type"]),
+            "pixelator_filter": bool(input.coloc_pixelator_filter()),
+            "min_fraction": float(input.coloc_min_fraction() or 0),
+            "min_count": float(input.coloc_min_count() or 0),
+            "min_cells": max(1, int(input.coloc_min_cells() or 1)),
+        }
+
+    def validate_coloc_settings(settings: dict, retrieval: SpatialRetrieval) -> None:
+        celltypes = set(retrieval.metadata["celltype_manual"].dropna().astype(str))
+        if settings["celltype"] not in celltypes:
+            raise ValueError("Select one cell population from the active retrieval.")
+        if settings["scope"] not in {"condition", "sample_alias"}:
+            raise ValueError("Summarize by analysis group or sample.")
+        if settings["marker_mode"] not in {"profile", "abundance", "manual"}:
+            raise ValueError("Select a supported marker-selection method.")
+        if settings["marker_mode"] == "manual" and len(settings["manual_markers"]) < 2:
+            raise ValueError("Select at least two heatmap markers.")
+        if not 0 <= settings["min_fraction"] <= 1:
+            raise ValueError("Minimum marker fraction must be between 0 and 1.")
+
+    def describe_coloc_settings(settings: dict) -> str:
+        marker_description = {
+            "profile": f"top {settings['top_pairs']} proximity pairs",
+            "abundance": f"top {settings['top_markers']} abundance markers",
+            "manual": f"{len(settings['manual_markers'])} selected markers",
+        }[settings["marker_mode"]]
+        filter_description = (
+            f"marker fraction ≥{settings['min_fraction']:g}, count ≥{settings['min_count']:g}"
+            if settings["pixelator_filter"]
+            else "marker filtering off"
+        )
+        return (
+            f"{settings['celltype']} · {settings['mean_type'].replace('_', '-')} mean · "
+            f"{marker_description} · {filter_description} · "
+            f"detected cells ≥{settings['min_cells']}"
+        )
 
     log_activity("Session", "Ready", "Waiting for data.")
 
@@ -793,6 +958,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         loaded = load_task.result()
         data_state.set(loaded)
         spatial_retrieval_state.set(None)
+        coloc_analysis_state.set(None)
         inspect_message.set(
             f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers; "
             f"{len(loaded.pxl_files):,} PXL file(s) assigned."
@@ -807,6 +973,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             log_activity("Spatial retrieval", "Discarded", "The source dataset changed before retrieval completed.")
             return
         spatial_retrieval_state.set(retrieval)
+        coloc_analysis_state.set(None)
         ui.notification_show(
             f"Spatial retrieval ready: {len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
             type="message",
@@ -1001,57 +1168,94 @@ def server(input: Inputs, output: Outputs, session: Session):
         celltypes = sorted(metadata["celltype_manual"].dropna().astype(str).unique())
         samples = sorted(metadata["sample_alias"].dropna().astype(str).unique())
         pairs = [f"{marker_1} / {marker_2}" for marker_1, marker_2 in combinations(sorted(markers), 2)]
+        heatmap_pairs = [
+            f"{marker_1} / {marker_2}"
+            for marker_1, marker_2 in combinations_with_replacement(sorted(markers), 2)
+        ]
 
         for input_id in ("clustering_marker", "clustering_diff_feature", "coloc_diff_anchor"):
             ui.update_selectize(input_id, choices=markers, selected=markers[0] if markers else None, server=True)
         for input_id in ("coloc_markers", "coloc_3d_markers"):
             ui.update_selectize(input_id, choices=markers, selected=markers[: min(15, len(markers))], server=True)
         for input_id in (
-            "clustering_condition_filter", "clustering_heatmap_condition_filter", "coloc_condition_filter",
+            "clustering_condition_filter", "clustering_heatmap_condition_filter",
         ):
             ui.update_selectize(input_id, choices=conditions, selected=conditions, server=True)
         for input_id in (
             "clustering_celltype_filter", "clustering_heatmap_celltype_filter",
-            "clustering_diff_celltype_filter", "coloc_celltype_filter",
-            "coloc_diff_celltype_filter", "coloc_3d_celltypes",
+            "clustering_diff_celltype_filter", "coloc_3d_celltypes",
         ):
             ui.update_selectize(input_id, choices=celltypes, selected=celltypes[:1], server=True)
+        defaults = default_coloc_settings(retrieval)
+        ui.update_selectize(
+            "coloc_celltype_filter",
+            choices=celltypes,
+            selected=defaults["celltype"],
+            server=True,
+        )
+        ui.update_select("coloc_scope", selected=defaults["scope"])
+        ui.update_select("coloc_marker_mode", selected=defaults["marker_mode"])
+        ui.update_numeric("coloc_top_pairs", value=defaults["top_pairs"])
+        ui.update_numeric("coloc_top_markers", value=defaults["top_markers"])
+        ui.update_select("coloc_mean_type", selected=defaults["mean_type"])
+        ui.update_checkbox("coloc_pixelator_filter", value=defaults["pixelator_filter"])
+        ui.update_numeric("coloc_min_fraction", value=defaults["min_fraction"])
+        ui.update_numeric("coloc_min_count", value=defaults["min_count"])
+        ui.update_numeric("coloc_min_cells", value=defaults["min_cells"])
         ui.update_select("clustering_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
         ui.update_select(
             "clustering_diff_group_b",
             choices=conditions,
             selected=conditions[min(1, len(conditions) - 1)] if conditions else None,
         )
-        ui.update_select("coloc_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
+        reference_group = "NC" if "NC" in conditions else (
+            conditions[min(1, len(conditions) - 1)] if conditions else None
+        )
+        comparison_group = next(
+            (condition for condition in conditions if condition != reference_group),
+            reference_group,
+        )
+        ui.update_select("coloc_diff_group_a", choices=conditions, selected=comparison_group)
         ui.update_select(
             "coloc_diff_group_b",
             choices=conditions,
-            selected=conditions[min(1, len(conditions) - 1)] if conditions else None,
+            selected=reference_group,
         )
-        ui.update_select("coloc_reference", choices=conditions, selected=conditions[0] if conditions else None)
-        ui.update_selectize("coloc_celltype_focus", choices=celltypes, selected=celltypes[0] if celltypes else None, server=True)
         ui.update_selectize("coloc_focus_group", choices=conditions, selected=conditions[0] if conditions else None, server=True)
         ui.update_selectize("coloc_compare_groups", choices=conditions, selected=conditions[:6], server=True)
-        ui.update_selectize("coloc_detail_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
+        ui.update_selectize(
+            "coloc_detail_pair",
+            choices=heatmap_pairs,
+            selected=heatmap_pairs[0] if heatmap_pairs else None,
+            server=True,
+        )
         ui.update_selectize("coloc_diff_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
         ui.update_selectize("coloc_3d_sample", choices=samples, selected=samples[0] if samples else None, server=True)
+        coloc_analysis_state.set(defaults)
 
     @reactive.effect
     def _refresh_colocalization_groups():
         retrieval = spatial_retrieval_state.get()
         if retrieval is None:
             return
-        scope = input.coloc_scope() or "condition"
+        settings = coloc_analysis_state.get()
+        scope = settings["scope"] if settings else "condition"
         group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        groups = sorted(retrieval.metadata[group_col].dropna().astype(str).unique())
+        metadata = retrieval.metadata
+        if settings is not None:
+            metadata = metadata[
+                metadata["celltype_manual"].astype(str) == str(settings["celltype"])
+            ]
+        groups = sorted(metadata[group_col].dropna().astype(str).unique())
         selected_group = groups[0] if groups else None
+        reference_group = "NC" if "NC" in groups else selected_group
         ui.update_selectize(
             "coloc_focus_group", choices=groups, selected=selected_group, server=True
         )
         ui.update_selectize(
             "coloc_compare_groups", choices=groups, selected=groups[:6], server=True
         )
-        ui.update_select("coloc_reference", choices=groups, selected=selected_group)
+        ui.update_select("coloc_reference", choices=groups, selected=reference_group)
 
     @reactive.effect
     def _update_3d_components():
@@ -1169,6 +1373,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
             spatial_retrieval_state.set(None)
+            coloc_analysis_state.set(None)
             grouping_state.set(config)
             ui.modal_remove()
             ui.notification_show(analysis_grouping_summary(config), type="message")
@@ -1188,6 +1393,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         config = update_analysis_grouping_config(config, mode="column", column=column)
         data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
         spatial_retrieval_state.set(None)
+        coloc_analysis_state.set(None)
         grouping_state.set(config)
         ui.modal_remove()
         ui.notification_show(analysis_grouping_summary(config), type="message")
@@ -1856,78 +2062,125 @@ def server(input: Inputs, output: Outputs, session: Session):
         return grid(clustering_diff_result())
 
     @reactive.effect
-    def _apply_report_preset():
-        if input.coloc_preset() != "report":
+    @reactive.event(input.coloc_reset_pixelatores)
+    def _reset_pixelatores_settings():
+        retrieval = get_spatial_retrieval()
+        if retrieval is None:
             return
+        defaults = default_coloc_settings(retrieval)
+        ui.update_select("coloc_scope", selected=defaults["scope"])
         ui.update_select("coloc_view", selected="focused")
-        ui.update_select("coloc_marker_mode", selected="profile")
-        ui.update_numeric("coloc_top_pairs", value=60)
-        ui.update_select("coloc_mean_type", selected="population")
+        ui.update_select("coloc_marker_mode", selected=defaults["marker_mode"])
+        ui.update_numeric("coloc_top_pairs", value=defaults["top_pairs"])
+        ui.update_numeric("coloc_top_markers", value=defaults["top_markers"])
+        ui.update_select("coloc_mean_type", selected=defaults["mean_type"])
         ui.update_select("coloc_ordering", selected="ward")
         ui.update_numeric("coloc_legend_min", value=-1)
         ui.update_numeric("coloc_legend_max", value=1)
-        ui.update_checkbox("coloc_pixelator_filter", value=True)
-        ui.update_numeric("coloc_min_fraction", value=0.001)
-        ui.update_numeric("coloc_min_count", value=0)
-        ui.update_numeric("coloc_min_cells", value=1)
+        ui.update_checkbox("coloc_pixelator_filter", value=defaults["pixelator_filter"])
+        ui.update_numeric("coloc_min_fraction", value=defaults["min_fraction"])
+        ui.update_numeric("coloc_min_count", value=defaults["min_count"])
+        ui.update_numeric("coloc_min_cells", value=defaults["min_cells"])
+        ui.notification_show(
+            "PixelatorES defaults loaded. Apply the settings to update the analysis.",
+            type="message",
+        )
 
-    def colocalization_metadata() -> pd.DataFrame:
+    @reactive.effect
+    @reactive.event(input.coloc_apply_analysis)
+    def _apply_colocalization_settings():
         retrieval = get_spatial_retrieval()
         if retrieval is None:
+            ui.notification_show("Retrieve spatial data before applying settings.", type="warning")
+            return
+        try:
+            settings = draft_coloc_settings(retrieval)
+            validate_coloc_settings(settings, retrieval)
+        except ValueError as error:
+            ui.notification_show(str(error), type="error", duration=None)
+            return
+        coloc_analysis_state.set(settings)
+        description = describe_coloc_settings(settings)
+        log_activity("Colocalization settings", "Applied", description)
+        ui.notification_show("Colocalization settings applied.", type="message")
+
+    @output
+    @render.ui
+    def coloc_analysis_status():
+        retrieval = get_spatial_retrieval()
+        settings = coloc_analysis_state.get()
+        if retrieval is None or settings is None:
+            return ui.div(
+                "Retrieve spatial data to configure colocalization.",
+                class_="alert alert-warning py-2 mt-2",
+            )
+        try:
+            draft = draft_coloc_settings(retrieval)
+            validate_coloc_settings(draft, retrieval)
+        except ValueError as error:
+            return ui.div(str(error), class_="alert alert-danger py-2 mt-2")
+        if draft != settings:
+            return ui.div(
+                ui.strong("Unapplied changes. "),
+                "Click Apply analysis settings to update the results.",
+                class_="alert alert-warning py-2 mt-2",
+            )
+        return ui.div(
+            ui.strong("Applied: "),
+            describe_coloc_settings(settings),
+            class_="alert alert-success py-2 mt-2",
+        )
+
+    def colocalization_metadata(settings: dict | None = None) -> pd.DataFrame:
+        retrieval = get_spatial_retrieval()
+        settings = settings or coloc_analysis_state.get()
+        if retrieval is None or settings is None:
             return pd.DataFrame()
         metadata = retrieval.metadata.copy()
-        conditions = selected(input.coloc_condition_filter(), metadata["condition"])
-        celltypes = selected(input.coloc_celltype_filter(), metadata["celltype_manual"])
-        metadata = metadata[
-            metadata["condition"].astype(str).isin(conditions)
-            & metadata["celltype_manual"].astype(str).isin(celltypes)
+        return metadata[
+            metadata["celltype_manual"].astype(str) == str(settings["celltype"])
         ]
-        if input.coloc_scope() == "celltype" and input.coloc_celltype_focus():
-            metadata = metadata[metadata["celltype_manual"].astype(str) == str(input.coloc_celltype_focus())]
-        return metadata
 
-    def apply_colocalization_filters(scores: pd.DataFrame) -> pd.DataFrame:
-        if input.coloc_pixelator_filter():
+    def apply_colocalization_filters(scores: pd.DataFrame, settings: dict) -> pd.DataFrame:
+        if settings["pixelator_filter"]:
             try:
                 return filter_pixelator_proximity(
                     scores,
-                    min_marker_fraction=float(input.coloc_min_fraction() or 0),
-                    min_marker_count=float(input.coloc_min_count() or 0),
-                    min_cells=int(input.coloc_min_cells() or 1),
+                    min_marker_fraction=settings["min_fraction"],
+                    min_marker_count=settings["min_count"],
+                    min_cells=1,
                 )
             except ValueError as error:
                 ui.notification_show(str(error), type="warning")
                 return pd.DataFrame()
         return scores
 
-    def heatmap_markers(metadata: pd.DataFrame) -> list[str]:
+    def heatmap_markers(metadata: pd.DataFrame, settings: dict) -> list[str]:
         data = get_data()
         retrieval = get_spatial_retrieval()
         if data is None or retrieval is None or metadata.empty:
             return []
-        manual_value = input.coloc_markers()
         manual = (
-            [manual_value] if isinstance(manual_value, str) else list(manual_value or [])
-        ) if input.coloc_marker_mode() == "manual" else None
+            list(settings["manual_markers"])
+            if settings["marker_mode"] == "manual"
+            else None
+        )
         return select_colocalization_heatmap_markers(
             data.abundance,
             metadata,
             retrieval.markers,
-            n_markers=max(2, int(input.coloc_top_markers() or 40)),
+            n_markers=settings["top_markers"],
             plot_markers=manual,
         )
 
     def ordered_coloc_markers(summary: pd.DataFrame, markers: list[str], group_col: str) -> list[str]:
         if len(markers) < 3 or summary.empty:
             return markers
-        requested_group = (
-            input.coloc_reference()
-            if input.coloc_view() == "compare"
-            else input.coloc_focus_group()
-        )
+        requested_group = input.coloc_reference()
         groups = set(summary[group_col].astype(str))
-        group = requested_group if requested_group in groups else str(summary[group_col].iloc[0])
-        rows = summary[summary[group_col].astype(str) == group]
+        if requested_group not in groups:
+            return markers
+        rows = summary[summary[group_col].astype(str) == requested_group]
         matrix = rows.pivot(index="marker_1", columns="marker_2", values="mean_log2_ratio").reindex(index=markers, columns=markers).fillna(0)
         try:
             distances = pdist(matrix.to_numpy(), metric="euclidean")
@@ -1939,19 +2192,21 @@ def server(input: Inputs, output: Outputs, session: Session):
                 optimal_ordering=True,
             )
             return [markers[index] for index in leaves_list(tree)]
-        except Exception:
+        except Exception as error:
+            log_activity("Heatmap clustering", "Failed", str(error))
             return markers
 
     @reactive.calc
     def colocalization_heatmap_base() -> tuple[pd.DataFrame, str, list[str]]:
         data = get_data()
         retrieval = get_spatial_retrieval()
-        metadata = colocalization_metadata()
-        if data is None or retrieval is None or metadata.empty:
+        settings = coloc_analysis_state.get()
+        metadata = colocalization_metadata(settings)
+        if data is None or retrieval is None or settings is None or metadata.empty:
             return pd.DataFrame(), "condition", []
-        scope = input.coloc_scope() or "condition"
+        scope = settings["scope"]
         group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        mode = input.coloc_marker_mode() or "profile"
+        mode = settings["marker_mode"]
         if mode == "profile":
             available_markers = list(retrieval.markers)
             samples = tracked_sample_colocalization(
@@ -1962,47 +2217,42 @@ def server(input: Inputs, output: Outputs, session: Session):
                 mean_type="population",
                 pair_type="all",
                 min_marker_fraction=(
-                    float(input.coloc_min_fraction() or 0)
-                    if input.coloc_pixelator_filter()
-                    else 0
+                    settings["min_fraction"] if settings["pixelator_filter"] else 0
                 ),
                 min_marker_count=(
-                    float(input.coloc_min_count() or 0)
-                    if input.coloc_pixelator_filter()
-                    else 0
+                    settings["min_count"] if settings["pixelator_filter"] else 0
                 ),
             )
             summary = summarize_sample_colocalization(
                 samples,
                 group_col=group_col,
                 markers=available_markers,
-                mean_type=input.coloc_mean_type() or "population",
+                mean_type=settings["mean_type"],
             )
-            minimum_cells = int(input.coloc_min_cells() or 1)
-            if minimum_cells > 1 and not summary.empty:
-                below_minimum = summary["n_detected"] < minimum_cells
+            if settings["min_cells"] > 1 and not summary.empty:
+                below_minimum = summary["n_detected"] < settings["min_cells"]
                 summary.loc[
                     below_minimum,
                     ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
                 ] = 0
             markers = select_proximity_profile_markers(
                 summary,
-                n_pairs=max(1, int(input.coloc_top_pairs() or 60)),
+                n_pairs=settings["top_pairs"],
             )
             summary = summary[
                 summary["marker_1"].isin(markers) & summary["marker_2"].isin(markers)
             ].copy()
         else:
-            markers = heatmap_markers(metadata)
+            markers = heatmap_markers(metadata, settings)
             scores = tracked_pxl_proximity(
                 "Colocalization heatmap",
                 data,
                 metadata,
                 markers=markers,
                 pair_type="all",
-                add_marker_counts=bool(input.coloc_pixelator_filter()),
+                add_marker_counts=settings["pixelator_filter"],
             )
-            scores = apply_colocalization_filters(scores)
+            scores = apply_colocalization_filters(scores, settings)
             if scores.empty:
                 return pd.DataFrame(), group_col, markers
             summary = summarize_spatial(
@@ -2010,8 +2260,14 @@ def server(input: Inputs, output: Outputs, session: Session):
                 metadata,
                 group_col=group_col,
                 markers=markers,
-                mean_type=input.coloc_mean_type() or "population",
+                mean_type=settings["mean_type"],
             )
+            if settings["min_cells"] > 1 and not summary.empty:
+                below_minimum = summary["n_detected"] < settings["min_cells"]
+                summary.loc[
+                    below_minimum,
+                    ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
+                ] = 0
         if summary.empty:
             return summary, group_col, markers
         return summary, group_col, markers
@@ -2026,16 +2282,21 @@ def server(input: Inputs, output: Outputs, session: Session):
             groups = selected(input.coloc_compare_groups(), available_groups)
         else:
             groups = [str(input.coloc_focus_group() or available_groups[0])]
-        summary = summary[summary[group_col].astype(str).isin(groups)].copy()
         markers = ordered_coloc_markers(summary, markers, group_col)
-        summary["marker_1"] = pd.Categorical(summary["marker_1"], markers, ordered=True)
+        summary = summary[summary[group_col].astype(str).isin(groups)].copy()
+        summary["marker_1"] = pd.Categorical(
+            summary["marker_1"], list(reversed(markers)), ordered=True
+        )
         summary["marker_2"] = pd.Categorical(summary["marker_2"], list(reversed(markers)), ordered=True)
         return summary, group_col, markers
 
     @reactive.effect
     def _refresh_colocalization_detail_pairs():
         _, _, markers = colocalization_heatmap_base()
-        pairs = [f"{first} / {second}" for first, second in combinations(markers, 2)]
+        pairs = [
+            f"{first} / {second}"
+            for first, second in combinations_with_replacement(sorted(markers), 2)
+        ]
         ui.update_selectize(
             "coloc_detail_pair",
             choices=pairs,
@@ -2048,15 +2309,26 @@ def server(input: Inputs, output: Outputs, session: Session):
     def coloc_notice():
         data = get_data()
         retrieval = get_spatial_retrieval()
+        settings = coloc_analysis_state.get()
         if data is not None and retrieval is None:
             return ui.div("Retrieve data in Spatial Metrics > Retrieve Data first.", class_="alert alert-warning")
         summary, group_col, markers = colocalization_heatmap_data()
         if summary.empty:
             return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
-        notices = [f"Showing {len(markers)} markers across {summary[group_col].nunique()} {group_col.replace('_', ' ')} group(s)."]
-        if input.coloc_marker_mode() == "profile":
+        notices = [
+            f"{describe_coloc_settings(settings)}. "
+            f"Showing {len(markers)} markers across {summary[group_col].nunique()} "
+            f"{group_col.replace('_', ' ')} group(s)."
+        ]
+        base_summary, _, _ = colocalization_heatmap_base()
+        available_references = set(base_summary[group_col].dropna().astype(str))
+        if input.coloc_reference() not in available_references:
+            notices.append("Select an available clustering reference before interpreting marker order.")
+        else:
+            notices.append(f"Clustering reference: {input.coloc_reference()}.")
+        if settings["marker_mode"] == "profile":
             notices.append(
-                f"Markers come from the {int(input.coloc_top_pairs() or 60)} strongest pairs "
+                f"Markers come from the {settings['top_pairs']} strongest pairs "
                 "detected in more than half of cells."
             )
         if input.coloc_view() == "compare" and len(markers) > 20:
@@ -2072,7 +2344,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         legend_min = float(input.coloc_legend_min() or -1)
         legend_max = float(input.coloc_legend_max() or 1)
         if legend_min >= legend_max:
-            legend_min, legend_max = -1, 1
+            return empty_figure("Legend minimum must be smaller than legend maximum.")
         figure = px.scatter(
             summary,
             x="marker_1",
@@ -2092,7 +2364,10 @@ def server(input: Inputs, output: Outputs, session: Session):
                 "n_total": True,
                 "pct_detected": ":.1%",
             },
-            category_orders={"marker_1": markers, "marker_2": list(reversed(markers))},
+            category_orders={
+                "marker_1": list(reversed(markers)),
+                "marker_2": list(reversed(markers)),
+            },
             labels={"mean_log2_ratio": "Mean log2 ratio", "pct_detected": "Detected fraction"},
         )
         figure.update_traces(marker={"sizemin": 0, "line": {"width": 0.65, "color": "#222222"}})
@@ -2159,9 +2434,48 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_plotly
     def coloc_heatmap():
-        return fig_coloc_heatmap()
+        return clickable_heatmap(fig_coloc_heatmap(), "coloc_detail_pair", session)
 
     register_downloads("coloc_heatmap", fig_coloc_heatmap)
+
+    @output
+    @render.download_button(filename="colocalization-settings.json")
+    def coloc_settings_json():
+        data = get_data()
+        retrieval = get_spatial_retrieval()
+        settings = dict(coloc_analysis_state.get() or {})
+        if "manual_markers" in settings:
+            settings["manual_markers"] = list(settings["manual_markers"])
+        compare_value = input.coloc_compare_groups()
+        compare_groups = (
+            list(compare_value)
+            if isinstance(compare_value, (list, tuple))
+            else [compare_value] if compare_value else []
+        )
+        payload = {
+            "generated_at": datetime.now().astimezone().isoformat(),
+            "dataset": data.source if data is not None else None,
+            "retrieval": {
+                "retrieved_at": retrieval.retrieved_at,
+                "cells": len(retrieval.metadata),
+                "samples": int(retrieval.metadata["sample_alias"].nunique()),
+                "markers": len(retrieval.markers),
+            }
+            if retrieval is not None
+            else None,
+            "analysis": settings,
+            "display": {
+                "view": input.coloc_view(),
+                "focused_group": input.coloc_focus_group(),
+                "compare_groups": compare_groups,
+                "clustering_reference": input.coloc_reference(),
+                "clustering_method": input.coloc_ordering(),
+                "legend_min": input.coloc_legend_min(),
+                "legend_max": input.coloc_legend_max(),
+                "columns_reversed": True,
+            },
+        }
+        yield json.dumps(payload, indent=2, default=str)
 
     @output
     @render.data_frame
@@ -2178,11 +2492,13 @@ def server(input: Inputs, output: Outputs, session: Session):
     def pair_detail_data() -> pd.DataFrame:
         data = get_data()
         retrieval = get_spatial_retrieval()
-        metadata = colocalization_metadata()
+        settings = coloc_analysis_state.get()
+        metadata = colocalization_metadata(settings)
         pair = pair_markers(input.coloc_detail_pair())
         if (
             data is None
             or retrieval is None
+            or settings is None
             or metadata.empty
             or pair is None
             or not set(pair).issubset(retrieval.markers)
@@ -2194,10 +2510,10 @@ def server(input: Inputs, output: Outputs, session: Session):
             data,
             metadata,
             markers=[marker_1, marker_2],
-            pair_type="nonself",
-            add_marker_counts=bool(input.coloc_pixelator_filter()),
+            pair_type="self" if marker_1 == marker_2 else "nonself",
+            add_marker_counts=settings["pixelator_filter"],
         )
-        scores = apply_colocalization_filters(scores)
+        scores = apply_colocalization_filters(scores, settings)
         rows = scores[
             ((scores["marker_1"].astype(str) == marker_1) & (scores["marker_2"].astype(str) == marker_2))
             | ((scores["marker_1"].astype(str) == marker_2) & (scores["marker_2"].astype(str) == marker_1))
@@ -2210,8 +2526,15 @@ def server(input: Inputs, output: Outputs, session: Session):
         detail[["sum_log2_ratio", "n_detected"]] = detail[["sum_log2_ratio", "n_detected"]].fillna(0)
         detail["pct_detected"] = detail["n_detected"] / detail["n_total"]
         detail["mean_log2_ratio"] = np.where(
-            input.coloc_mean_type() == "detected", detail["detected_mean"], detail["sum_log2_ratio"] / detail["n_total"]
+            settings["mean_type"] == "detected",
+            detail["detected_mean"],
+            detail["sum_log2_ratio"] / detail["n_total"],
         )
+        below_minimum = detail["n_detected"] < settings["min_cells"]
+        detail.loc[
+            below_minimum,
+            ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
+        ] = 0
         detail["marker_pair"] = input.coloc_detail_pair()
         return detail
 
@@ -2255,12 +2578,12 @@ def server(input: Inputs, output: Outputs, session: Session):
     def coloc_sample_data() -> pd.DataFrame:
         data = get_data()
         retrieval = get_spatial_retrieval()
-        if data is None or retrieval is None:
+        settings = coloc_analysis_state.get()
+        if data is None or retrieval is None or settings is None:
             return pd.DataFrame()
         groups = [input.coloc_diff_group_a(), input.coloc_diff_group_b()]
-        metadata = retrieval.metadata[retrieval.metadata["condition"].isin(groups)].copy()
-        celltypes = selected(input.coloc_diff_celltype_filter(), metadata["celltype_manual"])
-        metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
+        metadata = colocalization_metadata(settings)
+        metadata = metadata[metadata["condition"].isin(groups)].copy()
         anchor = (
             str(input.coloc_diff_anchor())
             if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor()
@@ -2270,8 +2593,14 @@ def server(input: Inputs, output: Outputs, session: Session):
             data,
             metadata,
             markers=retrieval.markers,
-            mean_type=input.coloc_diff_mean() or "population",
+            mean_type=settings["mean_type"],
             anchor=anchor,
+            min_marker_fraction=(
+                settings["min_fraction"] if settings["pixelator_filter"] else 0
+            ),
+            min_marker_count=(
+                settings["min_count"] if settings["pixelator_filter"] else 0
+            ),
         )
         if summary.empty:
             return summary
@@ -2290,7 +2619,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             value_col="sample_value",
             group_a=input.coloc_diff_group_a(),
             group_b=input.coloc_diff_group_b(),
-            min_observations=max(1, int(input.coloc_diff_min_samples() or 2)),
+            min_observations=max(2, int(input.coloc_diff_min_samples() or 2)),
         )
         return result
 
@@ -2298,16 +2627,31 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def coloc_diff_method():
         rows = coloc_sample_data()
+        settings = coloc_analysis_state.get()
         if rows.empty:
-            return ui.div("Assign matching PXL files for sample-aware differential colocalization.", class_="alert alert-warning")
+            return ui.div(
+                "No sample-level rows match the applied population and proximity settings.",
+                class_="alert alert-warning",
+            )
         counts = rows.groupby("condition", observed=True)["sample_alias"].nunique()
         a, b = input.coloc_diff_group_a(), input.coloc_diff_group_b()
+        if a == b:
+            return ui.div(
+                "Choose two different analysis groups.",
+                class_="alert alert-danger",
+            )
         minimum = int(input.coloc_diff_min_samples() or 2)
         replicated = counts.get(a, 0) >= minimum and counts.get(b, 0) >= minimum
         message = (
-            f"Effects compare median sample-level {input.coloc_diff_mean()} means. "
+            f"Effects compare median sample-level {settings['mean_type']} means for "
+            f"{settings['celltype']}. "
             f"{a}: {counts.get(a, 0)} sample(s); {b}: {counts.get(b, 0)} sample(s)."
         )
+        if settings["pixelator_filter"]:
+            message += (
+                f" Marker fraction ≥{settings['min_fraction']:g}; "
+                f"marker count ≥{settings['min_count']:g}."
+            )
         if not replicated:
             message += f" At least {minimum} samples per group are required for p-values and FDR."
         return ui.div(ui.strong("Sample-aware analysis. "), message, class_=f"alert {'alert-info' if replicated else 'alert-warning'}")
@@ -2346,7 +2690,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             return empty_figure("No sample-level values are available for this pair.")
         figure = px.box(rows, x="condition", y="sample_value", color="condition", points="all", hover_data=["sample_alias", "n_detected", "n_total"])
         figure.add_hline(y=0, line_color="#7b8588")
-        figure.update_yaxes(title=f"{pair} {input.coloc_diff_mean()} mean")
+        settings = coloc_analysis_state.get()
+        figure.update_yaxes(title=f"{pair} {settings['mean_type']} mean")
         return style_figure(figure)
 
     @output

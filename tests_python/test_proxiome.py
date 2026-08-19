@@ -441,6 +441,27 @@ def test_volcano_click_selects_its_custom_data(monkeypatch):
     assert updates == [("detail_marker", "CD81", fake_session)]
 
 
+def test_heatmap_click_selects_the_marker_pair(monkeypatch):
+    import app
+    import plotly.graph_objects as go
+    from ipywidgets.widgets.widget import Widget
+
+    monkeypatch.setattr(Widget, "_widget_construction_callback", None)
+    updates = []
+    fake_session = object()
+    monkeypatch.setattr(
+        app.ui,
+        "update_selectize",
+        lambda input_id, *, selected, session: updates.append((input_id, selected, session)),
+    )
+    figure = go.Figure(go.Scatter(x=["CD82"], y=["CD19"]))
+    widget = app.clickable_heatmap(figure, "detail_pair", fake_session)
+
+    widget.data[0]._dispatch_on_click(SimpleNamespace(point_inds=[0]), None)
+
+    assert updates == [("detail_pair", "CD19 / CD82", fake_session)]
+
+
 def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     import app
     import plotly.express as px
@@ -452,9 +473,11 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
             "All markers", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
-        "Activity Log", "Clear log",
-            "Notebook-compatible", "Notebook proximity profile", "Strongest proximity pairs",
-            "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
+            "Activity Log", "Clear log",
+                "PixelatorES proximity profile", "Strongest proximity pairs",
+                "Load PixelatorES defaults", "Apply analysis settings", "Summarize by",
+                "Settings JSON",
+                "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
             "Data source", "Analysis grouping",
         ):
             assert label in html
@@ -464,6 +487,10 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert 'id="analysis_grouping_summary"' in html
     assert 'id="custom_grouping"' not in html
     assert 'id="apply_coloc"' not in html
+    assert 'id="coloc_apply_analysis"' in html
+    assert 'id="coloc_condition_filter"' not in html
+    assert 'id="coloc_diff_celltype_filter"' not in html
+    assert 'id="coloc_diff_mean"' not in html
     assert 'id="coloc_run_differential"' not in html
     assert 'id="clustering_run_differential"' not in html
     assert 'class="data-source-actions"' in html
