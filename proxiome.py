@@ -5,8 +5,10 @@ from __future__ import annotations
 import glob
 import os
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -18,16 +20,6 @@ REFERENCE_H5AD = Path(
     "python_results/pg_data_combined_filtered_annotated.h5ad"
 )
 
-PROXIMITY_COLUMNS = (
-    "component",
-    "marker_1",
-    "marker_2",
-    "log2_ratio",
-    "condition",
-    "celltype_manual",
-    "sample_alias",
-    "sample",
-)
 PATCH_TABLES = (
     "run_plan",
     "marker_unmixing",
@@ -35,10 +27,6 @@ PATCH_TABLES = (
     "raji_marker_proximity",
     "patch_burden",
 )
-
-
-def empty_proximity() -> pd.DataFrame:
-    return pd.DataFrame(columns=PROXIMITY_COLUMNS)
 
 
 def empty_patch() -> dict[str, pd.DataFrame | None]:
@@ -53,9 +41,6 @@ class AppData:
     metadata: pd.DataFrame
     abundance: pd.DataFrame
     qc_filter_counts: pd.DataFrame
-    proximity: pd.DataFrame = field(default_factory=empty_proximity)
-    clustering: pd.DataFrame = field(default_factory=empty_proximity)
-    colocalization: pd.DataFrame = field(default_factory=empty_proximity)
     patch: dict[str, pd.DataFrame | None] = field(default_factory=empty_patch)
     component_layouts: dict[str, pd.DataFrame] = field(default_factory=dict)
     pxl_files: tuple[str, ...] = ()
@@ -80,7 +65,7 @@ def default_pxl_spec() -> str:
 
 
 def resolve_pxl_paths(spec: str | Path | None) -> list[Path]:
-    """Resolve optional PXL files used only for on-demand component layouts."""
+    """Resolve PXL files used for proximity queries and component layouts."""
     if not spec or not str(spec).strip():
         return []
     paths = []
@@ -106,7 +91,7 @@ def resolve_pxl_paths(spec: str | Path | None) -> list[Path]:
 
 
 def load_h5ad_data(spec: str | Path, *, pxl_spec: str | Path | None = None) -> AppData:
-    """Load a processed H5AD without rerunning Pixelator analysis."""
+    """Load cell data from H5AD and assign PXL files for spatial queries."""
     from anndata import read_h5ad
 
     path = resolve_h5ad_path(spec)
@@ -115,10 +100,14 @@ def load_h5ad_data(spec: str | Path, *, pxl_spec: str | Path | None = None) -> A
     if not adata.n_obs or not adata.n_vars:
         raise ValueError("H5AD must contain at least one observation and one marker.")
 
+    # Proximity is intentionally sourced from PXL. Dropping an embedded copy
+    # here prevents later helpers from accidentally expanding it in memory.
+    proxiome_payload = adata.uns.get("proxiome")
+    if isinstance(proxiome_payload, dict):
+        proxiome_payload.pop("proximity", None)
+
     metadata = build_metadata(adata)
     markers = tuple(map(str, adata.var_names))
-    proximity = load_h5ad_proximity(adata, metadata)
-    clustering, colocalization = split_proximity(proximity)
     patch = load_h5ad_patch(adata)
     component_layouts = load_h5ad_component_layouts(adata)
     return AppData(
@@ -129,18 +118,15 @@ def load_h5ad_data(spec: str | Path, *, pxl_spec: str | Path | None = None) -> A
             "n_markers": int(adata.n_vars),
             "h5ad_path": str(path),
             "analysis_group_label": "condition",
-            "has_spatial_metrics": not proximity.empty,
+            "has_spatial_metrics": bool(pxl_files),
             "has_patch_analysis": any(table is not None and not table.empty for table in patch.values()),
             "has_component_layouts": bool(component_layouts),
-            "pxl_layout_files": len(pxl_files),
+            "pxl_files": len(pxl_files),
         },
         marker_options=markers,
         metadata=metadata,
         abundance=build_abundance(adata),
         qc_filter_counts=build_h5ad_qc_filter_counts(adata, metadata),
-        proximity=proximity,
-        clustering=clustering,
-        colocalization=colocalization,
         patch=patch,
         component_layouts=component_layouts,
         pxl_files=pxl_files,
@@ -163,40 +149,204 @@ def payload_frame(payload: Mapping, name: str) -> pd.DataFrame | None:
     raise ValueError(f'H5AD uns["proxiome"]["{name}"] must be a table.')
 
 
-def load_h5ad_proximity(adata, metadata: pd.DataFrame) -> pd.DataFrame:
-    """Read precomputed Pixelator marker-pair scores stored in the H5AD."""
-    proximity = payload_frame(h5ad_proxiome_payload(adata), "proximity")
-    if proximity is None:
-        return empty_proximity()
-    required = {"component", "marker_1", "marker_2", "log2_ratio"}
-    missing = required.difference(proximity.columns)
-    if missing:
-        raise ValueError("H5AD proximity table is missing: " + ", ".join(sorted(missing)))
+@lru_cache(maxsize=4)
+def _read_pxl_dataset(pxl_files: tuple[str, ...]):
+    try:
+        from pixelator import read_pna
+    except ImportError as error:
+        raise RuntimeError("PXL proximity queries require the pixelgen-pixelator package.") from error
+    paths = [Path(path) for path in pxl_files]
+    return read_pna(paths[0] if len(paths) == 1 else paths)
 
-    proximity["component"] = proximity["component"].astype(str)
-    proximity["marker_1"] = proximity["marker_1"].astype(str)
-    proximity["marker_2"] = proximity["marker_2"].astype(str)
+
+@lru_cache(maxsize=4)
+def _pxl_component_ids(pxl_files: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(map(str, _read_pxl_dataset(pxl_files).components()))
+
+
+def clear_pxl_cache() -> None:
+    """Clear cached PXL readers (primarily useful after replacing a file)."""
+    _pxl_component_ids.cache_clear()
+    _read_pxl_dataset.cache_clear()
+
+
+def filter_pxl_metadata(data: AppData, metadata: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Keep H5AD observations that exist in the assigned PXL files."""
+    metadata = data.metadata if metadata is None else metadata
+    if not data.pxl_files or metadata.empty:
+        return metadata.iloc[0:0].copy()
+    components = _pxl_component_ids(data.pxl_files)
+    return metadata[metadata["component"].astype(str).isin(components)].copy()
+
+
+def load_pxl_proximity(
+    data: AppData,
+    metadata: pd.DataFrame | None = None,
+    *,
+    markers: Sequence[str] | None = None,
+    pair_type: Literal["all", "self", "nonself"] = "all",
+    anchor: str | None = None,
+    add_marker_counts: bool = False,
+) -> pd.DataFrame:
+    """Query selected proximity rows from assigned PXL files."""
+    if pair_type not in {"all", "self", "nonself"}:
+        raise ValueError("pair_type must be 'all', 'self', or 'nonself'.")
+    if not data.pxl_files:
+        return pd.DataFrame()
+
+    metadata = filter_pxl_metadata(data, metadata)
+    components = metadata["component"].dropna().astype(str).drop_duplicates().tolist()
+    if not components:
+        return pd.DataFrame()
+    selected_markers = None if markers is None else list(dict.fromkeys(map(str, markers)))
+    if selected_markers == []:
+        return pd.DataFrame()
+
+    dataset = _read_pxl_dataset(data.pxl_files)
+    if add_marker_counts:
+        filtered = dataset.filter(components=components, markers=selected_markers)
+        proximity = filtered.proximity(
+            add_marker_counts=True,
+            add_logratio=True,
+            calculate_from_edgelist=False,
+        ).to_df()
+        if pair_type == "self":
+            proximity = proximity[proximity["marker_1"] == proximity["marker_2"]]
+        elif pair_type == "nonself":
+            proximity = proximity[proximity["marker_1"] != proximity["marker_2"]]
+        if anchor:
+            proximity = proximity[
+                proximity["marker_1"].eq(str(anchor)) | proximity["marker_2"].eq(str(anchor))
+            ]
+    else:
+        conditions = ["component IN $components"]
+        parameters: dict[str, object] = {"components": components}
+        if selected_markers is not None:
+            conditions.append("marker_1 IN $markers AND marker_2 IN $markers")
+            parameters["markers"] = selected_markers
+        if pair_type == "self":
+            conditions.append("marker_1 = marker_2")
+        elif pair_type == "nonself":
+            conditions.append("marker_1 != marker_2")
+        if anchor:
+            conditions.append("(marker_1 = $anchor OR marker_2 = $anchor)")
+            parameters["anchor"] = str(anchor)
+        query = f"""
+            SELECT component, marker_1, marker_2,
+                   log2(
+                       greatest(CAST(join_count AS DOUBLE), 1) /
+                       greatest(join_count_expected_mean, 1)
+                   ) AS log2_ratio
+            FROM proximity
+            WHERE {' AND '.join(conditions)}
+        """
+        with dataset.view.open() as session:
+            proximity = session.get_connection().execute(query, parameters).fetchdf()
+
+    required = {"component", "marker_1", "marker_2", "log2_ratio"}
+    if missing := required.difference(proximity.columns):
+        raise ValueError("PXL proximity table is missing: " + ", ".join(sorted(missing)))
+    proximity = proximity.copy()
+    for column in ("component", "marker_1", "marker_2"):
+        proximity[column] = proximity[column].astype(str)
     proximity["log2_ratio"] = pd.to_numeric(proximity["log2_ratio"], errors="coerce")
     meta_columns = ["component", "condition", "celltype_manual", "sample_alias", "sample"]
     proximity = proximity.drop(columns=meta_columns[1:], errors="ignore")
-    return proximity.merge(metadata[meta_columns], on="component", how="inner")
-
-
-def split_proximity(proximity: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if proximity.empty:
-        clustering = proximity.copy()
-        clustering["marker"] = pd.Series(dtype="object")
-        colocalization = proximity.copy()
-        colocalization["marker_pair"] = pd.Series(dtype="object")
-        return clustering, colocalization
-    self_mask = proximity["marker_1"].astype(str) == proximity["marker_2"].astype(str)
-    clustering = proximity.loc[self_mask].copy()
-    clustering["marker"] = clustering["marker_1"].astype(str)
-    colocalization = proximity.loc[~self_mask].copy()
-    colocalization["marker_pair"] = (
-        colocalization["marker_1"].astype(str) + " / " + colocalization["marker_2"].astype(str)
+    return proximity.merge(
+        metadata[meta_columns].drop_duplicates("component"),
+        on="component",
+        how="inner",
+        validate="many_to_one",
     )
-    return clustering, colocalization
+
+
+def sample_pxl_colocalization(
+    data: AppData,
+    metadata: pd.DataFrame,
+    *,
+    mean_type: str = "population",
+    anchor: str | None = None,
+) -> pd.DataFrame:
+    """Aggregate PXL colocalization in DuckDB before returning sample rows."""
+    metadata = filter_pxl_metadata(data, metadata)
+    if metadata.empty:
+        return pd.DataFrame()
+    components = metadata["component"].dropna().astype(str).drop_duplicates().tolist()
+    conditions = ["component IN $components", "marker_1 != marker_2"]
+    parameters: dict[str, object] = {"components": components}
+    if anchor:
+        conditions.append("(marker_1 = $anchor OR marker_2 = $anchor)")
+        parameters["anchor"] = str(anchor)
+    query = f"""
+        WITH selected AS (
+            SELECT sample, marker_1, marker_2, component,
+                   log2(
+                       greatest(CAST(join_count AS DOUBLE), 1) /
+                       greatest(join_count_expected_mean, 1)
+                   ) AS log2_ratio
+            FROM proximity
+            WHERE {' AND '.join(conditions)}
+        )
+        SELECT sample, marker_1, marker_2,
+               sum(log2_ratio) AS sum_log2_ratio,
+               avg(log2_ratio) AS detected_mean,
+               count(DISTINCT component) AS n_detected
+        FROM selected
+        GROUP BY sample, marker_1, marker_2
+    """
+    dataset = _read_pxl_dataset(data.pxl_files)
+    with dataset.view.open() as session:
+        detected = session.get_connection().execute(query, parameters).fetchdf()
+
+    sample_metadata = metadata[["sample", "sample_alias", "condition"]].drop_duplicates("sample").copy()
+    sample_metadata["sample"] = sample_metadata["sample"].astype(str)
+    totals = (
+        metadata.groupby(["sample", "sample_alias", "condition"], observed=True)["component"]
+        .nunique()
+        .rename("n_total")
+        .reset_index()
+    )
+    totals["sample"] = totals["sample"].astype(str)
+    markers = sorted(map(str, data.marker_options))
+    marker_pairs = [pair for pair in combinations(markers, 2) if not anchor or anchor in pair]
+    if not marker_pairs or totals.empty:
+        return pd.DataFrame()
+    pair_grid = pd.DataFrame(marker_pairs, columns=["marker_1", "marker_2"])
+    grid = totals.merge(pair_grid, how="cross")
+
+    if not detected.empty:
+        detected["sample"] = detected["sample"].astype(str)
+        detected = detected.merge(sample_metadata, on="sample", how="inner")
+        first = detected["marker_1"].astype(str)
+        second = detected["marker_2"].astype(str)
+        detected["marker_1"] = first.where(first <= second, second)
+        detected["marker_2"] = second.where(first <= second, first)
+        detected = detected.groupby(
+            ["sample", "sample_alias", "condition", "marker_1", "marker_2"],
+            observed=True,
+            as_index=False,
+        ).agg(
+            sum_log2_ratio=("sum_log2_ratio", "sum"),
+            n_detected=("n_detected", "sum"),
+        )
+        # PXL stores one orientation per unordered marker pair.
+        detected["detected_mean"] = detected["sum_log2_ratio"] / detected["n_detected"]
+    result = grid.merge(
+        detected.drop(columns=["n_total"], errors="ignore") if not detected.empty else detected,
+        on=["sample", "sample_alias", "condition", "marker_1", "marker_2"],
+        how="left",
+    )
+    for column in ("sum_log2_ratio", "n_detected"):
+        result[column] = result[column].fillna(0)
+    result["pct_detected"] = result["n_detected"] / result["n_total"]
+    result["mean_log2_ratio"] = np.where(
+        mean_type == "detected",
+        result["detected_mean"],
+        result["sum_log2_ratio"] / result["n_total"],
+    )
+    result["marker_pair"] = result["marker_1"] + " / " + result["marker_2"]
+    result["pair_observed"] = result["n_detected"] > 0
+    return result
 
 
 def load_h5ad_patch(adata) -> dict[str, pd.DataFrame | None]:
@@ -364,9 +514,6 @@ def apply_analysis_grouping(data: AppData, mapping: Mapping[str, str], label: st
         source=source,
         metadata=metadata,
         qc_filter_counts=regroup(data.qc_filter_counts),
-        proximity=regroup(data.proximity),
-        clustering=regroup(data.clustering),
-        colocalization=regroup(data.colocalization),
     )
 
 

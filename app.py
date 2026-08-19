@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -21,13 +22,15 @@ from proxiome import (
     calculate_differential,
     default_h5ad_path,
     default_pxl_spec,
+    filter_pxl_metadata,
     filter_pixelator_proximity,
     load_h5ad_data,
+    load_pxl_proximity,
     mapping_for_column,
     new_analysis_grouping_config,
     read_component_layout,
     resolve_h5ad_path,
-    sample_colocalization,
+    sample_pxl_colocalization,
     select_colocalization_heatmap_markers,
     summarize_numeric,
     summarize_spatial,
@@ -409,7 +412,7 @@ def data_popover():
                 ui.input_text_area("h5ad_path", "Processed .h5ad path", default_h5ad_path(), rows=4),
                 ui.input_text_area(
                     "pxl_path",
-                    "Optional .layout.pxl path(s) for cellgraph display",
+                    "PXL path(s) for proximity and cellgraph data",
                     default_pxl_spec(),
                     rows=3,
                 ),
@@ -531,7 +534,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         data_state.set(loaded)
         inspect_message.set(
             f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers; "
-            f"{len(loaded.pxl_files):,} PXL layout file(s) assigned."
+            f"{len(loaded.pxl_files):,} PXL file(s) assigned."
         )
         grouping_state.set(new_analysis_grouping_config(loaded.metadata))
 
@@ -555,9 +558,9 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.hr(),
             ui.p(ui.strong(data.source.get("display_name", "AnnData"))),
             ui.p(f"{data.source['n_cells']:,} cells · {data.source['n_markers']:,} markers"),
-            ui.p(f"Spatial metrics: {'available' if data.source.get('has_spatial_metrics') else 'not stored in H5AD'}"),
+            ui.p(f"Spatial metrics: {'available from PXL' if data.source.get('has_spatial_metrics') else 'assign PXL files'}"),
             ui.p(f"Patch analysis: {'available' if data.source.get('has_patch_analysis') else 'not stored in H5AD'}"),
-            ui.p(f"Cellgraph PXL files: {len(data.pxl_files):,}"),
+            ui.p(f"PXL files: {len(data.pxl_files):,}"),
             ui.p(f"Grouping: {data.source.get('analysis_group_label', 'condition')}"),
             class_="source-chip",
         )
@@ -573,7 +576,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         celltypes = sorted(metadata["celltype_manual"].dropna().astype(str).unique())
         samples = sorted(metadata["sample_alias"].dropna().astype(str).unique())
         embeddings = list(embedding_columns(metadata))
-        pairs = sorted(data.colocalization["marker_pair"].dropna().astype(str).unique())
+        pairs = [f"{marker_1} / {marker_2}" for marker_1, marker_2 in combinations(sorted(markers), 2)]
         numeric_qc = [
             column for column in ("n_umi", "n_edges", "reads_in_component", "isotype_fraction", "tau")
             if column in metadata and pd.api.types.is_numeric_dtype(metadata[column])
@@ -1147,27 +1150,39 @@ def server(input: Inputs, output: Outputs, session: Session):
     def abundance_diff_table():
         return grid(abundance_diff_result())
 
-    def filtered_clustering(condition_input, celltype_input) -> pd.DataFrame:
+    def spatial_metadata(condition_input, celltype_input) -> pd.DataFrame:
         data = get_data()
-        if data is None or data.clustering.empty:
-            return pd.DataFrame(columns=data.clustering.columns if data is not None else [])
-        conditions = selected(condition_input, data.clustering["condition"])
-        celltypes = selected(celltype_input, data.clustering["celltype_manual"])
-        return data.clustering[
-            data.clustering["condition"].astype(str).isin(conditions)
-            & data.clustering["celltype_manual"].astype(str).isin(celltypes)
+        if data is None:
+            return pd.DataFrame()
+        conditions = selected(condition_input, data.metadata["condition"])
+        celltypes = selected(celltype_input, data.metadata["celltype_manual"])
+        metadata = data.metadata[
+            data.metadata["condition"].astype(str).isin(conditions)
+            & data.metadata["celltype_manual"].astype(str).isin(celltypes)
         ].copy()
+        return filter_pxl_metadata(data, metadata)
 
+    @reactive.calc
     def clustering_marker_rows() -> pd.DataFrame:
-        rows = filtered_clustering(input.clustering_condition_filter(), input.clustering_celltype_filter())
+        data = get_data()
         marker = input.clustering_marker()
-        return rows[rows["marker"].astype(str) == str(marker)] if not rows.empty and marker else pd.DataFrame()
+        metadata = spatial_metadata(input.clustering_condition_filter(), input.clustering_celltype_filter())
+        if data is None or not data.pxl_files or metadata.empty or not marker:
+            return pd.DataFrame()
+        rows = load_pxl_proximity(
+            data,
+            metadata,
+            markers=[str(marker)],
+            pair_type="self",
+        )
+        rows["marker"] = rows["marker_1"].astype(str)
+        return rows
 
     def fig_clustering_observed():
         data = get_data()
         rows = clustering_marker_rows()
         if data is None or rows.empty:
-            return empty_figure("No self-proximity values are stored in this H5AD for the selected filters.")
+            return empty_figure("No PXL self-proximity values match the selected filters.")
         embedding = next(iter(embedding_columns(data.metadata)), None)
         if not embedding:
             return empty_figure("No two-dimensional embedding is available.")
@@ -1195,7 +1210,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     def fig_clustering_per_marker():
         rows = clustering_marker_rows()
         if rows.empty:
-            return empty_figure("No self-proximity values are stored in this H5AD for the selected filters.")
+            return empty_figure("No PXL self-proximity values match the selected filters.")
         figure = px.violin(rows, x="celltype_manual", y="log2_ratio", color="condition", box=True, points="all", hover_data=["component"])
         figure.add_hline(y=0, line_color="#7b8588")
         figure.update_traces(jitter=0.25, marker={"size": 3, "opacity": 0.5})
@@ -1213,10 +1228,19 @@ def server(input: Inputs, output: Outputs, session: Session):
     def clustering_per_marker_table():
         return grid(summarize_numeric(clustering_marker_rows(), ["marker", "condition", "celltype_manual"], "log2_ratio"))
 
+    @reactive.calc
     def clustering_heatmap_data() -> pd.DataFrame:
-        rows = filtered_clustering(input.clustering_heatmap_condition_filter(), input.clustering_heatmap_celltype_filter())
+        data = get_data()
+        metadata = spatial_metadata(
+            input.clustering_heatmap_condition_filter(),
+            input.clustering_heatmap_celltype_filter(),
+        )
+        if data is None or not data.pxl_files or metadata.empty:
+            return pd.DataFrame()
+        rows = load_pxl_proximity(data, metadata, pair_type="self")
         if rows.empty:
             return rows
+        rows["marker"] = rows["marker_1"].astype(str)
         summary = rows.groupby(["marker", "condition", "celltype_manual"], observed=True)["log2_ratio"].mean().rename("mean_log2_ratio").reset_index()
         count = max(2, int(input.clustering_heatmap_marker_count() or 20))
         ranking = summary.groupby("marker", observed=True)["mean_log2_ratio"].std().fillna(0).sort_values(ascending=False)
@@ -1225,7 +1249,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     def fig_clustering_heatmap():
         rows = clustering_heatmap_data()
         if rows.empty:
-            return empty_figure("No clustering summary is stored in this H5AD.")
+            return empty_figure("No PXL clustering summary matches the selected filters.")
         rows["population"] = rows["condition"].astype(str) + " · " + rows["celltype_manual"].astype(str)
         matrix = rows.pivot(index="population", columns="marker", values="mean_log2_ratio")
         figure = px.imshow(matrix, color_continuous_scale="RdBu_r", color_continuous_midpoint=0, aspect="auto", labels={"color": "Mean log2 ratio"})
@@ -1243,9 +1267,24 @@ def server(input: Inputs, output: Outputs, session: Session):
     def clustering_summary_table():
         return grid(clustering_heatmap_data())
 
-    def clustering_diff_result():
+    @reactive.calc
+    def clustering_diff_rows() -> pd.DataFrame:
         data = get_data()
-        return differential_result("clustering", data.clustering if data is not None else pd.DataFrame(), ["marker"])
+        if data is None or not data.pxl_files:
+            return pd.DataFrame()
+        groups = [input.clustering_diff_group_a(), input.clustering_diff_group_b()]
+        metadata = data.metadata[data.metadata["condition"].isin(groups)].copy()
+        celltypes = selected(input.clustering_diff_celltype_filter(), metadata["celltype_manual"])
+        metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
+        if metadata.empty:
+            return pd.DataFrame()
+        rows = load_pxl_proximity(data, metadata, pair_type="self")
+        rows["marker"] = rows["marker_1"].astype(str)
+        return rows
+
+    @reactive.calc
+    def clustering_diff_result():
+        return differential_result("clustering", clustering_diff_rows(), ["marker"])
 
     @output
     @render.ui
@@ -1267,13 +1306,13 @@ def server(input: Inputs, output: Outputs, session: Session):
     register_downloads("clustering_diff_volcano", fig_clustering_diff_volcano)
 
     def fig_clustering_diff_detail():
-        data = get_data()
-        if data is None or data.clustering.empty:
-            return empty_figure("No self-proximity values are stored in this H5AD.")
         marker = input.clustering_diff_feature()
-        rows = data.clustering[
-            (data.clustering["marker"].astype(str) == str(marker))
-            & data.clustering["condition"].isin([input.clustering_diff_group_a(), input.clustering_diff_group_b()])
+        rows = clustering_diff_rows()
+        if rows.empty:
+            return empty_figure("No PXL self-proximity values match this contrast.")
+        rows = rows[
+            (rows["marker"].astype(str) == str(marker))
+            & rows["condition"].isin([input.clustering_diff_group_a(), input.clustering_diff_group_b()])
         ]
         celltypes = selected(input.clustering_diff_celltype_filter(), rows["celltype_manual"])
         rows = rows[rows["celltype_manual"].astype(str).isin(celltypes)]
@@ -1312,10 +1351,10 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.update_numeric("coloc_legend_min", value=-0.75)
         ui.update_numeric("coloc_legend_max", value=0.75)
 
-    def colocalization_scores() -> tuple[pd.DataFrame, pd.DataFrame]:
+    def colocalization_metadata() -> pd.DataFrame:
         data = get_data()
-        if data is None or data.proximity.empty:
-            return pd.DataFrame(), pd.DataFrame()
+        if data is None:
+            return pd.DataFrame()
         metadata = data.metadata.copy()
         conditions = selected(input.coloc_condition_filter(), metadata["condition"])
         celltypes = selected(input.coloc_celltype_filter(), metadata["celltype_manual"])
@@ -1325,10 +1364,12 @@ def server(input: Inputs, output: Outputs, session: Session):
         ]
         if input.coloc_scope() == "celltype" and input.coloc_celltype_focus():
             metadata = metadata[metadata["celltype_manual"].astype(str) == str(input.coloc_celltype_focus())]
-        scores = data.proximity[data.proximity["component"].isin(metadata["component"])].copy()
+        return filter_pxl_metadata(data, metadata)
+
+    def apply_colocalization_filters(scores: pd.DataFrame) -> pd.DataFrame:
         if input.coloc_pixelator_filter():
             try:
-                scores = filter_pixelator_proximity(
+                return filter_pixelator_proximity(
                     scores,
                     min_marker_fraction=float(input.coloc_min_fraction() or 0),
                     min_marker_count=float(input.coloc_min_count() or 0),
@@ -1336,17 +1377,13 @@ def server(input: Inputs, output: Outputs, session: Session):
                 )
             except ValueError as error:
                 ui.notification_show(str(error), type="warning")
-                return pd.DataFrame(), metadata
-        return scores, metadata
+                return pd.DataFrame()
+        return scores
 
-    def heatmap_markers(scores: pd.DataFrame, metadata: pd.DataFrame) -> list[str]:
+    def heatmap_markers(metadata: pd.DataFrame) -> list[str]:
         data = get_data()
-        if data is None or scores.empty:
+        if data is None or metadata.empty:
             return []
-        available = list(dict.fromkeys([
-            *scores["marker_1"].dropna().astype(str),
-            *scores["marker_2"].dropna().astype(str),
-        ]))
         manual_value = input.coloc_markers()
         manual = (
             [manual_value] if isinstance(manual_value, str) else list(manual_value or [])
@@ -1354,7 +1391,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return select_colocalization_heatmap_markers(
             data.abundance,
             metadata,
-            available,
+            data.marker_options,
             n_markers=max(2, int(input.coloc_top_markers() or 40)),
             plot_markers=manual,
         )
@@ -1371,13 +1408,25 @@ def server(input: Inputs, output: Outputs, session: Session):
         except Exception:
             return markers
 
+    @reactive.calc
     def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
-        scores, metadata = colocalization_scores()
-        if scores.empty or metadata.empty:
+        data = get_data()
+        metadata = colocalization_metadata()
+        if data is None or not data.pxl_files or metadata.empty:
             return pd.DataFrame(), "condition", []
         scope = input.coloc_scope() or "condition"
         group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        markers = heatmap_markers(scores, metadata)
+        markers = heatmap_markers(metadata)
+        scores = load_pxl_proximity(
+            data,
+            metadata,
+            markers=markers,
+            pair_type="nonself",
+            add_marker_counts=bool(input.coloc_pixelator_filter()),
+        )
+        scores = apply_colocalization_filters(scores)
+        if scores.empty:
+            return pd.DataFrame(), group_col, markers
         summary = summarize_spatial(
             scores,
             metadata,
@@ -1404,8 +1453,8 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def coloc_notice():
         data = get_data()
-        if data is not None and data.proximity.empty:
-            return ui.div('This H5AD has no uns["proxiome"]["proximity"] table.', class_="alert alert-warning")
+        if data is not None and not data.pxl_files:
+            return ui.div("Assign one or more PXL files in Data to use spatial metrics.", class_="alert alert-warning")
         summary, group_col, markers = colocalization_heatmap_data()
         if summary.empty:
             return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
@@ -1419,7 +1468,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     def fig_coloc_heatmap():
         summary, group_col, markers = colocalization_heatmap_data()
         if summary.empty:
-            return empty_figure("No colocalization scores are stored in this H5AD for the selected settings.")
+            return empty_figure("No PXL colocalization scores match the selected settings.")
         legend_min = float(input.coloc_legend_min() or -1)
         legend_max = float(input.coloc_legend_max() or 1)
         if legend_min >= legend_max:
@@ -1460,12 +1509,22 @@ def server(input: Inputs, output: Outputs, session: Session):
             return None
         return tuple(pair.split(" / ", 1))
 
+    @reactive.calc
     def pair_detail_data() -> pd.DataFrame:
-        scores, metadata = colocalization_scores()
+        data = get_data()
+        metadata = colocalization_metadata()
         pair = pair_markers(input.coloc_detail_pair())
-        if scores.empty or metadata.empty or pair is None:
+        if data is None or not data.pxl_files or metadata.empty or pair is None:
             return pd.DataFrame()
         marker_1, marker_2 = pair
+        scores = load_pxl_proximity(
+            data,
+            metadata,
+            markers=[marker_1, marker_2],
+            pair_type="nonself",
+            add_marker_counts=bool(input.coloc_pixelator_filter()),
+        )
+        scores = apply_colocalization_filters(scores)
         rows = scores[
             ((scores["marker_1"].astype(str) == marker_1) & (scores["marker_2"].astype(str) == marker_2))
             | ((scores["marker_1"].astype(str) == marker_2) & (scores["marker_2"].astype(str) == marker_1))
@@ -1519,24 +1578,33 @@ def server(input: Inputs, output: Outputs, session: Session):
     def coloc_pair_table():
         return grid(pair_detail_data())
 
+    @reactive.calc
     def coloc_sample_data() -> pd.DataFrame:
         data = get_data()
-        if data is None or data.colocalization.empty:
+        if data is None or not data.pxl_files:
             return pd.DataFrame()
-        celltypes = selected(input.coloc_diff_celltype_filter(), data.metadata["celltype_manual"])
-        summary = sample_colocalization(
-            data.colocalization,
-            data.metadata,
-            celltypes=celltypes,
+        groups = [input.coloc_diff_group_a(), input.coloc_diff_group_b()]
+        metadata = data.metadata[data.metadata["condition"].isin(groups)].copy()
+        celltypes = selected(input.coloc_diff_celltype_filter(), metadata["celltype_manual"])
+        metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
+        anchor = (
+            str(input.coloc_diff_anchor())
+            if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor()
+            else None
+        )
+        summary = sample_pxl_colocalization(
+            data,
+            metadata,
             mean_type=input.coloc_diff_mean() or "population",
+            anchor=anchor,
         )
         if summary.empty:
             return summary
-        summary = summary[summary["marker_1"].astype(str) < summary["marker_2"].astype(str)].copy()
         summary["celltype_manual"] = "Pooled cell types"
         summary["sample_value"] = summary["mean_log2_ratio"]
         return summary
 
+    @reactive.calc
     def coloc_diff_result() -> pd.DataFrame:
         rows = coloc_sample_data()
         if rows.empty or input.coloc_diff_group_a() == input.coloc_diff_group_b():
@@ -1549,9 +1617,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             group_b=input.coloc_diff_group_b(),
             min_observations=max(1, int(input.coloc_diff_min_samples() or 2)),
         )
-        if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor():
-            anchor = str(input.coloc_diff_anchor())
-            result = result[result["marker_pair"].str.split(" / ").apply(lambda pair: anchor in pair)]
         return result
 
     @output
@@ -1559,7 +1624,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     def coloc_diff_method():
         rows = coloc_sample_data()
         if rows.empty:
-            return ui.div("The H5AD needs precomputed proximity rows for sample-aware differential colocalization.", class_="alert alert-warning")
+            return ui.div("Assign matching PXL files for sample-aware differential colocalization.", class_="alert alert-warning")
         counts = rows.groupby("condition", observed=True)["sample_alias"].nunique()
         a, b = input.coloc_diff_group_a(), input.coloc_diff_group_b()
         minimum = int(input.coloc_diff_min_samples() or 2)

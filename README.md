@@ -7,8 +7,8 @@ colocalization from Pixelator v4.1.1 Seurat objects.
 
 The repository contains both the original R application (`app.R`) and a Python
 Shiny port (`app.py`). The Python app accepts one processed `.h5ad` file and
-can optionally read precomputed component layouts from assigned `.layout.pxl`
-files for the 3D cellgraph view. It does not rerun Pixelator analysis.
+one or more matching `.pxl` files. Cell-level data come from H5AD; proximity
+scores and component layouts are queried from PXL on demand.
 
 ## Features
 
@@ -16,12 +16,12 @@ files for the 3D cellgraph view. It does not rerun Pixelator analysis.
   distributions, and original metadata inspection.
 - **Abundance**: UMAP marker abundance views, marker distribution plots,
   cell-type composition, annotation heatmaps, and differential abundance.
-- **Spatial Metrics**: clustering and colocalization views when precomputed
-  marker-pair proximity scores are stored in the H5AD.
+- **Spatial Metrics**: clustering and colocalization views backed by the
+  precomputed proximity table in assigned PXL files.
 - **Patch Analysis**: marker unmixing, Raji signal, and patch-burden views when
   their precomputed tables are stored in the H5AD.
-- **On-demand cellgraphs**: assign optional PXL paths for stored 3D layouts;
-  all analysis data still come from the H5AD.
+- **On-demand PXL queries**: read only the selected components and markers for
+  spatial tables and stored 3D layouts.
 - **Global analysis grouping**: choose a sample-level metadata column or assign
   custom sample groups for filters, summaries, heatmaps, and comparisons, with
   one-click reset to the H5AD's original `condition` values.
@@ -55,7 +55,7 @@ uv run shiny run --reload app.py
 ```
 
 Open the app's **Data** panel and enter the path to one processed `.h5ad` file.
-Optionally assign one or more `.layout.pxl` paths for the 3D cellgraph view.
+Assign the matching `.pxl` files to enable spatial metrics and 3D cellgraphs.
 Alternatively, set the default before starting the app:
 
 ```bash
@@ -70,12 +70,11 @@ The default reference is:
 /Volumes/ccrsf-static/illumina/CCRSFIFX-23_MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/python_results/pg_data_combined_filtered_annotated.h5ad
 ```
 
-The Python app reads stored observations, marker names, abundance layers, QC
-history, cell annotations, embeddings, and optional `uns["proxiome"]` spatial
-and patch tables. The reference H5AD currently lacks those optional tables, so
-its Spatial Metrics and Patch Analysis tabs report that the data are
-unavailable. Assigned PXL files are used only to read an already-computed
-component layout for the selected cellgraph.
+The Python app reads observations, marker names, abundance layers, QC history,
+cell annotations, embeddings, and optional patch tables from H5AD. It ignores
+any embedded H5AD proximity table and reads precomputed spatial scores from the
+assigned PXL files. PXL proximity queries are filtered and aggregated before
+their results are returned to the app.
 
 ### R
 

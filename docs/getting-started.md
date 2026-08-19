@@ -12,8 +12,8 @@ uv run shiny run --reload app.py
 ## Load data
 
 Open **Data**, enter the full path to one readable processed `.h5ad` file, and
-click **Load Data**. Optionally assign PXL paths for 3D cellgraphs. The
-reference dataset is prefilled unless `PROXIOME_H5AD` overrides it.
+assign the matching PXL paths before clicking **Load Data**. The reference H5AD
+is prefilled unless `PROXIOME_H5AD` overrides it.
 
 ## Navigate the app
 
@@ -21,12 +21,12 @@ The Python app contains four analysis tabs:
 
 - **QC** for filtering history, molecule-rank curves, distributions, and metadata
 - **Abundance** for embeddings, marker distributions, annotations, and differential abundance
-- **Spatial Metrics** for stored self-clustering, colocalization, differential
-  spatial scores, and optional PXL-backed 3D cellgraphs
+- **Spatial Metrics** for PXL-backed self-clustering, colocalization,
+  differential spatial scores, and 3D cellgraphs
 - **Patch Analysis** for stored patch marker, Raji signal, and burden tables
 
-Spatial and patch plots require their precomputed H5AD payloads. The bundled
-reference H5AD does not currently include those payloads.
+Spatial plots require assigned PXL files with matching H5AD component IDs.
+Patch plots require their optional precomputed H5AD payload.
 
 ## Recommended first checks
 

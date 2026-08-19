@@ -1,10 +1,10 @@
 # Data Input
 
-## Python app: H5AD analysis data
+## Python app: H5AD and PXL data
 
-The Python Shiny app accepts one server-visible `.h5ad` file for all analysis
-data. An optional PXL path is used only to display precomputed 3D component
-layouts; the app does not rerun Pixelator analysis from PXL.
+The Python Shiny app accepts one server-visible `.h5ad` file for cell data and
+matching `.pxl` files for proximity and 3D component layouts. It reads the
+precomputed PXL proximity table; it does not recalculate proximity from edges.
 
 The reference dataset is:
 
@@ -27,9 +27,6 @@ export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
 - `layers["clr"]`: normalized abundance when available
 - `obsm`: stored two-dimensional or higher embeddings such as UMAP, PCA, or Harmony
 - `uns["qc_cell_counts_by_step"]`: optional notebook-generated QC retention history
-- `uns["proxiome"]["proximity"]`: optional table with `component`, `marker_1`,
-  `marker_2`, and `log2_ratio`; optional Pixelator filter columns are
-  `marker_1_freq`, `marker_2_freq`, and `min_count`
 - `uns["proxiome"]["patch"]`: optional mapping containing `run_plan`,
   `marker_unmixing`, `raji_marker_abundance`, `raji_marker_proximity`, and
   `patch_burden` tables
@@ -37,17 +34,18 @@ export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
   to a node table containing `x`, `y`, and `z`
 
 Missing `sample_alias`, `condition`, or `celltype_manual` fields receive safe
-fallback values. Missing optional tables leave the corresponding module visible
-with an unavailable-data message; the app never substitutes abundance
-correlations for spatial proximity.
+fallback values. An embedded `uns["proxiome"]["proximity"]` table is ignored.
+Missing optional patch/layout tables leave their corresponding views visible
+with an unavailable-data message.
 
-## Optional PXL cellgraph path
+## PXL paths
 
 In **Data**, assign a `.layout.pxl` file, directory, glob, or comma/newline-
-separated paths. When a cell is selected in **Spatial Metrics >
-Colocalization > 3D Layout**, the app matches its sample to a PXL filename and
-reads that component's stored layout on demand. PXL is not used for QC,
-abundance, proximity, colocalization, or patch analysis.
+separated paths. Clustering and colocalization query the PXL proximity table by
+the H5AD component IDs and selected markers. Differential colocalization is
+aggregated inside the PXL DuckDB database before results are returned. The 3D
+view reads the selected component's stored layout on demand. PXL is not used
+for QC, abundance, annotations, or patch analysis.
 
 ## Analysis grouping
 

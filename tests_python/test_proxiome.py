@@ -12,7 +12,9 @@ from proxiome import (
     analysis_grouping_summary,
     apply_analysis_grouping,
     calculate_differential,
+    clear_pxl_cache,
     load_h5ad_data,
+    load_pxl_proximity,
     new_analysis_grouping_config,
     read_component_layout,
     resolve_pxl_paths,
@@ -115,8 +117,8 @@ def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypat
     assert data.marker_options == ("CD3", "CD19")
     assert set(data.metadata) >= {"component", "umap_1", "umap_2"}
     assert data.qc_filter_counts["n_cells"].sum() == 6
-    assert len(data.clustering) == 2
-    assert data.colocalization["marker_pair"].tolist() == ["CD3 / CD19"]
+    assert data.source["has_spatial_metrics"] is True
+    assert not hasattr(data, "proximity")
     assert data.patch["marker_unmixing"].iloc[0]["marker"] == "CD19"
     assert data.component_layouts["c1"].iloc[0]["marker"] == "CD3"
     assert data.pxl_files == (str(pxl_path.resolve()),)
@@ -135,11 +137,56 @@ def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypat
             assert add_marker_counts is False
             return SimpleNamespace(to_df=lambda: layout)
 
+    clear_pxl_cache()
     monkeypatch.setitem(__import__("sys").modules, "pixelator", SimpleNamespace(read_pna=lambda _: FakeDataset()))
     pxl_data = replace(data, component_layouts={})
     assert read_component_layout(pxl_data, "s1", "c1").equals(layout)
     with pytest.raises(ValueError, match="Expected an .h5ad"):
         resolve_h5ad_path(tmp_path / "input.pxl")
+
+
+def test_proximity_is_queried_from_pxl_and_joined_to_h5ad_metadata(tmp_path: Path, monkeypatch):
+    pxl_path = tmp_path / "sample.layout.pxl"
+    pxl_path.write_bytes(b"")
+    data = replace(make_data(), pxl_files=(str(pxl_path),))
+    proximity = pd.DataFrame(
+        {
+            "component": ["c1", "c1"],
+            "marker_1": ["A", "A"],
+            "marker_2": ["A", "B"],
+            "log2_ratio": [0.4, -0.2],
+            "marker_1_freq": [0.2, 0.2],
+            "marker_2_freq": [0.2, 0.3],
+            "min_count": [4, 4],
+        }
+    )
+
+    class FakeDataset:
+        def components(self):
+            return {"c1", "c2"}
+
+        def filter(self, *, components, markers):
+            assert components == ["c1", "c2"]
+            assert markers == ["A", "B"]
+            return self
+
+        def proximity(self, *, add_marker_counts, add_logratio, calculate_from_edgelist):
+            assert add_marker_counts and add_logratio and not calculate_from_edgelist
+            return SimpleNamespace(to_df=lambda: proximity)
+
+    clear_pxl_cache()
+    monkeypatch.setitem(__import__("sys").modules, "pixelator", SimpleNamespace(read_pna=lambda _: FakeDataset()))
+    rows = load_pxl_proximity(
+        data,
+        data.metadata.iloc[:2],
+        markers=["A", "B"],
+        pair_type="nonself",
+        add_marker_counts=True,
+    )
+    assert rows[["marker_1", "marker_2"]].values.tolist() == [["A", "B"]]
+    assert rows.iloc[0]["condition"] == "A"
+    assert rows.iloc[0]["sample_alias"] == "s1"
+    clear_pxl_cache()
 
 
 def test_analysis_grouping_edits_and_resets_conditions_from_preserved_source():
@@ -261,7 +308,7 @@ def test_spatial_summary_requires_both_markers_in_selected_set():
     assert not ((summary["marker_1"] == "C") | (summary["marker_2"] == "C")).any()
 
 
-def test_python_app_exposes_h5ad_spatial_and_patch_modules_without_pxl_input():
+def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     import app
     import plotly.express as px
 
@@ -271,7 +318,7 @@ def test_python_app_exposes_h5ad_spatial_and_patch_modules_without_pxl_input():
         "QC", "Filtering", "Cell Calling", "Distributions", "Metadata",
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
-            "Processed .h5ad path", "Optional .layout.pxl path(s) for cellgraph display",
+            "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
             "Data source", "Analysis grouping",
         ):
             assert label in html

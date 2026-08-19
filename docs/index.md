@@ -8,12 +8,12 @@ normalized abundance, QC history, annotations, and embeddings.
 
 - **QC**: filtering summaries, molecule-rank plots, QC distributions, and metadata
 - **Abundance**: marker abundance on embeddings, distributions, cell-type composition, annotation heatmaps, and differential abundance
-- **Spatial Metrics**: H5AD-stored self-clustering and marker-pair proximity,
-  plus optional PXL-backed 3D cellgraphs
+- **Spatial Metrics**: PXL-backed self-clustering, marker-pair proximity, and
+  3D cellgraphs
 - **Patch Analysis**: H5AD-stored patch marker, Raji signal, and burden tables
 
-The Python app uses H5AD for every analysis table. It reads assigned PXL files
-only when displaying a selected component's precomputed 3D layout.
+The Python app uses H5AD for cell metadata, abundance, embeddings, and optional
+patch tables. It queries proximity and layouts from assigned PXL files.
 
 ## Typical workflow
 
@@ -21,7 +21,7 @@ only when displaying a selected component's precomputed 3D layout.
 2. Load a processed H5AD path from **Data**.
 3. Review QC.
 4. Explore abundance and annotation.
-5. Review spatial or patch modules when the H5AD contains those tables.
-6. Optionally assign PXL paths and display a selected cellgraph.
+5. Assign matching PXL paths and review spatial metrics or a cellgraph.
+6. Review patch modules when the H5AD contains those tables.
 7. Optionally change the session-local analysis grouping.
 8. Download figures or tables as needed.
