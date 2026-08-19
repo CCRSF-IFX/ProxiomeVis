@@ -597,12 +597,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             "clustering_condition_filter", "clustering_heatmap_condition_filter", "coloc_condition_filter",
         ):
             ui.update_selectize(input_id, choices=conditions, selected=conditions, server=True)
+        ui.update_selectize("abundance_celltype_filter", choices=celltypes, selected=celltypes, server=True)
         for input_id in (
-            "abundance_celltype_filter", "abundance_diff_celltype_filter", "clustering_celltype_filter",
+            "abundance_diff_celltype_filter", "clustering_celltype_filter",
             "clustering_heatmap_celltype_filter", "clustering_diff_celltype_filter", "coloc_celltype_filter",
             "coloc_diff_celltype_filter", "coloc_3d_celltypes",
         ):
-            ui.update_selectize(input_id, choices=celltypes, selected=celltypes, server=True)
+            ui.update_selectize(input_id, choices=celltypes, selected=celltypes[:1], server=True)
         for prefix in ("abundance", "clustering"):
             ui.update_select(f"{prefix}_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
             ui.update_select(f"{prefix}_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
