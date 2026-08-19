@@ -46,6 +46,15 @@ class AppData:
     pxl_files: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class SpatialRetrieval:
+    retrieved_at: str
+    request: tuple
+    metadata: pd.DataFrame
+    markers: tuple[str, ...]
+    marker_mode: str
+
+
 def resolve_h5ad_path(spec: str | Path) -> Path:
     """Validate one processed AnnData file supplied by server-visible path."""
     path = Path(os.path.expandvars(os.path.expanduser(str(spec).strip()))).resolve()
@@ -179,6 +188,56 @@ def filter_pxl_metadata(data: AppData, metadata: pd.DataFrame | None = None) -> 
     return metadata[metadata["component"].astype(str).isin(components)].copy()
 
 
+def build_spatial_retrieval(
+    data: AppData,
+    *,
+    conditions: Sequence[str],
+    samples: Sequence[str],
+    celltypes: Sequence[str],
+    marker_mode: Literal["all", "top", "manual"] = "all",
+    n_markers: int = 40,
+    plot_markers: Sequence[str] | None = None,
+    retrieved_at: str,
+    request: tuple,
+) -> SpatialRetrieval:
+    """Freeze the component and marker scope used by every spatial view."""
+    if marker_mode not in {"all", "top", "manual"}:
+        raise ValueError("Marker mode must be 'all', 'top', or 'manual'.")
+    conditions = set(map(str, conditions))
+    samples = set(map(str, samples))
+    celltypes = set(map(str, celltypes))
+    metadata = data.metadata[
+        data.metadata["condition"].astype(str).isin(conditions)
+        & data.metadata["sample_alias"].astype(str).isin(samples)
+        & data.metadata["celltype_manual"].astype(str).isin(celltypes)
+    ].copy()
+    metadata = filter_pxl_metadata(data, metadata)
+    if metadata.empty:
+        raise ValueError("No H5AD components in the selected population are present in the assigned PXL files.")
+
+    if marker_mode == "all":
+        markers = list(map(str, data.marker_options))
+    elif marker_mode == "manual":
+        requested = set(map(str, plot_markers or ()))
+        markers = [str(marker) for marker in data.marker_options if str(marker) in requested]
+    else:
+        markers = select_colocalization_heatmap_markers(
+            data.abundance,
+            metadata,
+            data.marker_options,
+            n_markers=n_markers,
+        )
+    if not markers:
+        raise ValueError("Select at least one marker for spatial retrieval.")
+    return SpatialRetrieval(
+        retrieved_at=retrieved_at,
+        request=request,
+        metadata=metadata,
+        markers=tuple(markers),
+        marker_mode=marker_mode,
+    )
+
+
 def load_pxl_proximity(
     data: AppData,
     metadata: pd.DataFrame | None = None,
@@ -264,6 +323,7 @@ def sample_pxl_colocalization(
     data: AppData,
     metadata: pd.DataFrame,
     *,
+    markers: Sequence[str] | None = None,
     mean_type: str = "population",
     anchor: str | None = None,
 ) -> pd.DataFrame:
@@ -274,6 +334,11 @@ def sample_pxl_colocalization(
     components = metadata["component"].dropna().astype(str).drop_duplicates().tolist()
     conditions = ["component IN $components", "marker_1 != marker_2"]
     parameters: dict[str, object] = {"components": components}
+    selected_markers = list(dict.fromkeys(map(str, data.marker_options if markers is None else markers)))
+    if not selected_markers:
+        return pd.DataFrame()
+    conditions.append("marker_1 IN $markers AND marker_2 IN $markers")
+    parameters["markers"] = selected_markers
     if anchor:
         conditions.append("(marker_1 = $anchor OR marker_2 = $anchor)")
         parameters["anchor"] = str(anchor)
@@ -307,8 +372,7 @@ def sample_pxl_colocalization(
         .reset_index()
     )
     totals["sample"] = totals["sample"].astype(str)
-    markers = sorted(map(str, data.marker_options))
-    marker_pairs = [pair for pair in combinations(markers, 2) if not anchor or anchor in pair]
+    marker_pairs = [pair for pair in combinations(sorted(selected_markers), 2) if not anchor or anchor in pair]
     if not marker_pairs or totals.empty:
         return pd.DataFrame()
     pair_grid = pd.DataFrame(marker_pairs, columns=["marker_1", "marker_2"])
@@ -331,13 +395,26 @@ def sample_pxl_colocalization(
         )
         # PXL stores one orientation per unordered marker pair.
         detected["detected_mean"] = detected["sum_log2_ratio"] / detected["n_detected"]
+    else:
+        detected = pd.DataFrame(
+            columns=[
+                "sample",
+                "sample_alias",
+                "condition",
+                "marker_1",
+                "marker_2",
+                "sum_log2_ratio",
+                "detected_mean",
+                "n_detected",
+            ]
+        )
     result = grid.merge(
         detected.drop(columns=["n_total"], errors="ignore") if not detected.empty else detected,
         on=["sample", "sample_alias", "condition", "marker_1", "marker_2"],
         how="left",
     )
     for column in ("sum_log2_ratio", "n_detected"):
-        result[column] = result[column].fillna(0)
+        result[column] = pd.to_numeric(result[column], errors="coerce").fillna(0)
     result["pct_detected"] = result["n_detected"] / result["n_total"]
     result["mean_log2_ratio"] = np.where(
         mean_type == "detected",

@@ -11,6 +11,7 @@ from proxiome import (
     adjust_bh,
     analysis_grouping_summary,
     apply_analysis_grouping,
+    build_spatial_retrieval,
     calculate_differential,
     clear_pxl_cache,
     load_h5ad_data,
@@ -19,6 +20,7 @@ from proxiome import (
     read_component_layout,
     resolve_pxl_paths,
     resolve_h5ad_path,
+    sample_pxl_colocalization,
     sample_level_columns,
     select_colocalization_heatmap_markers,
     summarize_spatial,
@@ -308,6 +310,75 @@ def test_spatial_summary_requires_both_markers_in_selected_set():
     assert not ((summary["marker_1"] == "C") | (summary["marker_2"] == "C")).any()
 
 
+def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkeypatch):
+    data = replace(make_data(), pxl_files=("fake.pxl",))
+    monkeypatch.setattr(
+        "proxiome.filter_pxl_metadata",
+        lambda _data, metadata=None: _data.metadata if metadata is None else metadata,
+    )
+    request = (("A",), ("s1",), ("T",), "all", None, ())
+    retrieval = build_spatial_retrieval(
+        data,
+        conditions=["A"],
+        samples=["s1"],
+        celltypes=["T"],
+        retrieved_at="now",
+        request=request,
+    )
+
+    assert retrieval.request == request
+    assert retrieval.metadata["component"].tolist() == ["c1", "c2"]
+    assert retrieval.markers == ("A", "B")
+    data.metadata.loc[data.metadata["component"] == "c1", "condition"] = "changed"
+    assert retrieval.metadata["condition"].tolist() == ["A", "A"]
+
+
+def test_sample_colocalization_query_is_restricted_to_retrieved_markers(monkeypatch):
+    data = replace(make_data(), pxl_files=("fake.pxl",))
+    captured = {}
+
+    class FakeConnection:
+        def execute(self, query, parameters):
+            captured["query"] = query
+            captured["parameters"] = parameters
+            return self
+
+        def fetchdf(self):
+            return pd.DataFrame(
+                columns=[
+                    "sample",
+                    "marker_1",
+                    "marker_2",
+                    "sum_log2_ratio",
+                    "detected_mean",
+                    "n_detected",
+                ]
+            )
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get_connection(self):
+            return FakeConnection()
+
+    fake_dataset = SimpleNamespace(view=SimpleNamespace(open=FakeSession))
+    monkeypatch.setattr(
+        "proxiome.filter_pxl_metadata",
+        lambda _data, metadata=None: _data.metadata if metadata is None else metadata,
+    )
+    monkeypatch.setattr("proxiome._read_pxl_dataset", lambda _paths: fake_dataset)
+
+    rows = sample_pxl_colocalization(data, data.metadata, markers=["A", "B"])
+
+    assert "marker_1 IN $markers AND marker_2 IN $markers" in captured["query"]
+    assert captured["parameters"]["markers"] == ["A", "B"]
+    assert set(rows["marker_pair"]) == {"A / B"}
+
+
 def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     import app
     import plotly.express as px
@@ -317,7 +388,9 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     for label in (
         "QC", "Filtering", "Cell Calling", "Distributions", "Metadata",
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
-            "Spatial Metrics", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
+            "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
+            "All markers", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
+            "Activity Log", "Clear log",
             "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
             "Data source", "Analysis grouping",
         ):
@@ -327,6 +400,9 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert 'id="configure_analysis_grouping"' in html
     assert 'id="analysis_grouping_summary"' in html
     assert 'id="custom_grouping"' not in html
+    assert 'id="apply_coloc"' not in html
+    assert 'id="coloc_run_differential"' not in html
+    assert 'id="clustering_run_differential"' not in html
     assert 'class="data-source-actions"' in html
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in Path("www/proixome.css").read_text()
     for token in ("Use metadata column", "Edit sample groups", "Reset to condition", "analysis_group_editor"):

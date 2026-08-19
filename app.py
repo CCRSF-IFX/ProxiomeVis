@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import math
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
+from queue import Empty, SimpleQueue
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -17,12 +20,13 @@ from shinywidgets import output_widget, render_plotly
 
 from proxiome import (
     AppData,
+    SpatialRetrieval,
     analysis_grouping_summary,
     apply_analysis_grouping,
+    build_spatial_retrieval,
     calculate_differential,
     default_h5ad_path,
     default_pxl_spec,
-    filter_pxl_metadata,
     filter_pixelator_proximity,
     load_h5ad_data,
     load_pxl_proximity,
@@ -197,15 +201,25 @@ def abundance_ui():
     )
 
 
-def differential_controls(prefix: str, detail_label: str):
+def differential_controls(prefix: str, detail_label: str, *, show_run_button: bool = True):
+    contrast_controls = [
+        ui.input_select(f"{prefix}_diff_group_a", "Group A", []),
+        ui.input_select(f"{prefix}_diff_group_b", "Group B (reference)", []),
+        selectize(f"{prefix}_diff_celltype_filter", "Cell type", multiple=True),
+        ui.input_checkbox(f"{prefix}_diff_stratify", "Stratify by cell type", False),
+    ]
+    if show_run_button:
+        contrast_controls.append(
+            ui.input_action_button(
+                f"{prefix}_run_differential",
+                "Run differential analysis",
+                class_="btn-primary w-100",
+            )
+        )
     return ui.accordion(
         ui.accordion_panel(
             "Contrast",
-            ui.input_select(f"{prefix}_diff_group_a", "Group A", []),
-            ui.input_select(f"{prefix}_diff_group_b", "Group B (reference)", []),
-            selectize(f"{prefix}_diff_celltype_filter", "Cell type", multiple=True),
-            ui.input_checkbox(f"{prefix}_diff_stratify", "Stratify by cell type", False),
-            ui.input_action_button(f"{prefix}_run_differential", "Run differential analysis", class_="btn-primary w-100"),
+            *contrast_controls,
         ),
         ui.accordion_panel(
             "Thresholds",
@@ -215,6 +229,62 @@ def differential_controls(prefix: str, detail_label: str):
         ),
         ui.accordion_panel("Detail", selectize(f"{prefix}_diff_feature", f"Detail {detail_label}")),
         open=["Contrast", "Thresholds"],
+    )
+
+
+def spatial_retrieval_ui():
+    sidebar = ui.sidebar(
+        ui.accordion(
+            ui.accordion_panel(
+                "Population",
+                selectize("spatial_retrieval_conditions", "Analysis group", multiple=True),
+                selectize("spatial_retrieval_samples", "Sample", multiple=True),
+                selectize("spatial_retrieval_celltypes", "Cell type", multiple=True),
+            ),
+            ui.accordion_panel(
+                "Markers",
+                ui.input_select(
+                    "spatial_retrieval_marker_mode",
+                    "Number of markers",
+                    {
+                        "all": "All markers",
+                        "top": "Top abundance markers",
+                        "manual": "Selected markers",
+                    },
+                    selected="all",
+                ),
+                ui.panel_conditional(
+                    "input.spatial_retrieval_marker_mode === 'top'",
+                    ui.input_numeric("spatial_retrieval_marker_count", "Top marker count", 40, min=1),
+                ),
+                ui.panel_conditional(
+                    "input.spatial_retrieval_marker_mode === 'manual'",
+                    selectize("spatial_retrieval_markers", "Markers", multiple=True),
+                ),
+            ),
+            open=["Population", "Markers"],
+        ),
+        ui.input_task_button("retrieve_spatial_data", "Retrieve Spatial Data", class_="btn-primary w-100"),
+        title="Retrieval controls",
+        width=320,
+    )
+    return ui.nav_panel(
+        "Retrieve Data",
+        ui.layout_sidebar(
+            sidebar,
+            ui.div(
+                ui.output_ui("spatial_retrieval_status"),
+                ui.card(
+                    ui.card_header("Active retrieval"),
+                    ui.card_body(ui.output_ui("spatial_retrieval_summary")),
+                ),
+                ui.card(
+                    ui.card_header("Retrieved cells"),
+                    ui.card_body(ui.output_data_frame("spatial_retrieval_table")),
+                ),
+                class_="p-3",
+            ),
+        ),
     )
 
 
@@ -244,7 +314,10 @@ def clustering_ui():
                 open=["Display", "Filters"],
             ),
         ),
-        ui.panel_conditional("input.clustering_mode === 'Differential'", differential_controls("clustering", "marker")),
+        ui.panel_conditional(
+            "input.clustering_mode === 'Differential'",
+            differential_controls("clustering", "marker", show_run_button=False),
+        ),
         title="Clustering controls",
         width=300,
     )
@@ -252,14 +325,17 @@ def clustering_ui():
         "Clustering",
         ui.layout_sidebar(
             sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel("Observed", plot_pane("clustering_plot"), table_pane("clustering_table")),
-                ui.nav_panel("Per Marker", plot_pane("clustering_per_marker"), table_pane("clustering_per_marker_table")),
-                ui.nav_panel("Summary Heatmap", plot_pane("clustering_summary_heatmap", height="680px"), table_pane("clustering_summary_table")),
-                ui.nav_panel("Differential", differential_panel("clustering_diff")),
-                id="clustering_mode",
-                title="Clustering",
-                full_screen=True,
+            ui.div(
+                ui.output_ui("clustering_retrieval_notice"),
+                ui.navset_card_underline(
+                    ui.nav_panel("Observed", plot_pane("clustering_plot"), table_pane("clustering_table")),
+                    ui.nav_panel("Per Marker", plot_pane("clustering_per_marker"), table_pane("clustering_per_marker_table")),
+                    ui.nav_panel("Summary Heatmap", plot_pane("clustering_summary_heatmap", height="680px"), table_pane("clustering_summary_table")),
+                    ui.nav_panel("Differential", differential_panel("clustering_diff")),
+                    id="clustering_mode",
+                    title="Clustering",
+                    full_screen=True,
+                ),
             ),
         ),
     )
@@ -287,7 +363,6 @@ def colocalization_ui():
                     ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
                     ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
                     selectize("coloc_detail_pair", "Pair detail"),
-                    ui.input_action_button("apply_coloc", "Apply heatmap settings", class_="btn-primary w-100"),
                 ),
                 ui.accordion_panel(
                     "Filters",
@@ -323,7 +398,6 @@ def colocalization_ui():
                     ui.input_select("coloc_diff_group_a", "Group A", []),
                     ui.input_select("coloc_diff_group_b", "Group B (reference)", []),
                     ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=1),
-                    ui.input_action_button("coloc_run_differential", "Run differential analysis", class_="btn-primary w-100"),
                 ),
                 ui.accordion_panel(
                     "Pair display",
@@ -360,22 +434,25 @@ def colocalization_ui():
         "Colocalization",
         ui.layout_sidebar(
             sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel(
-                    "Observed",
-                    ui.output_ui("coloc_notice"),
-                    plot_pane("coloc_heatmap", height="900px"),
-                    ui.card(
-                        ui.card_header("Pair detail"),
-                        ui.card_body(ui.output_ui("coloc_pair_metrics"), plot_pane("coloc_pair_detail"), table_pane("coloc_pair_table")),
+            ui.div(
+                ui.output_ui("colocalization_retrieval_notice"),
+                ui.navset_card_underline(
+                    ui.nav_panel(
+                        "Observed",
+                        ui.output_ui("coloc_notice"),
+                        plot_pane("coloc_heatmap", height="900px"),
+                        ui.card(
+                            ui.card_header("Pair detail"),
+                            ui.card_body(ui.output_ui("coloc_pair_metrics"), plot_pane("coloc_pair_detail"), table_pane("coloc_pair_table")),
+                        ),
+                        table_pane("coloc_table"),
                     ),
-                    table_pane("coloc_table"),
+                    ui.nav_panel("Differential", ui.output_ui("coloc_diff_method"), differential_panel("coloc_diff")),
+                    ui.nav_panel("3D Layout", plot_pane("coloc_3d_layout", height="640px"), table_pane("coloc_3d_table")),
+                    id="colocalization_mode",
+                    title="Colocalization",
+                    full_screen=True,
                 ),
-                ui.nav_panel("Differential", ui.output_ui("coloc_diff_method"), differential_panel("coloc_diff")),
-                ui.nav_panel("3D Layout", plot_pane("coloc_3d_layout", height="640px"), table_pane("coloc_3d_table")),
-                id="colocalization_mode",
-                title="Colocalization",
-                full_screen=True,
             ),
         ),
     )
@@ -399,6 +476,25 @@ def patch_ui():
                 title="Patch Analysis",
                 full_screen=True,
             ),
+        ),
+    )
+
+
+def activity_log_ui():
+    return ui.nav_panel(
+        "Activity Log",
+        ui.div(
+            ui.div(
+                ui.div(
+                    ui.h2("Activity Log", class_="mb-1"),
+                    ui.p("Live session activity for data loading and PXL queries.", class_="text-muted mb-0"),
+                ),
+                ui.input_action_button("clear_activity_log", "Clear log", class_="btn-outline-secondary"),
+                class_="d-flex justify-content-between align-items-center mb-3",
+            ),
+            ui.p(ui.strong("Latest: "), ui.output_text("activity_status", inline=True)),
+            ui.output_data_frame("activity_log_table"),
+            class_="container-fluid py-3",
         ),
     )
 
@@ -443,13 +539,17 @@ def data_popover():
 app_ui = ui.page_navbar(
     qc_ui(),
     abundance_ui(),
-    ui.nav_panel("Spatial Metrics", ui.navset_tab(clustering_ui(), colocalization_ui(), id="spatial_metric_readout")),
+    ui.nav_panel(
+        "Spatial Metrics",
+        ui.navset_tab(spatial_retrieval_ui(), clustering_ui(), colocalization_ui(), id="spatial_metric_readout"),
+    ),
     patch_ui(),
+    activity_log_ui(),
     ui.nav_spacer(),
     data_popover(),
     title="ProxiomeVis",
     id="readout_tab",
-    fillable=["QC", "Abundance", "Spatial Metrics", "Patch Analysis"],
+    fillable=["QC", "Abundance", "Spatial Metrics", "Patch Analysis", "Activity Log"],
     header=ui.include_css(APP_DIR / "www" / "proixome.css"),
     navbar_options=ui.navbar_options(bg=TEAL, theme="dark", underline=True),
 )
@@ -506,12 +606,87 @@ def embedding_columns(metadata: pd.DataFrame) -> dict[str, tuple[str, str]]:
 def server(input: Inputs, output: Outputs, session: Session):
     data_state: reactive.Value[AppData | None] = reactive.Value(None)
     grouping_state: reactive.Value[dict | None] = reactive.Value(None)
+    spatial_retrieval_state: reactive.Value[SpatialRetrieval | None] = reactive.Value(None)
     inspect_message = reactive.Value("No data loaded.")
+    activity_queue: SimpleQueue[dict] = SimpleQueue()
+    activity_state: reactive.Value[tuple[dict, ...]] = reactive.Value(())
+
+    def log_activity(operation: str, status: str, details: str = "", elapsed: float | None = None):
+        activity_queue.put({
+            "time": datetime.now().astimezone().strftime("%H:%M:%S"),
+            "operation": operation,
+            "status": status,
+            "details": details,
+            "seconds": round(elapsed, 2) if elapsed is not None else None,
+        })
+
+    log_activity("Session", "Ready", "Waiting for data.")
+
+    @reactive.effect
+    def _drain_activity_queue():
+        reactive.invalidate_later(0.5)
+        pending = []
+        while True:
+            try:
+                pending.append(activity_queue.get_nowait())
+            except Empty:
+                break
+        if pending:
+            activity_state.set(tuple([*activity_state.get(), *pending][-500:]))
 
     @ui.bind_task_button(button_id="load_h5ad")
     @reactive.extended_task
     async def load_task(path: str, pxl_path: str) -> AppData:
-        return await asyncio.to_thread(load_h5ad_data, path, pxl_spec=pxl_path or None)
+        started = perf_counter()
+        log_activity("Load data", "Started", f"Reading {Path(path).name} and resolving PXL files.")
+        try:
+            loaded = await asyncio.to_thread(load_h5ad_data, path, pxl_spec=pxl_path or None)
+        except Exception as error:
+            log_activity("Load data", "Failed", str(error), perf_counter() - started)
+            raise
+        log_activity(
+            "Load data",
+            "Completed",
+            f"{loaded.source['n_cells']:,} cells, {len(loaded.marker_options):,} markers, "
+            f"{len(loaded.pxl_files):,} PXL files.",
+            perf_counter() - started,
+        )
+        return loaded
+
+    @ui.bind_task_button(button_id="retrieve_spatial_data")
+    @reactive.extended_task
+    async def spatial_retrieval_task(data: AppData, request: tuple) -> tuple[int, SpatialRetrieval]:
+        conditions, samples, celltypes, marker_mode, marker_count, markers = request
+        started = perf_counter()
+        log_activity(
+            "Spatial retrieval",
+            "Started",
+            f"Resolving {len(celltypes):,} cell type(s) and "
+            f"{'all' if marker_mode == 'all' else marker_count if marker_mode == 'top' else len(markers)} markers.",
+        )
+        try:
+            retrieval = await asyncio.to_thread(
+                build_spatial_retrieval,
+                data,
+                conditions=conditions,
+                samples=samples,
+                celltypes=celltypes,
+                marker_mode=marker_mode,
+                n_markers=marker_count or len(data.marker_options),
+                plot_markers=markers,
+                retrieved_at=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"),
+                request=request,
+            )
+        except Exception as error:
+            log_activity("Spatial retrieval", "Failed", str(error), perf_counter() - started)
+            raise
+        log_activity(
+            "Spatial retrieval",
+            "Completed",
+            f"{len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
+            perf_counter() - started,
+        )
+        return id(data), retrieval
 
     @reactive.effect
     @reactive.event(input.inspect_h5ad)
@@ -519,8 +694,10 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             path = resolve_h5ad_path(input.h5ad_path())
             inspect_message.set(f"Ready: {path.name}, {path.stat().st_size / 1024**2:.1f} MiB.")
+            log_activity("Inspect H5AD", "Completed", f"{path.name}: {path.stat().st_size / 1024**2:.1f} MiB.")
         except Exception as error:
             inspect_message.set(str(error))
+            log_activity("Inspect H5AD", "Failed", str(error))
 
     @reactive.effect
     @reactive.event(input.load_h5ad)
@@ -528,20 +705,174 @@ def server(input: Inputs, output: Outputs, session: Session):
         inspect_message.set("Loading processed AnnData…")
         load_task.invoke(input.h5ad_path(), input.pxl_path())
 
+    def current_spatial_request() -> tuple | None:
+        data = data_state.get()
+        if data is None:
+            return None
+        metadata = data.metadata
+        marker_value = input.spatial_retrieval_markers()
+        markers = tuple(
+            map(str, marker_value if isinstance(marker_value, (list, tuple)) else [marker_value])
+        ) if marker_value else ()
+        marker_mode = str(input.spatial_retrieval_marker_mode() or "all")
+        return (
+            tuple(sorted(selected(input.spatial_retrieval_conditions(), metadata["condition"]))),
+            tuple(sorted(selected(input.spatial_retrieval_samples(), metadata["sample_alias"]))),
+            tuple(sorted(selected(input.spatial_retrieval_celltypes(), metadata["celltype_manual"]))),
+            marker_mode,
+            max(1, int(input.spatial_retrieval_marker_count() or 40)) if marker_mode == "top" else None,
+            tuple(sorted(set(markers))) if marker_mode == "manual" else (),
+        )
+
+    @reactive.effect
+    @reactive.event(input.retrieve_spatial_data)
+    def _start_spatial_retrieval():
+        data = data_state.get()
+        request = current_spatial_request()
+        if data is None:
+            ui.notification_show("Load H5AD and PXL data before retrieving spatial data.", type="warning")
+            return
+        if not data.pxl_files:
+            ui.notification_show("Assign one or more PXL files before retrieving spatial data.", type="warning")
+            return
+        spatial_retrieval_task.invoke(data, request)
+
     @reactive.effect
     def _activate_loaded_data():
         loaded = load_task.result()
         data_state.set(loaded)
+        spatial_retrieval_state.set(None)
         inspect_message.set(
             f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers; "
             f"{len(loaded.pxl_files):,} PXL file(s) assigned."
         )
         grouping_state.set(new_analysis_grouping_config(loaded.metadata))
 
+    @reactive.effect
+    def _activate_spatial_retrieval():
+        source_id, retrieval = spatial_retrieval_task.result()
+        current_data = data_state.get()
+        if current_data is None or id(current_data) != source_id:
+            log_activity("Spatial retrieval", "Discarded", "The source dataset changed before retrieval completed.")
+            return
+        spatial_retrieval_state.set(retrieval)
+        ui.notification_show(
+            f"Spatial retrieval ready: {len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
+            type="message",
+        )
+
     @output
     @render.ui
     def load_status():
         return ui.div(inspect_message(), class_="rds-load-status")
+
+    @reactive.effect
+    @reactive.event(input.clear_activity_log)
+    def _clear_activity_log():
+        while True:
+            try:
+                activity_queue.get_nowait()
+            except Empty:
+                break
+        activity_state.set(())
+        log_activity("Activity log", "Cleared")
+
+    @output
+    @render.text
+    def activity_status():
+        events = activity_state.get()
+        if not events:
+            return "No activity yet."
+        latest = events[-1]
+        return f"{latest['operation']} — {latest['status']}"
+
+    @output
+    @render.data_frame
+    def activity_log_table():
+        events = activity_state.get()
+        columns = ["time", "operation", "status", "details", "seconds"]
+        frame = pd.DataFrame(events, columns=columns).iloc[::-1].reset_index(drop=True)
+        return render.DataGrid(frame, filters=True, width="100%", height="620px")
+
+    @output
+    @render.ui
+    def spatial_retrieval_status():
+        data = data_state.get()
+        retrieval = spatial_retrieval_state.get()
+        if data is None:
+            return ui.div("Load H5AD and PXL data first.", class_="alert alert-warning")
+        if not data.pxl_files:
+            return ui.div("Assign PXL files in Data before retrieving spatial data.", class_="alert alert-warning")
+        if retrieval is None:
+            return ui.div("Choose a population and retrieve spatial data to enable the spatial views.", class_="alert alert-warning")
+        if retrieval.request != current_spatial_request():
+            return ui.div(
+                "Retrieval settings changed. The current visualizations still use the active retrieval; "
+                "click Retrieve Spatial Data to replace it.",
+                class_="alert alert-warning",
+            )
+        return ui.div("The active retrieval matches the current settings.", class_="alert alert-success")
+
+    @output
+    @render.ui
+    def spatial_retrieval_summary():
+        retrieval = spatial_retrieval_state.get()
+        if retrieval is None:
+            return ui.p("No spatial data have been retrieved.", class_="text-muted")
+        metadata = retrieval.metadata
+        return ui.div(
+            metric_boxes([
+                ("Cells", f"{len(metadata):,}"),
+                ("Samples", f"{metadata['sample_alias'].nunique():,}"),
+                ("Cell types", f"{metadata['celltype_manual'].nunique():,}"),
+                ("Markers", f"{len(retrieval.markers):,}"),
+            ]),
+            ui.p(
+                f"Retrieved {retrieval.retrieved_at} · marker selection: {retrieval.marker_mode}.",
+                class_="text-muted small mb-0",
+            ),
+        )
+
+    @output
+    @render.data_frame
+    def spatial_retrieval_table():
+        retrieval = spatial_retrieval_state.get()
+        if retrieval is None:
+            return render.DataGrid(pd.DataFrame())
+        columns = [
+            column for column in ("component", "sample_alias", "condition", "celltype_manual")
+            if column in retrieval.metadata
+        ]
+        return render.DataGrid(
+            retrieval.metadata[columns].head(2000),
+            filters=True,
+            width="100%",
+            height="520px",
+        )
+
+    def active_retrieval_notice():
+        retrieval = spatial_retrieval_state.get()
+        if retrieval is None:
+            return ui.div(
+                "Retrieve data in Spatial Metrics > Retrieve Data to enable this view.",
+                class_="alert alert-warning m-3 mb-0",
+            )
+        return ui.div(
+            f"Active retrieval: {len(retrieval.metadata):,} cells, "
+            f"{retrieval.metadata['sample_alias'].nunique():,} samples, and "
+            f"{len(retrieval.markers):,} markers. View controls can only narrow this scope.",
+            class_="alert alert-info m-3 mb-0 py-2",
+        )
+
+    @output
+    @render.ui
+    def clustering_retrieval_notice():
+        return active_retrieval_notice()
+
+    @output
+    @render.ui
+    def colocalization_retrieval_notice():
+        return active_retrieval_notice()
 
     @output(id="analysis_grouping_summary")
     @render.text
@@ -576,7 +907,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         celltypes = sorted(metadata["celltype_manual"].dropna().astype(str).unique())
         samples = sorted(metadata["sample_alias"].dropna().astype(str).unique())
         embeddings = list(embedding_columns(metadata))
-        pairs = [f"{marker_1} / {marker_2}" for marker_1, marker_2 in combinations(sorted(markers), 2)]
         numeric_qc = [
             column for column in ("n_umi", "n_edges", "reads_in_component", "isotype_fraction", "tau")
             if column in metadata and pd.api.types.is_numeric_dtype(metadata[column])
@@ -587,28 +917,66 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.update_select("abundance_embedding", choices=embeddings, selected=embeddings[0] if embeddings else None)
         for input_id in (
             "abundance_marker", "abundance_distribution_marker", "abundance_diff_feature",
-            "clustering_marker", "clustering_diff_feature", "coloc_diff_anchor",
         ):
+            ui.update_selectize(input_id, choices=markers, selected=markers[0] if markers else None, server=True)
+        ui.update_selectize("abundance_condition_filter", choices=conditions, selected=conditions, server=True)
+        ui.update_selectize("abundance_celltype_filter", choices=celltypes, selected=celltypes, server=True)
+        for input_id in ("abundance_diff_celltype_filter",):
+            ui.update_selectize(input_id, choices=celltypes, selected=celltypes[:1], server=True)
+        for prefix in ("abundance",):
+            ui.update_select(f"{prefix}_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
+            ui.update_select(f"{prefix}_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
+        ui.update_selectize("spatial_retrieval_conditions", choices=conditions, selected=conditions, server=True)
+        ui.update_selectize("spatial_retrieval_samples", choices=samples, selected=samples, server=True)
+        ui.update_selectize("spatial_retrieval_celltypes", choices=celltypes, selected=celltypes[:1], server=True)
+        ui.update_selectize(
+            "spatial_retrieval_markers",
+            choices=markers,
+            selected=markers[: min(40, len(markers))],
+            server=True,
+        )
+        marker_table = data.patch.get("marker_unmixing")
+        labels = sorted(marker_table["label"].dropna().astype(str).unique()) if marker_table is not None and "label" in marker_table else []
+        ui.update_selectize("patch_label_filter", choices=labels, selected=labels, server=True)
+
+    @reactive.effect
+    def _refresh_spatial_inputs():
+        retrieval = spatial_retrieval_state.get()
+        if retrieval is None:
+            return
+        metadata = retrieval.metadata
+        markers = list(retrieval.markers)
+        conditions = sorted(metadata["condition"].dropna().astype(str).unique())
+        celltypes = sorted(metadata["celltype_manual"].dropna().astype(str).unique())
+        samples = sorted(metadata["sample_alias"].dropna().astype(str).unique())
+        pairs = [f"{marker_1} / {marker_2}" for marker_1, marker_2 in combinations(sorted(markers), 2)]
+
+        for input_id in ("clustering_marker", "clustering_diff_feature", "coloc_diff_anchor"):
             ui.update_selectize(input_id, choices=markers, selected=markers[0] if markers else None, server=True)
         for input_id in ("coloc_markers", "coloc_3d_markers"):
             ui.update_selectize(input_id, choices=markers, selected=markers[: min(15, len(markers))], server=True)
-        ui.update_selectize("abundance_condition_filter", choices=conditions, selected=conditions, server=True)
         for input_id in (
             "clustering_condition_filter", "clustering_heatmap_condition_filter", "coloc_condition_filter",
         ):
             ui.update_selectize(input_id, choices=conditions, selected=conditions, server=True)
-        ui.update_selectize("abundance_celltype_filter", choices=celltypes, selected=celltypes, server=True)
         for input_id in (
-            "abundance_diff_celltype_filter", "clustering_celltype_filter",
-            "clustering_heatmap_celltype_filter", "clustering_diff_celltype_filter", "coloc_celltype_filter",
+            "clustering_celltype_filter", "clustering_heatmap_celltype_filter",
+            "clustering_diff_celltype_filter", "coloc_celltype_filter",
             "coloc_diff_celltype_filter", "coloc_3d_celltypes",
         ):
             ui.update_selectize(input_id, choices=celltypes, selected=celltypes[:1], server=True)
-        for prefix in ("abundance", "clustering"):
-            ui.update_select(f"{prefix}_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
-            ui.update_select(f"{prefix}_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
+        ui.update_select("clustering_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
+        ui.update_select(
+            "clustering_diff_group_b",
+            choices=conditions,
+            selected=conditions[min(1, len(conditions) - 1)] if conditions else None,
+        )
         ui.update_select("coloc_diff_group_a", choices=conditions, selected=conditions[0] if conditions else None)
-        ui.update_select("coloc_diff_group_b", choices=conditions, selected=conditions[min(1, len(conditions) - 1)] if conditions else None)
+        ui.update_select(
+            "coloc_diff_group_b",
+            choices=conditions,
+            selected=conditions[min(1, len(conditions) - 1)] if conditions else None,
+        )
         ui.update_select("coloc_reference", choices=conditions, selected=conditions[0] if conditions else None)
         ui.update_selectize("coloc_celltype_focus", choices=celltypes, selected=celltypes[0] if celltypes else None, server=True)
         ui.update_selectize("coloc_focus_group", choices=conditions, selected=conditions[0] if conditions else None, server=True)
@@ -616,16 +984,16 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.update_selectize("coloc_detail_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
         ui.update_selectize("coloc_diff_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
         ui.update_selectize("coloc_3d_sample", choices=samples, selected=samples[0] if samples else None, server=True)
-        marker_table = data.patch.get("marker_unmixing")
-        labels = sorted(marker_table["label"].dropna().astype(str).unique()) if marker_table is not None and "label" in marker_table else []
-        ui.update_selectize("patch_label_filter", choices=labels, selected=labels, server=True)
 
     @reactive.effect
     def _update_3d_components():
         data = data_state.get()
-        if data is None or not input.coloc_3d_sample():
+        retrieval = spatial_retrieval_state.get()
+        if data is None or retrieval is None or not input.coloc_3d_sample():
             return
-        rows = data.metadata[data.metadata["sample_alias"].astype(str) == str(input.coloc_3d_sample())]
+        rows = retrieval.metadata[
+            retrieval.metadata["sample_alias"].astype(str) == str(input.coloc_3d_sample())
+        ]
         celltypes = selected(input.coloc_3d_celltypes(), rows["celltype_manual"])
         rows = rows[rows["celltype_manual"].astype(str).isin(celltypes)]
         components = rows["component"].astype(str).tolist()
@@ -732,11 +1100,14 @@ def server(input: Inputs, output: Outputs, session: Session):
                 custom_groups=custom_groups,
             )
             data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
+            spatial_retrieval_state.set(None)
             grouping_state.set(config)
             ui.modal_remove()
             ui.notification_show(analysis_grouping_summary(config), type="message")
+            log_activity("Analysis grouping", "Completed", analysis_grouping_summary(config))
         except Exception as error:
             ui.notification_show(str(error), type="error", duration=None)
+            log_activity("Analysis grouping", "Failed", str(error))
 
     @reactive.effect
     @reactive.event(input.reset_analysis_grouping)
@@ -748,12 +1119,61 @@ def server(input: Inputs, output: Outputs, session: Session):
         column = "condition" if "condition" in config["columns"] else "sample_alias"
         config = update_analysis_grouping_config(config, mode="column", column=column)
         data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
+        spatial_retrieval_state.set(None)
         grouping_state.set(config)
         ui.modal_remove()
         ui.notification_show(analysis_grouping_summary(config), type="message")
+        log_activity("Analysis grouping", "Reset", analysis_grouping_summary(config))
 
     def get_data() -> AppData | None:
         return data_state.get()
+
+    def get_spatial_retrieval() -> SpatialRetrieval | None:
+        return spatial_retrieval_state.get()
+
+    def tracked_pxl_proximity(operation: str, data: AppData, metadata: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        started = perf_counter()
+        markers = kwargs.get("markers")
+        marker_count = len(markers) if markers is not None else len(data.marker_options)
+        log_activity(operation, "Started", f"Querying {len(metadata):,} cells and {marker_count:,} markers from PXL.")
+        try:
+            rows = load_pxl_proximity(data, metadata, **kwargs)
+        except Exception as error:
+            log_activity(operation, "Failed", str(error), perf_counter() - started)
+            raise
+        log_activity(operation, "Completed", f"Returned {len(rows):,} rows.", perf_counter() - started)
+        return rows
+
+    def tracked_sample_colocalization(data: AppData, metadata: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        started = perf_counter()
+        log_activity(
+            "Differential colocalization",
+            "Started",
+            f"Aggregating {len(metadata):,} cells inside PXL DuckDB.",
+        )
+        try:
+            rows = sample_pxl_colocalization(data, metadata, **kwargs)
+        except Exception as error:
+            log_activity("Differential colocalization", "Failed", str(error), perf_counter() - started)
+            raise
+        log_activity(
+            "Differential colocalization",
+            "Completed",
+            f"Returned {len(rows):,} sample-pair rows.",
+            perf_counter() - started,
+        )
+        return rows
+
+    def tracked_component_layout(data: AppData, sample: str, component: str) -> pd.DataFrame:
+        started = perf_counter()
+        log_activity("3D layout", "Started", f"Reading component {component} from PXL.")
+        try:
+            rows = read_component_layout(data, sample, component)
+        except Exception as error:
+            log_activity("3D layout", "Failed", str(error), perf_counter() - started)
+            raise
+        log_activity("3D layout", "Completed", f"Returned {len(rows):,} nodes.", perf_counter() - started)
+        return rows
 
     def register_downloads(output_id: str, producer):
         @output(id=f"{output_id}_png")
@@ -1152,25 +1572,27 @@ def server(input: Inputs, output: Outputs, session: Session):
         return grid(abundance_diff_result())
 
     def spatial_metadata(condition_input, celltype_input) -> pd.DataFrame:
-        data = get_data()
-        if data is None:
+        retrieval = get_spatial_retrieval()
+        if retrieval is None:
             return pd.DataFrame()
-        conditions = selected(condition_input, data.metadata["condition"])
-        celltypes = selected(celltype_input, data.metadata["celltype_manual"])
-        metadata = data.metadata[
-            data.metadata["condition"].astype(str).isin(conditions)
-            & data.metadata["celltype_manual"].astype(str).isin(celltypes)
+        metadata = retrieval.metadata
+        conditions = selected(condition_input, metadata["condition"])
+        celltypes = selected(celltype_input, metadata["celltype_manual"])
+        return metadata[
+            metadata["condition"].astype(str).isin(conditions)
+            & metadata["celltype_manual"].astype(str).isin(celltypes)
         ].copy()
-        return filter_pxl_metadata(data, metadata)
 
     @reactive.calc
     def clustering_marker_rows() -> pd.DataFrame:
         data = get_data()
+        retrieval = get_spatial_retrieval()
         marker = input.clustering_marker()
         metadata = spatial_metadata(input.clustering_condition_filter(), input.clustering_celltype_filter())
-        if data is None or not data.pxl_files or metadata.empty or not marker:
+        if data is None or retrieval is None or metadata.empty or not marker or str(marker) not in retrieval.markers:
             return pd.DataFrame()
-        rows = load_pxl_proximity(
+        rows = tracked_pxl_proximity(
+            "Clustering marker",
             data,
             metadata,
             markers=[str(marker)],
@@ -1181,14 +1603,15 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     def fig_clustering_observed():
         data = get_data()
+        retrieval = get_spatial_retrieval()
         rows = clustering_marker_rows()
-        if data is None or rows.empty:
+        if data is None or retrieval is None or rows.empty:
             return empty_figure("No PXL self-proximity values match the selected filters.")
-        embedding = next(iter(embedding_columns(data.metadata)), None)
+        embedding = next(iter(embedding_columns(retrieval.metadata)), None)
         if not embedding:
             return empty_figure("No two-dimensional embedding is available.")
-        x, y = embedding_columns(data.metadata)[embedding]
-        plot_data = rows.merge(data.metadata[["component", x, y]], on="component", how="inner")
+        x, y = embedding_columns(retrieval.metadata)[embedding]
+        plot_data = rows.merge(retrieval.metadata[["component", x, y]], on="component", how="inner")
         figure = px.scatter(
             plot_data, x=x, y=y, color="log2_ratio", hover_data=["component", "condition", "celltype_manual"],
             color_continuous_scale="RdBu_r", color_continuous_midpoint=0, render_mode="webgl",
@@ -1232,13 +1655,20 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def clustering_heatmap_data() -> pd.DataFrame:
         data = get_data()
+        retrieval = get_spatial_retrieval()
         metadata = spatial_metadata(
             input.clustering_heatmap_condition_filter(),
             input.clustering_heatmap_celltype_filter(),
         )
-        if data is None or not data.pxl_files or metadata.empty:
+        if data is None or retrieval is None or metadata.empty:
             return pd.DataFrame()
-        rows = load_pxl_proximity(data, metadata, pair_type="self")
+        rows = tracked_pxl_proximity(
+            "Clustering heatmap",
+            data,
+            metadata,
+            markers=retrieval.markers,
+            pair_type="self",
+        )
         if rows.empty:
             return rows
         rows["marker"] = rows["marker_1"].astype(str)
@@ -1271,15 +1701,22 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def clustering_diff_rows() -> pd.DataFrame:
         data = get_data()
-        if data is None or not data.pxl_files:
+        retrieval = get_spatial_retrieval()
+        if data is None or retrieval is None:
             return pd.DataFrame()
         groups = [input.clustering_diff_group_a(), input.clustering_diff_group_b()]
-        metadata = data.metadata[data.metadata["condition"].isin(groups)].copy()
+        metadata = retrieval.metadata[retrieval.metadata["condition"].isin(groups)].copy()
         celltypes = selected(input.clustering_diff_celltype_filter(), metadata["celltype_manual"])
         metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
         if metadata.empty:
             return pd.DataFrame()
-        rows = load_pxl_proximity(data, metadata, pair_type="self")
+        rows = tracked_pxl_proximity(
+            "Differential clustering",
+            data,
+            metadata,
+            markers=retrieval.markers,
+            pair_type="self",
+        )
         rows["marker"] = rows["marker_1"].astype(str)
         return rows
 
@@ -1353,10 +1790,10 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.update_numeric("coloc_legend_max", value=0.75)
 
     def colocalization_metadata() -> pd.DataFrame:
-        data = get_data()
-        if data is None:
+        retrieval = get_spatial_retrieval()
+        if retrieval is None:
             return pd.DataFrame()
-        metadata = data.metadata.copy()
+        metadata = retrieval.metadata.copy()
         conditions = selected(input.coloc_condition_filter(), metadata["condition"])
         celltypes = selected(input.coloc_celltype_filter(), metadata["celltype_manual"])
         metadata = metadata[
@@ -1365,7 +1802,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         ]
         if input.coloc_scope() == "celltype" and input.coloc_celltype_focus():
             metadata = metadata[metadata["celltype_manual"].astype(str) == str(input.coloc_celltype_focus())]
-        return filter_pxl_metadata(data, metadata)
+        return metadata
 
     def apply_colocalization_filters(scores: pd.DataFrame) -> pd.DataFrame:
         if input.coloc_pixelator_filter():
@@ -1383,7 +1820,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     def heatmap_markers(metadata: pd.DataFrame) -> list[str]:
         data = get_data()
-        if data is None or metadata.empty:
+        retrieval = get_spatial_retrieval()
+        if data is None or retrieval is None or metadata.empty:
             return []
         manual_value = input.coloc_markers()
         manual = (
@@ -1392,7 +1830,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return select_colocalization_heatmap_markers(
             data.abundance,
             metadata,
-            data.marker_options,
+            retrieval.markers,
             n_markers=max(2, int(input.coloc_top_markers() or 40)),
             plot_markers=manual,
         )
@@ -1412,13 +1850,15 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
         data = get_data()
+        retrieval = get_spatial_retrieval()
         metadata = colocalization_metadata()
-        if data is None or not data.pxl_files or metadata.empty:
+        if data is None or retrieval is None or metadata.empty:
             return pd.DataFrame(), "condition", []
         scope = input.coloc_scope() or "condition"
         group_col = "sample_alias" if scope == "sample_alias" else "condition"
         markers = heatmap_markers(metadata)
-        scores = load_pxl_proximity(
+        scores = tracked_pxl_proximity(
+            "Colocalization heatmap",
             data,
             metadata,
             markers=markers,
@@ -1454,8 +1894,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def coloc_notice():
         data = get_data()
-        if data is not None and not data.pxl_files:
-            return ui.div("Assign one or more PXL files in Data to use spatial metrics.", class_="alert alert-warning")
+        retrieval = get_spatial_retrieval()
+        if data is not None and retrieval is None:
+            return ui.div("Retrieve data in Spatial Metrics > Retrieve Data first.", class_="alert alert-warning")
         summary, group_col, markers = colocalization_heatmap_data()
         if summary.empty:
             return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
@@ -1513,12 +1954,20 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def pair_detail_data() -> pd.DataFrame:
         data = get_data()
+        retrieval = get_spatial_retrieval()
         metadata = colocalization_metadata()
         pair = pair_markers(input.coloc_detail_pair())
-        if data is None or not data.pxl_files or metadata.empty or pair is None:
+        if (
+            data is None
+            or retrieval is None
+            or metadata.empty
+            or pair is None
+            or not set(pair).issubset(retrieval.markers)
+        ):
             return pd.DataFrame()
         marker_1, marker_2 = pair
-        scores = load_pxl_proximity(
+        scores = tracked_pxl_proximity(
+            "Colocalization pair",
             data,
             metadata,
             markers=[marker_1, marker_2],
@@ -1582,10 +2031,11 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.calc
     def coloc_sample_data() -> pd.DataFrame:
         data = get_data()
-        if data is None or not data.pxl_files:
+        retrieval = get_spatial_retrieval()
+        if data is None or retrieval is None:
             return pd.DataFrame()
         groups = [input.coloc_diff_group_a(), input.coloc_diff_group_b()]
-        metadata = data.metadata[data.metadata["condition"].isin(groups)].copy()
+        metadata = retrieval.metadata[retrieval.metadata["condition"].isin(groups)].copy()
         celltypes = selected(input.coloc_diff_celltype_filter(), metadata["celltype_manual"])
         metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
         anchor = (
@@ -1593,9 +2043,10 @@ def server(input: Inputs, output: Outputs, session: Session):
             if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor()
             else None
         )
-        summary = sample_pxl_colocalization(
+        summary = tracked_sample_colocalization(
             data,
             metadata,
+            markers=retrieval.markers,
             mean_type=input.coloc_diff_mean() or "population",
             anchor=anchor,
         )
@@ -1687,17 +2138,22 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     def fig_coloc_3d():
         data = get_data()
+        retrieval = get_spatial_retrieval()
         sample = input.coloc_3d_sample()
         component = input.coloc_3d_component()
-        if data is None or not sample or not component:
-            return empty_figure("This H5AD has no selected precomputed 3D component layout.")
+        available_components = set(retrieval.metadata["component"].astype(str)) if retrieval is not None else set()
+        if data is None or retrieval is None or not sample or not component or str(component) not in available_components:
+            return empty_figure("Retrieve spatial data and select one of its components.")
         try:
-            nodes = read_component_layout(data, str(sample), str(component))
+            nodes = tracked_component_layout(data, str(sample), str(component))
         except Exception as error:
             return empty_figure(str(error))
         if "marker" not in nodes:
             nodes["marker"] = "unlabeled"
-        highlights = selected(input.coloc_3d_markers(), nodes["marker"])
+        highlights = [
+            marker for marker in selected(input.coloc_3d_markers(), nodes["marker"])
+            if marker in retrieval.markers
+        ]
         foreground = nodes[nodes["marker"].astype(str).isin(highlights)].copy()
         background = nodes[~nodes["marker"].astype(str).isin(highlights)].copy()
         maximum = max(0, int(input.coloc_3d_max_background() or 7000))
@@ -1729,11 +2185,19 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.data_frame
     def coloc_3d_table():
-        data = get_data()
-        if data is None or not input.coloc_3d_component():
+        retrieval = get_spatial_retrieval()
+        if retrieval is None or not input.coloc_3d_component():
             return grid(pd.DataFrame())
-        columns = [column for column in ("sample", "sample_alias", "condition", "celltype_manual", "component", "n_umi", "n_edges") if column in data.metadata]
-        return grid(data.metadata.loc[data.metadata["component"].astype(str) == str(input.coloc_3d_component()), columns])
+        columns = [
+            column for column in ("sample", "sample_alias", "condition", "celltype_manual", "component", "n_umi", "n_edges")
+            if column in retrieval.metadata
+        ]
+        return grid(
+            retrieval.metadata.loc[
+                retrieval.metadata["component"].astype(str) == str(input.coloc_3d_component()),
+                columns,
+            ]
+        )
 
     def patch_table(name: str) -> pd.DataFrame:
         data = get_data()

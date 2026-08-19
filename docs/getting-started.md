@@ -17,13 +17,14 @@ is prefilled unless `PROXIOME_H5AD` overrides it.
 
 ## Navigate the app
 
-The Python app contains four analysis tabs:
+The Python app contains five top-level tabs:
 
 - **QC** for filtering history, molecule-rank curves, distributions, and metadata
 - **Abundance** for embeddings, marker distributions, annotations, and differential abundance
 - **Spatial Metrics** for PXL-backed self-clustering, colocalization,
   differential spatial scores, and 3D cellgraphs
 - **Patch Analysis** for stored patch marker, Raji signal, and burden tables
+- **Activity Log** for live data-load and spatial-query status
 
 Spatial plots require assigned PXL files with matching H5AD component IDs.
 Patch plots require their optional precomputed H5AD payload.
@@ -34,3 +35,7 @@ Patch plots require their optional precomputed H5AD payload.
 2. Open **QC > Cell Calling** and inspect the stored `n_umi` values.
 3. Open **Abundance > Observed** and inspect marker signal on a stored embedding.
 4. Open **Abundance > Cell Annotation** to verify the cell populations.
+5. Open **Spatial Metrics > Retrieve Data**, choose the population, leave
+   **Number of markers** at **All markers**, and click **Retrieve Spatial Data**.
+6. Use Clustering or Colocalization; their controls can only narrow the active
+   retrieval. Return to Retrieve Data and run it again to replace that scope.

@@ -1,7 +1,8 @@
 # Spatial Metrics
 
-Spatial Metrics contains two readouts:
+Spatial Metrics contains a shared retrieval step and two readouts:
 
+- **Retrieve Data**: defines the cell population and marker scope.
 - **Clustering**: marker self-proximity within each cell graph.
 - **Colocalization**: marker-pair proximity between two different proteins.
 
@@ -9,6 +10,25 @@ These readouts query the precomputed `proximity` table in the assigned PXL
 files. The app uses H5AD component IDs to push the active cell and marker
 filters into PXL and does not recalculate proximity from graph edges. An
 embedded H5AD proximity table is ignored.
+
+## Retrieve Data
+
+Choose the analysis groups, samples, cell types, and number of markers, then
+click **Retrieve Spatial Data**. Marker selection defaults to **All markers**;
+you can instead retrieve the top abundance-ranked markers or a manual set.
+
+The completed retrieval becomes the active spatial scope. Clustering,
+colocalization, differential analyses, pair details, and 3D component choices
+are all restricted to its cells and markers. Controls inside those views can
+only narrow the active scope. If you edit retrieval settings, the existing
+visualizations continue to use the prior retrieval until you click **Retrieve
+Spatial Data** again. Loading another H5AD or changing analysis grouping clears
+the active retrieval.
+
+The app freezes component IDs and marker choices rather than copying the full
+PXL proximity table into browser memory. Each visualization pushes its smaller
+query into the PXL-backed DuckDB view. This preserves a consistent retrieval
+boundary without materializing every marker pair.
 
 ## Clustering
 
@@ -24,10 +44,17 @@ conditions and cell types.
 Use **Clustering > Differential** to compare marker self-proximity between two
 groups.
 
+Clustering controls update their plots reactively inside the active retrieval;
+there is no separate run button.
+
 ## Colocalization
 
 Use **Colocalization > Observed** to view marker-pair proximity heatmaps. The
 heatmap can summarize by condition, sample, or focused cell type.
+
+The default retrieval includes all markers, while the default heatmap remains
+an abundance-ranked top-40 display for readability and query performance. A
+manual heatmap marker set must be a subset of the retrieved markers.
 
 Use **Colocalization > Differential** to compare marker-pair proximity between
 two groups within one cell population. The analysis first calculates the

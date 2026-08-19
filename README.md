@@ -16,12 +16,14 @@ scores and component layouts are queried from PXL on demand.
   distributions, and original metadata inspection.
 - **Abundance**: UMAP marker abundance views, marker distribution plots,
   cell-type composition, annotation heatmaps, and differential abundance.
-- **Spatial Metrics**: clustering and colocalization views backed by the
-  precomputed proximity table in assigned PXL files.
+- **Spatial Metrics**: one shared retrieval defines the population and marker
+  scope used by clustering, colocalization, differential tests, and 3D layouts.
 - **Patch Analysis**: marker unmixing, Raji signal, and patch-burden views when
   their precomputed tables are stored in the H5AD.
 - **On-demand PXL queries**: read only the selected components and markers for
   spatial tables and stored 3D layouts.
+- **Activity Log**: watch H5AD loading, spatial retrieval, PXL queries, and 3D
+  layout reads during the current browser session.
 - **Global analysis grouping**: choose a sample-level metadata column or assign
   custom sample groups for filters, summaries, heatmaps, and comparisons, with
   one-click reset to the H5AD's original `condition` values.
@@ -75,6 +77,12 @@ cell annotations, embeddings, and optional patch tables from H5AD. It ignores
 any embedded H5AD proximity table and reads precomputed spatial scores from the
 assigned PXL files. PXL proximity queries are filtered and aggregated before
 their results are returned to the app.
+
+Before opening a spatial visualization, use **Spatial Metrics > Retrieve Data**
+to choose analysis groups, samples, cell types, and markers. **All markers** is
+the default. Clicking **Retrieve Spatial Data** replaces the active retrieval;
+editing the controls alone does not change it. Every downstream spatial view
+can narrow, but never expand, that active population and marker scope.
 
 ### R
 
