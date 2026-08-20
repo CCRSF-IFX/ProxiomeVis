@@ -329,6 +329,8 @@ reports them as unavailable instead of estimating patches from proximity.
 
 - Plot **SVG** exports are vector images suitable for reports, slides, and
   downstream editing.
+- Every table provides **CSV** and **Excel** downloads for its complete
+  underlying result. Browser grids remain capped at 2,000 rows for performance.
 - Interactive tables can be sorted and filtered without changing the analysis.
 - Record the H5AD name, PXL names, analysis grouping, active retrieval summary,
   applied proximity settings, contrasts, and app commit with every report.

@@ -18,6 +18,7 @@ from proxiome import (
     build_spatial_retrieval,
     calculate_differential,
     clear_pxl_cache,
+    dataframe_export_bytes,
     default_pxl_spec,
     joint_marker_proximity,
     load_h5ad_data,
@@ -43,6 +44,19 @@ def test_default_pxl_spec_can_be_overridden(monkeypatch):
     assert default_pxl_spec().endswith("/Analysis_2nd_combo/Analysis/pixelator/*.pxl")
     monkeypatch.setenv("PROXIOME_PXL", "/tmp/custom/*.pxl")
     assert default_pxl_spec() == "/tmp/custom/*.pxl"
+
+
+def test_table_exports_are_valid_csv_and_excel_files():
+    frame = pd.DataFrame({"marker": ["CD3", "CD19"], "score": [0.5, -0.25]})
+
+    csv_payload = dataframe_export_bytes(frame, "csv")
+    excel_payload = dataframe_export_bytes(frame, "xlsx")
+
+    assert csv_payload.startswith(b"\xef\xbb\xbf")
+    pd.testing.assert_frame_equal(pd.read_csv(BytesIO(csv_payload)), frame)
+    pd.testing.assert_frame_equal(pd.read_excel(BytesIO(excel_payload)), frame)
+    with pytest.raises(ValueError, match="must be 'csv' or 'xlsx'"):
+        dataframe_export_bytes(frame, "pdf")
 
 
 def test_missing_qc_history_is_unavailable_instead_of_fabricated():

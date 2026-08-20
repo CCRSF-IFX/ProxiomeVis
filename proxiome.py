@@ -6,6 +6,7 @@ import glob
 import os
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
+from io import BytesIO
 from itertools import combinations, combinations_with_replacement
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
@@ -89,6 +90,20 @@ def default_h5ad_path() -> str:
 
 def default_pxl_spec() -> str:
     return os.getenv("PROXIOME_PXL", REFERENCE_PXL).strip()
+
+
+def dataframe_export_bytes(frame: pd.DataFrame, file_type: Literal["csv", "xlsx"]) -> bytes:
+    """Serialize a complete table for browser download."""
+    if file_type == "csv":
+        return frame.to_csv(index=False).encode("utf-8-sig")
+    if file_type != "xlsx":
+        raise ValueError("Table export type must be 'csv' or 'xlsx'.")
+    if len(frame) > 1_048_575 or len(frame.columns) > 16_384:
+        raise ValueError("This table exceeds Excel's worksheet limits; export CSV instead.")
+    payload = BytesIO()
+    with pd.ExcelWriter(payload, engine="openpyxl") as writer:
+        frame.to_excel(writer, index=False, sheet_name="Data")
+    return payload.getvalue()
 
 
 def resolve_pxl_paths(spec: str | Path | None) -> list[Path]:

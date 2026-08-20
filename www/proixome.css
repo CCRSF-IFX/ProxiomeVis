@@ -376,6 +376,13 @@ body {
   overflow-x: auto;
 }
 
+.table-pane-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

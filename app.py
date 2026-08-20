@@ -40,6 +40,7 @@ from proxiome import (
     calculate_differential,
     default_h5ad_path,
     default_pxl_spec,
+    dataframe_export_bytes,
     filter_pixelator_proximity,
     load_h5ad_data,
     load_pxl_proximity,
@@ -211,7 +212,19 @@ def label_embedding_axes(figure: go.Figure) -> go.Figure:
 
 
 def table_pane(output_id: str):
-    return ui.div(ui.output_data_frame(output_id), class_="table-pane")
+    return ui.div(
+        ui.div(
+            ui.download_button(
+                f"{output_id}_csv", "CSV", class_="btn-sm btn-outline-secondary"
+            ),
+            ui.download_button(
+                f"{output_id}_xlsx", "Excel", class_="btn-sm btn-outline-secondary"
+            ),
+            class_="table-pane-controls",
+        ),
+        ui.output_data_frame(output_id),
+        class_="table-pane",
+    )
 
 
 def differential_panel(prefix: str):
@@ -413,7 +426,7 @@ def spatial_retrieval_ui():
                 ),
                 ui.card(
                     ui.card_header("Retrieved cells"),
-                    ui.card_body(ui.output_data_frame("spatial_retrieval_table")),
+                    ui.card_body(table_pane("spatial_retrieval_table")),
                 ),
                 class_="p-3",
             ),
@@ -835,7 +848,7 @@ def activity_log_ui():
             ),
             ui.p(ui.output_text("activity_context", inline=True), class_="text-muted"),
             ui.p(ui.strong("Latest: "), ui.output_text("activity_status", inline=True)),
-            ui.output_data_frame("activity_log_table"),
+            table_pane("activity_log_table"),
             class_="container-fluid py-3",
         ),
     )
@@ -1407,13 +1420,15 @@ def server(input: Inputs, output: Outputs, session: Session):
         latest = events[-1]
         return f"{latest['operation']} — {latest['status']}"
 
+    def activity_log_data() -> pd.DataFrame:
+        events = activity_state.get()
+        columns = ["timestamp", "severity", "operation", "status", "details", "seconds", "error_id"]
+        return pd.DataFrame(events, columns=columns).iloc[::-1].reset_index(drop=True)
+
     @output
     @render.data_frame
     def activity_log_table():
-        events = activity_state.get()
-        columns = ["timestamp", "severity", "operation", "status", "details", "seconds", "error_id"]
-        frame = pd.DataFrame(events, columns=columns).iloc[::-1].reset_index(drop=True)
-        return render.DataGrid(frame, filters=True, width="100%", height="620px")
+        return render.DataGrid(activity_log_data(), filters=True, width="100%", height="620px")
 
     @output
     @render.download_button(
@@ -1487,22 +1502,20 @@ def server(input: Inputs, output: Outputs, session: Session):
             ),
         )
 
-    @output
-    @render.data_frame
-    def spatial_retrieval_table():
+    def spatial_retrieval_data() -> pd.DataFrame:
         retrieval = spatial_retrieval_state.get()
         if retrieval is None:
-            return render.DataGrid(pd.DataFrame())
+            return pd.DataFrame()
         columns = [
             column for column in ("component", "sample_alias", "condition", "celltype_manual")
             if column in retrieval.metadata
         ]
-        return render.DataGrid(
-            retrieval.metadata[columns].head(2000),
-            filters=True,
-            width="100%",
-            height="520px",
-        )
+        return retrieval.metadata[columns].copy()
+
+    @output
+    @render.data_frame
+    def spatial_retrieval_table():
+        return grid(spatial_retrieval_data())
 
     def active_retrieval_notice():
         retrieval = spatial_retrieval_state.get()
@@ -1955,6 +1968,40 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             yield payload
 
+    def register_table_downloads(output_id: str, producer):
+        def export(file_type: str) -> bytes:
+            started = perf_counter()
+            try:
+                frame = producer()
+                payload = dataframe_export_bytes(frame, file_type)
+            except Exception as error:
+                message = report_error("Table export", error, perf_counter() - started)
+                raise RuntimeError(message) from None
+            log_activity(
+                "Table export",
+                "Completed",
+                f"Generated {output_id.replace('_', '-')} as {file_type.upper()} "
+                f"with {len(frame):,} rows.",
+                perf_counter() - started,
+            )
+            return payload
+
+        @output(id=f"{output_id}_csv")
+        @render.download_button(
+            filename=f"{output_id.replace('_', '-')}.csv",
+            media_type="text/csv; charset=utf-8",
+        )
+        def _csv():
+            yield export("csv")
+
+        @output(id=f"{output_id}_xlsx")
+        @render.download_button(
+            filename=f"{output_id.replace('_', '-')}.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        def _xlsx():
+            yield export("xlsx")
+
     def grid(frame: pd.DataFrame, *, max_rows: int = 2000):
         return render.DataGrid(frame.head(max_rows), filters=True, width="100%", height="520px")
 
@@ -2020,16 +2067,18 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     register_downloads("qc_filter_plot", fig_qc_filter)
 
+    def qc_filter_data() -> pd.DataFrame:
+        data = get_data()
+        if data is None:
+            return pd.DataFrame()
+        rows = data.qc_filter_counts.copy()
+        samples = selected(input.qc_sample_filter(), rows["sample"])
+        return rows[rows["sample"].astype(str).isin(samples)]
+
     @output
     @render.data_frame
     def qc_filter_table():
-        data = get_data()
-        if data is None:
-            return grid(pd.DataFrame())
-        rows = data.qc_filter_counts.copy()
-        samples = selected(input.qc_sample_filter(), rows["sample"])
-        rows = rows[rows["sample"].astype(str).isin(samples)]
-        return grid(rows)
+        return grid(qc_filter_data())
 
     def fig_qc_rank():
         frame = filtered_qc_metadata()
@@ -2161,15 +2210,18 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     register_downloads("abundance_umap", fig_abundance_umap)
 
-    @output
-    @render.data_frame
-    def abundance_table():
+    def abundance_summary_data() -> pd.DataFrame:
         rows = abundance_with_metadata()
         marker = input.abundance_marker()
         if rows.empty or not marker:
-            return grid(pd.DataFrame())
+            return pd.DataFrame()
         rows = rows[rows["marker"].astype(str) == str(marker)]
-        return grid(summarize_numeric(rows, ["marker", "condition", "celltype_manual"], "abundance"))
+        return summarize_numeric(rows, ["marker", "condition", "celltype_manual"], "abundance")
+
+    @output
+    @render.data_frame
+    def abundance_table():
+        return grid(abundance_summary_data())
 
     def abundance_distribution_data() -> pd.DataFrame:
         rows = abundance_with_metadata()
@@ -3256,22 +3308,23 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     register_downloads("coloc_3d_layout", fig_coloc_3d)
 
-    @output
-    @render.data_frame
-    def coloc_3d_table():
+    def coloc_3d_data() -> pd.DataFrame:
         retrieval = get_spatial_retrieval()
         if retrieval is None or not input.coloc_3d_component():
-            return grid(pd.DataFrame())
+            return pd.DataFrame()
         columns = [
             column for column in ("sample", "sample_alias", "condition", "celltype_manual", "component", "n_umi", "n_edges")
             if column in retrieval.metadata
         ]
-        return grid(
-            retrieval.metadata.loc[
-                retrieval.metadata["component"].astype(str) == str(input.coloc_3d_component()),
-                columns,
-            ]
-        )
+        return retrieval.metadata.loc[
+            retrieval.metadata["component"].astype(str) == str(input.coloc_3d_component()),
+            columns,
+        ]
+
+    @output
+    @render.data_frame
+    def coloc_3d_table():
+        return grid(coloc_3d_data())
 
     def patch_table(name: str) -> pd.DataFrame:
         data = get_data()
@@ -3822,6 +3875,38 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.data_frame
     def patch_composition_table():
         return grid(patch_composition_data())
+
+    table_exports = {
+        "activity_log_table": activity_log_data,
+        "spatial_retrieval_table": spatial_retrieval_data,
+        "qc_filter_table": qc_filter_data,
+        "qc_metadata_table": filtered_qc_metadata,
+        "abundance_table": abundance_summary_data,
+        "abundance_distribution_table": lambda: summarize_numeric(
+            abundance_distribution_data(),
+            ["marker", "sample_alias", "condition", "celltype_manual"],
+            "abundance",
+        ),
+        "abundance_composition_table": composition_data,
+        "abundance_diff_table": abundance_diff_result,
+        "clustering_per_marker_table": lambda: summarize_numeric(
+            clustering_marker_rows(),
+            ["marker", "condition", "celltype_manual"],
+            "log2_ratio",
+        ),
+        "clustering_summary_table": clustering_heatmap_data,
+        "clustering_diff_table": clustering_diff_result,
+        "coloc_table": lambda: colocalization_heatmap_data()[0],
+        "coloc_pair_table": pair_detail_data,
+        "coloc_diff_table": coloc_diff_result,
+        "coloc_3d_table": coloc_3d_data,
+        "patch_marker_table": patch_marker_profile,
+        "patch_candidate_table": patch_candidate_data,
+        "patch_burden_table": patch_burden_data,
+        "patch_composition_table": patch_composition_data,
+    }
+    for table_id, producer in table_exports.items():
+        register_table_downloads(table_id, producer)
 
 
 app = App(app_ui, server, static_assets=APP_DIR / "www")
