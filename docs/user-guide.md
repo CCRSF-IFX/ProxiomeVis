@@ -236,9 +236,11 @@ cell clustering.
 
 | Control | Interpretation |
 | --- | --- |
-| **Marker** | Marker whose self-proximity is shown on the embedding or violin plot |
+| **Marker** | Marker whose self-proximity is shown in the violin plot |
 | **Analysis group / Cell type** | Live filters within the active retrieval |
-| **Top markers** | Summary-heatmap markers ranked by variation in mean self-proximity; default 20, maximum 40 |
+| **Protein set** | Uses the top variable proteins by default or an explicit custom list from the active spatial retrieval |
+| **Top proteins** | Number ranked by variation in mean self-proximity; default 20, maximum 40 |
+| **Proteins** | Ordered custom list used when **Custom proteins** is selected |
 | **Differential contrast** | Median self-proximity in group A minus group B |
 
 Clustering differential uses a two-sided Mann-Whitney U test on detected

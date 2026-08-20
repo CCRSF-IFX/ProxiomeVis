@@ -45,14 +45,13 @@ population and proximity definition are reused by differential colocalization.
 
 ## Clustering
 
-Use **Clustering > Observed** to inspect a selected marker's self-proximity
-across cells.
-
 Use **Clustering > Per Marker** to compare one marker across conditions or cell
 types.
 
 Use **Clustering > Summary Heatmap** for a marker-level heatmap across selected
-conditions and cell types.
+conditions and cell types. Keep **Protein set** at **Top variable proteins** to
+rank proteins by variation in mean self-proximity, or choose **Custom proteins**
+to display an explicit ordered list from the active spatial retrieval.
 
 Use **Clustering > Differential** to compare marker self-proximity between two
 groups.

@@ -49,6 +49,7 @@ from proxiome import (
     read_component_layout,
     resolve_h5ad_path,
     sample_pxl_colocalization,
+    select_clustering_heatmap_markers,
     select_colocalization_heatmap_markers,
     select_proximity_profile_markers,
     summarize_numeric,
@@ -423,7 +424,7 @@ def spatial_retrieval_ui():
 def clustering_ui():
     sidebar = ui.sidebar(
         ui.panel_conditional(
-            "input.clustering_mode === 'Observed' || input.clustering_mode === 'Per Marker'",
+            "input.clustering_mode === 'Per Marker'",
             ui.accordion(
                 ui.accordion_panel("Display", selectize("clustering_marker", "Marker")),
                 ui.accordion_panel(
@@ -437,7 +438,22 @@ def clustering_ui():
         ui.panel_conditional(
             "input.clustering_mode === 'Summary Heatmap'",
             ui.accordion(
-                ui.accordion_panel("Display", ui.input_numeric("clustering_heatmap_marker_count", "Top markers", 20, min=2, max=40)),
+                ui.accordion_panel(
+                    "Display",
+                    ui.input_select(
+                        "clustering_heatmap_marker_mode",
+                        "Protein set",
+                        {"top": "Top variable proteins", "manual": "Custom proteins"},
+                    ),
+                    ui.panel_conditional(
+                        "input.clustering_heatmap_marker_mode === 'top'",
+                        ui.input_numeric("clustering_heatmap_marker_count", "Top proteins", 20, min=1, max=40),
+                    ),
+                    ui.panel_conditional(
+                        "input.clustering_heatmap_marker_mode === 'manual'",
+                        selectize("clustering_heatmap_markers", "Proteins", multiple=True),
+                    ),
+                ),
                 ui.accordion_panel(
                     "Filters",
                     selectize("clustering_heatmap_condition_filter", "Analysis group", multiple=True),
@@ -460,7 +476,6 @@ def clustering_ui():
             ui.div(
                 ui.output_ui("clustering_retrieval_notice"),
                 ui.navset_card_underline(
-                    ui.nav_panel("Observed", plot_pane("clustering_plot"), table_pane("clustering_table")),
                     ui.nav_panel("Per Marker", plot_pane("clustering_per_marker"), table_pane("clustering_per_marker_table")),
                     ui.nav_panel("Summary Heatmap", plot_pane("clustering_summary_heatmap", height="680px"), table_pane("clustering_summary_table")),
                     ui.nav_panel("Differential", differential_panel("clustering_diff")),
@@ -1634,6 +1649,9 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.update_selectize(input_id, choices=markers, selected=markers[0] if markers else None, server=True)
         for input_id in ("coloc_markers", "coloc_3d_markers"):
             ui.update_selectize(input_id, choices=markers, selected=markers[: min(15, len(markers))], server=True)
+        ui.update_selectize(
+            "clustering_heatmap_markers", choices=markers, selected=[], server=True
+        )
         for input_id in (
             "clustering_condition_filter", "clustering_heatmap_condition_filter",
         ):
@@ -2372,36 +2390,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         rows["marker"] = rows["marker_1"].astype(str)
         return rows
 
-    def fig_clustering_observed():
-        data = get_data()
-        retrieval = get_spatial_retrieval()
-        rows = clustering_marker_rows()
-        if data is None or retrieval is None or rows.empty:
-            return empty_figure("No PXL self-proximity values match the selected filters.")
-        embedding = next(iter(embedding_columns(retrieval.metadata)), None)
-        if not embedding:
-            return empty_figure("No two-dimensional embedding is available.")
-        x, y = embedding_columns(retrieval.metadata)[embedding]
-        plot_data = rows.merge(retrieval.metadata[["component", x, y]], on="component", how="inner")
-        figure = px.scatter(
-            plot_data, x=x, y=y, color="log2_ratio", hover_data=["component", "condition", "celltype_manual"],
-            color_continuous_scale="RdBu_r", color_continuous_midpoint=0, render_mode="webgl",
-        )
-        figure.update_traces(marker={"size": 4, "opacity": 0.82})
-        return style_figure(figure)
-
-    @output
-    @render_plotly
-    def clustering_plot():
-        return fig_clustering_observed()
-
-    register_downloads("clustering_plot", fig_clustering_observed)
-
-    @output
-    @render.data_frame
-    def clustering_table():
-        return grid(summarize_numeric(clustering_marker_rows(), ["marker", "condition", "celltype_manual"], "log2_ratio"))
-
     def fig_clustering_per_marker():
         rows = clustering_marker_rows()
         if rows.empty:
@@ -2433,24 +2421,43 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
         if data is None or retrieval is None or metadata.empty:
             return pd.DataFrame()
+        marker_mode = str(input.clustering_heatmap_marker_mode() or "top")
+        marker_value = input.clustering_heatmap_markers()
+        custom_markers = (
+            list(map(str, marker_value))
+            if isinstance(marker_value, (list, tuple))
+            else [str(marker_value)] if marker_value else []
+        )
+        query_markers = custom_markers if marker_mode == "manual" else list(retrieval.markers)
+        if not query_markers:
+            return pd.DataFrame()
         rows = tracked_pxl_proximity(
             "Clustering heatmap",
             data,
             metadata,
-            markers=retrieval.markers,
+            markers=query_markers,
             pair_type="self",
         )
         if rows.empty:
             return rows
         rows["marker"] = rows["marker_1"].astype(str)
         summary = rows.groupby(["marker", "condition", "celltype_manual"], observed=True)["log2_ratio"].mean().rename("mean_log2_ratio").reset_index()
-        count = max(2, int(input.clustering_heatmap_marker_count() or 20))
-        ranking = summary.groupby("marker", observed=True)["mean_log2_ratio"].std().fillna(0).sort_values(ascending=False)
-        return summary[summary["marker"].isin(ranking.head(count).index)]
+        markers = select_clustering_heatmap_markers(
+            summary,
+            retrieval.markers,
+            mode=marker_mode,
+            n_markers=max(1, int(input.clustering_heatmap_marker_count() or 20)),
+            selected_markers=custom_markers,
+        )
+        summary = summary[summary["marker"].isin(markers)].copy()
+        summary["marker"] = pd.Categorical(summary["marker"], markers, ordered=True)
+        return summary
 
     def fig_clustering_heatmap():
         rows = clustering_heatmap_data()
         if rows.empty:
+            if input.clustering_heatmap_marker_mode() == "manual" and not input.clustering_heatmap_markers():
+                return empty_figure("Select at least one custom protein.")
             return empty_figure("No PXL clustering summary matches the selected filters.")
         rows["population"] = rows["condition"].astype(str) + " · " + rows["celltype_manual"].astype(str)
         matrix = rows.pivot(index="population", columns="marker", values="mean_log2_ratio")

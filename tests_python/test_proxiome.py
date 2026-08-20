@@ -29,6 +29,7 @@ from proxiome import (
     resolve_h5ad_path,
     sample_pxl_colocalization,
     sample_level_columns,
+    select_clustering_heatmap_markers,
     select_colocalization_heatmap_markers,
     select_proximity_profile_markers,
     summarize_sample_colocalization,
@@ -250,6 +251,28 @@ def test_analysis_grouping_edits_and_resets_conditions_from_preserved_source():
     reset = update_analysis_grouping_config(config, mode="column", column="condition")
     restored = apply_analysis_grouping(grouped, reset["mapping"], reset["label"])
     assert restored.metadata["condition"].tolist() == ["A", "A", "B", "B"]
+
+
+def test_clustering_heatmap_accepts_an_ordered_custom_protein_list():
+    summary = pd.DataFrame(
+        {
+            "marker": ["A", "A", "B", "B", "C", "C"],
+            "mean_log2_ratio": [0, 4, 1, 1, -2, 2],
+        }
+    )
+
+    assert select_clustering_heatmap_markers(
+        summary,
+        ["A", "B", "C"],
+        mode="manual",
+        selected_markers=["C", "missing", "A", "C"],
+    ) == ["C", "A"]
+    assert select_clustering_heatmap_markers(
+        summary,
+        ["A", "B", "C"],
+        mode="top",
+        n_markers=2,
+    ) == ["A", "C"]
 
 
 def test_differential_uses_median_effect_and_bh_adjustment():

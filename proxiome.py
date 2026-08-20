@@ -1103,6 +1103,36 @@ def select_colocalization_heatmap_markers(
     return marker_means["marker"].head(count).tolist()
 
 
+def select_clustering_heatmap_markers(
+    summary: pd.DataFrame,
+    available_markers: Sequence[str],
+    *,
+    mode: Literal["top", "manual"] = "top",
+    n_markers: int = 20,
+    selected_markers: Sequence[str] | None = None,
+) -> list[str]:
+    """Select variable or explicit proteins for the clustering heatmap."""
+    available = set(map(str, available_markers))
+    if mode == "manual":
+        return [
+            marker
+            for marker in dict.fromkeys(map(str, selected_markers or ()))
+            if marker in available
+        ]
+    if mode != "top":
+        raise ValueError("Clustering heatmap marker mode must be 'top' or 'manual'.")
+    if summary.empty:
+        return []
+    ranking = (
+        summary[summary["marker"].astype(str).isin(available)]
+        .groupby("marker", observed=True)["mean_log2_ratio"]
+        .std()
+        .fillna(0)
+        .sort_values(ascending=False, kind="stable")
+    )
+    return ranking.head(max(1, int(n_markers))).index.astype(str).tolist()
+
+
 
 def summarize_numeric(data: pd.DataFrame, groups: Sequence[str], value: str) -> pd.DataFrame:
     if data.empty:
