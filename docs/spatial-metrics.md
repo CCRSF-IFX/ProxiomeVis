@@ -27,10 +27,11 @@ visualizations continue to use the prior retrieval until you click **Retrieve
 Spatial Data** again. Loading another H5AD or changing analysis grouping clears
 the active retrieval.
 
-The app freezes component IDs and marker choices rather than copying the full
-PXL proximity table into browser memory. Each visualization pushes its smaller
-query into the PXL-backed DuckDB view. This preserves a consistent retrieval
-boundary without materializing every marker pair.
+The app freezes component IDs and marker choices and extracts their per-cell
+self-proximity rows during retrieval. Every Clustering view reuses that frozen
+table without querying PXL again. Marker-pair views continue to push smaller,
+focused queries into the PXL-backed DuckDB view rather than materializing every
+possible pair.
 
 ## Proximity Profile
 

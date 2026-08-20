@@ -62,6 +62,7 @@ class SpatialRetrieval:
     metadata: pd.DataFrame
     markers: tuple[str, ...]
     marker_mode: str
+    self_proximity: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -265,12 +266,25 @@ def build_spatial_retrieval(
         )
     if not markers:
         raise ValueError("Select at least one marker for spatial retrieval.")
+    self_proximity = load_pxl_proximity(
+        data,
+        metadata,
+        markers=markers,
+        pair_type="self",
+    )
+    if self_proximity.empty:
+        raise ValueError("No PXL self-proximity rows match the selected retrieval scope.")
+    self_proximity["marker"] = self_proximity["marker_1"].astype(str)
+    self_proximity = self_proximity.drop(columns=["marker_1", "marker_2"])
+    for column in ("marker", "condition", "celltype_manual", "sample_alias", "sample"):
+        self_proximity[column] = self_proximity[column].astype("category")
     return SpatialRetrieval(
         retrieved_at=retrieved_at,
         request=request,
         metadata=metadata,
         markers=tuple(markers),
         marker_mode=marker_mode,
+        self_proximity=self_proximity,
     )
 
 

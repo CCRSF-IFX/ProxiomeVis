@@ -1245,7 +1245,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         log_activity(
             "Spatial retrieval",
             "Started",
-            f"Resolving {len(celltypes):,} cell type(s) and "
+            f"Retrieving self-proximity for {len(celltypes):,} cell type(s) and "
             f"{'all' if marker_mode == 'all' else marker_count if marker_mode == 'top' else len(markers)} markers.",
         )
         try:
@@ -1267,7 +1267,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         log_activity(
             "Spatial retrieval",
             "Completed",
-            f"{len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
+            f"{len(retrieval.metadata):,} cells, {len(retrieval.markers):,} markers, and "
+            f"{len(retrieval.self_proximity):,} self-proximity rows.",
             perf_counter() - started,
         )
         return id(data), retrieval
@@ -1372,7 +1373,9 @@ def server(input: Inputs, output: Outputs, session: Session):
         spatial_retrieval_state.set(retrieval)
         coloc_analysis_state.set(None)
         ui.notification_show(
-            f"Spatial retrieval ready: {len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
+            f"Spatial retrieval ready: {len(retrieval.metadata):,} cells, "
+            f"{len(retrieval.markers):,} markers, and "
+            f"{len(retrieval.self_proximity):,} self-proximity rows.",
             type="message",
         )
 
@@ -1457,6 +1460,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             "active_retrieval": {
                 "cells": len(retrieval.metadata),
                 "markers": len(retrieval.markers),
+                "self_proximity_rows": len(retrieval.self_proximity),
                 "retrieved_at": retrieval.retrieved_at,
             } if retrieval is not None else None,
         }
@@ -1495,6 +1499,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 ("Samples", f"{metadata['sample_alias'].nunique():,}"),
                 ("Cell types", f"{metadata['celltype_manual'].nunique():,}"),
                 ("Markers", f"{len(retrieval.markers):,}"),
+                ("Self-proximity rows", f"{len(retrieval.self_proximity):,}"),
             ]),
             ui.p(
                 f"Retrieved {retrieval.retrieved_at} · marker selection: {retrieval.marker_mode}.",
@@ -1527,7 +1532,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         details = (
             f"{len(retrieval.metadata):,} cells, "
             f"{retrieval.metadata['sample_alias'].nunique():,} samples, and "
-            f"{len(retrieval.markers):,} markers"
+            f"{len(retrieval.markers):,} markers with "
+            f"{len(retrieval.self_proximity):,} retrieved self-proximity rows"
         )
         if retrieval.request != current_spatial_request():
             return ui.div(
@@ -2426,21 +2432,17 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def clustering_marker_rows() -> pd.DataFrame:
-        data = get_data()
         retrieval = get_spatial_retrieval()
         marker = input.clustering_marker()
         metadata = spatial_metadata(input.clustering_condition_filter(), input.clustering_celltype_filter())
-        if data is None or retrieval is None or metadata.empty or not marker or str(marker) not in retrieval.markers:
+        if retrieval is None or metadata.empty or not marker or str(marker) not in retrieval.markers:
             return pd.DataFrame()
-        rows = tracked_pxl_proximity(
-            "Clustering marker",
-            data,
-            metadata,
-            markers=[str(marker)],
-            pair_type="self",
-        )
-        rows["marker"] = rows["marker_1"].astype(str)
-        return rows
+        components = set(metadata["component"].astype(str))
+        rows = retrieval.self_proximity
+        return rows[
+            rows["component"].astype(str).isin(components)
+            & rows["marker"].astype(str).eq(str(marker))
+        ].copy()
 
     def fig_clustering_per_marker():
         rows = clustering_marker_rows()
@@ -2465,13 +2467,12 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def clustering_heatmap_data() -> pd.DataFrame:
-        data = get_data()
         retrieval = get_spatial_retrieval()
         metadata = spatial_metadata(
             input.clustering_heatmap_condition_filter(),
             input.clustering_heatmap_celltype_filter(),
         )
-        if data is None or retrieval is None or metadata.empty:
+        if retrieval is None or metadata.empty:
             return pd.DataFrame()
         marker_mode = str(input.clustering_heatmap_marker_mode() or "top")
         marker_value = input.clustering_heatmap_markers()
@@ -2480,30 +2481,33 @@ def server(input: Inputs, output: Outputs, session: Session):
             if isinstance(marker_value, (list, tuple))
             else [str(marker_value)] if marker_value else []
         )
-        query_markers = custom_markers if marker_mode == "manual" else list(retrieval.markers)
-        if not query_markers:
+        if marker_mode == "manual" and not custom_markers:
             return pd.DataFrame()
-        rows = tracked_pxl_proximity(
-            "Clustering heatmap",
-            data,
-            metadata,
-            markers=query_markers,
-            pair_type="self",
-        )
+        components = set(metadata["component"].astype(str))
+        query_markers = custom_markers if marker_mode == "manual" else list(retrieval.markers)
+        rows = retrieval.self_proximity
+        rows = rows[
+            rows["component"].astype(str).isin(components)
+            & rows["marker"].astype(str).isin(query_markers)
+        ].copy()
         if rows.empty:
             return rows
-        rows["marker"] = rows["marker_1"].astype(str)
-        summary = rows.groupby(["marker", "condition", "celltype_manual"], observed=True)["log2_ratio"].mean().rename("mean_log2_ratio").reset_index()
+        rows = (
+            rows.groupby(["marker", "condition", "celltype_manual"], observed=True)["log2_ratio"]
+            .mean()
+            .rename("mean_log2_ratio")
+            .reset_index()
+        )
         markers = select_clustering_heatmap_markers(
-            summary,
+            rows,
             retrieval.markers,
             mode=marker_mode,
             n_markers=max(1, int(input.clustering_heatmap_marker_count() or 20)),
             selected_markers=custom_markers,
         )
-        summary = summary[summary["marker"].isin(markers)].copy()
-        summary["marker"] = pd.Categorical(summary["marker"], markers, ordered=True)
-        return summary
+        rows = rows[rows["marker"].astype(str).isin(markers)].copy()
+        rows["marker"] = pd.Categorical(rows["marker"], markers, ordered=True)
+        return rows
 
     def fig_clustering_heatmap():
         rows = clustering_heatmap_data()
@@ -2530,9 +2534,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def clustering_diff_rows() -> pd.DataFrame:
-        data = get_data()
         retrieval = get_spatial_retrieval()
-        if data is None or retrieval is None:
+        if retrieval is None:
             return pd.DataFrame()
         groups = [input.clustering_diff_group_a(), input.clustering_diff_group_b()]
         metadata = retrieval.metadata[retrieval.metadata["condition"].isin(groups)].copy()
@@ -2540,15 +2543,9 @@ def server(input: Inputs, output: Outputs, session: Session):
         metadata = metadata[metadata["celltype_manual"].astype(str).isin(celltypes)]
         if metadata.empty:
             return pd.DataFrame()
-        rows = tracked_pxl_proximity(
-            "Differential clustering",
-            data,
-            metadata,
-            markers=retrieval.markers,
-            pair_type="self",
-        )
-        rows["marker"] = rows["marker_1"].astype(str)
-        return rows
+        components = set(metadata["component"].astype(str))
+        rows = retrieval.self_proximity
+        return rows[rows["component"].astype(str).isin(components)].copy()
 
     @reactive.calc
     def clustering_diff_result():
@@ -3016,6 +3013,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 "cells": len(retrieval.metadata),
                 "samples": int(retrieval.metadata["sample_alias"].nunique()),
                 "markers": len(retrieval.markers),
+                "self_proximity_rows": len(retrieval.self_proximity),
             }
             if retrieval is not None
             else None,

@@ -421,6 +421,24 @@ def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkey
         "proxiome.filter_pxl_metadata",
         lambda _data, metadata=None: _data.metadata if metadata is None else metadata,
     )
+    captured = {}
+
+    def fake_self_proximity(_data, metadata, *, markers, pair_type):
+        captured.update(markers=markers, pair_type=pair_type)
+        return pd.DataFrame(
+            {
+                "component": metadata["component"],
+                "marker_1": ["A", "B"],
+                "marker_2": ["A", "B"],
+                "log2_ratio": [0.5, 1.0],
+                "condition": metadata["condition"],
+                "celltype_manual": metadata["celltype_manual"],
+                "sample_alias": metadata["sample_alias"],
+                "sample": metadata["sample"],
+            }
+        )
+
+    monkeypatch.setattr("proxiome.load_pxl_proximity", fake_self_proximity)
     request = (("A",), ("s1",), ("T",), "all", None, ())
     retrieval = build_spatial_retrieval(
         data,
@@ -434,6 +452,8 @@ def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkey
     assert retrieval.request == request
     assert retrieval.metadata["component"].tolist() == ["c1", "c2"]
     assert retrieval.markers == ("A", "B")
+    assert captured == {"markers": ["A", "B"], "pair_type": "self"}
+    assert retrieval.self_proximity["marker"].astype(str).tolist() == ["A", "B"]
     data.metadata.loc[data.metadata["component"] == "c1", "condition"] = "changed"
     assert retrieval.metadata["condition"].tolist() == ["A", "A"]
 
