@@ -23,12 +23,14 @@ The Python app contains five top-level tabs:
 - **Abundance** for embeddings, marker distributions, annotations, and differential abundance
 - **Spatial Metrics** for PXL-backed self-clustering, colocalization,
   differential spatial scores, and 3D cellgraphs
-- **Patch Analysis** for stored patch marker, Raji signal, and burden tables
+- **Patch Analysis** for receiver/target marker selection, prepared candidate
+  screening, and stored patch burden/composition tables
 - **Activity Log** for severity-tagged data-load and spatial-query status and a
   downloadable, path-sanitized diagnostics bundle
 
-Spatial plots require assigned PXL files with matching H5AD component IDs.
-Patch plots require their optional precomputed H5AD payload.
+Spatial and patch candidate plots require assigned PXL files with matching H5AD
+component IDs. Detected-patch plots require their optional precomputed H5AD
+payload.
 
 ## Recommended first checks
 
@@ -41,3 +43,6 @@ Patch plots require their optional precomputed H5AD payload.
 6. Open **Proximity Profile** to profile proximity scores, then continue to
    Clustering, Colocalization, or 3D Layout. Return to Retrieve Data and run it
    again to replace the active scope.
+7. In **Patch Analysis**, select receiver and target populations and markers,
+   then click **Prepare Patch Data** before opening candidate or stored-result
+   views.

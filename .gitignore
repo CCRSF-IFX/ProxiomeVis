@@ -1,56 +1,36 @@
-# R session and workspace files
-.Rhistory
-.RData
-.Ruserdata
-.Rproj.user/
-*.Rproj
+# Python environments and caches
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
 
-# Shiny and app runtime artifacts
-rsconnect/
-shiny-server/
+# Untracked artifacts left by legacy checkouts
+renv/
+tests/testthat/
+
+# Application runtime artifacts and local data
+cache/
+runtime/
+.ProxiomeVis/
 logs/
 *.log
 *.pid
 *.sock
-
-# Local app data and generated caches
-cache/
-runtime/
-.ProxiomeVis/
-*.rds
-*.rda
-*.RData
 *.sqlite
 *.sqlite3
 
-# Keep source-controlled renv metadata, ignore generated environments
-.venv/
-__pycache__/
-.pytest_cache/
-*.py[cod]
-renv/library/
-renv/local/
-renv/cellar/
-renv/lock/
-renv/python/
-renv/sandbox/
-renv/staging/
-
-# R package/build artifacts
-*.tar.gz
-*.tgz
-*.zip
-*.so
-*.o
-
-# Test and report output
-testthat.Rout*
-Rplots.pdf
+# Generated output
 reports/
 output/
 exports/
 site/
 python-cache/
+*.tar.gz
+*.tgz
+*.zip
+*.so
+*.o
 
 # Editor, OS, and temporary files
 .DS_Store

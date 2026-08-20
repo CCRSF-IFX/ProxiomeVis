@@ -1,16 +1,15 @@
 # Troubleshooting
 
-## The RDS load takes a long time
+## The H5AD load takes a long time
 
-The first load of a new RDS can take several minutes because ProxiomeVis builds
-compact tables for interactive plotting. Loading the same RDS again should be
-faster if the cache under `$HOME/.ProxiomeVis/cache` is valid.
+Large H5AD files can take time to materialize metadata and abundance tables.
+Use the Activity Log to distinguish H5AD loading from later PXL queries.
 
-## The app says the RDS path is not readable
+## The app says the H5AD path is not readable
 
 Check that the path is absolute and visible from the machine running Shiny. On
 Open OnDemand, the path must be readable from the compute session, not only from
-your local computer.
+your local computer. The input must be a processed `.h5ad` file.
 
 ## A plot is empty
 

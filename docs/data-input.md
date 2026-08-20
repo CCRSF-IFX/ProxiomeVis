@@ -51,8 +51,9 @@ In **Data**, assign a `.layout.pxl` file, directory, glob, or comma/newline-
 separated paths. Clustering and colocalization query the PXL proximity table by
 the H5AD component IDs and selected markers. Differential colocalization is
 aggregated inside the PXL DuckDB database before results are returned. The 3D
-view reads the selected component's stored layout on demand. PXL is not used
-for QC, abundance, annotations, or patch analysis.
+view reads the selected component's stored layout on demand. Patch candidate
+screening also queries PXL after **Prepare Patch Data**. PXL is not used for
+QC, abundance, or annotations.
 
 ## Analysis grouping
 

@@ -1357,7 +1357,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.ui
     def load_status():
-        return ui.div(inspect_message(), class_="rds-load-status")
+        return ui.div(inspect_message(), class_="data-load-status")
 
     @reactive.effect
     @reactive.event(input.clear_activity_log)

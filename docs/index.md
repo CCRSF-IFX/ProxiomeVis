@@ -10,7 +10,8 @@ normalized abundance, QC history, annotations, and embeddings.
 - **Abundance**: marker abundance on embeddings, distributions, cell-type composition, annotation heatmaps, and differential abundance
 - **Spatial Metrics**: PXL-backed self-clustering, marker-pair proximity, and
   3D cellgraphs
-- **Patch Analysis**: H5AD-stored patch marker, Raji signal, and burden tables
+- **Patch Analysis**: receiver/target marker selection, prepared PXL candidate
+  screening, and stored patch burden/composition tables
 
 The Python app uses H5AD for cell metadata, abundance, embeddings, and optional
 patch tables. It queries proximity and layouts from assigned PXL files.

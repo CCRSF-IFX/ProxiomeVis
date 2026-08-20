@@ -17,13 +17,8 @@ theme:
   name: readthedocs
   highlightjs: true
   hljs_languages:
-    - r
     - bash
     - yaml
-
-exclude_docs: |
-  prompt/**
-  superpowers/**
 
 # Page Tree
 nav:
