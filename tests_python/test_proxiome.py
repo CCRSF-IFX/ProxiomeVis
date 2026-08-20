@@ -498,6 +498,12 @@ def test_patch_population_choices_exclude_numeric_qc_fields():
     assert "umap_1" not in choices
 
 
+def test_empty_patch_marker_preview_has_no_suggestions():
+    from app import suggested_patch_markers
+
+    assert suggested_patch_markers(pd.DataFrame()) == ([], [])
+
+
 def test_patch_retrieval_freezes_scope_and_uses_stored_candidate_tables():
     data = make_data()
     metadata = data.metadata.copy()

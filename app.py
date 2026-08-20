@@ -996,6 +996,14 @@ def patch_population_columns(metadata: pd.DataFrame) -> list[str]:
     return list(dict.fromkeys([column for column in preferred if column in candidates] + candidates))
 
 
+def suggested_patch_markers(rows: pd.DataFrame) -> tuple[list[str], list[str]]:
+    if rows.empty or not {"marker", "marker_class"}.issubset(rows):
+        return [], []
+    target = rows.loc[rows["marker_class"] == "Target marker", "marker"].astype(str).tolist()
+    receiver = rows.loc[rows["marker_class"] == "Receiver marker", "marker"].astype(str).tolist()
+    return target, receiver
+
+
 def metric_boxes(items: list[tuple[str, str]]):
     return ui.layout_columns(
         *[ui.value_box(label, value, theme="teal", height="110px") for label, value in items],
@@ -3407,13 +3415,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     def update_patch_marker_suggestions() -> None:
-        rows = patch_marker_profile()
-        target_markers = rows.loc[
-            rows.get("marker_class", pd.Series(dtype=str)) == "Target marker", "marker"
-        ].astype(str).tolist()
-        receiver_markers = rows.loc[
-            rows.get("marker_class", pd.Series(dtype=str)) == "Receiver marker", "marker"
-        ].astype(str).tolist()
+        target_markers, receiver_markers = suggested_patch_markers(patch_marker_profile())
         ui.update_selectize(
             "patch_target_markers", selected=target_markers, server=True
         )
