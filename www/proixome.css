@@ -435,6 +435,56 @@ body {
   background: #fbfcfc;
 }
 
+.documentation-page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  color: #243238;
+  line-height: 1.6;
+}
+
+.documentation-page h1,
+.documentation-page h2,
+.documentation-page h3 {
+  color: #123f44;
+  scroll-margin-top: 80px;
+}
+
+.documentation-page h1 {
+  margin-bottom: 1rem;
+}
+
+.documentation-page h2 {
+  margin-top: 2.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.documentation-page h3 {
+  margin-top: 1.75rem;
+}
+
+.documentation-page table {
+  width: 100%;
+  margin: 1rem 0 1.5rem;
+  border-collapse: collapse;
+}
+
+.documentation-page th,
+.documentation-page td {
+  padding: 0.7rem 0.8rem;
+  vertical-align: top;
+  border: 1px solid var(--line);
+}
+
+.documentation-page th {
+  background: #edf5f4;
+  color: #123f44;
+}
+
+.documentation-page code {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .source-chip {
     margin-top: 12px;

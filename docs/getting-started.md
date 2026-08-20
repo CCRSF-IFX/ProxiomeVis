@@ -17,7 +17,7 @@ is prefilled unless `PROXIOME_H5AD` overrides it.
 
 ## Navigate the app
 
-The Python app contains five top-level tabs:
+The Python app contains six top-level tabs:
 
 - **QC** for filtering history, molecule-rank curves, distributions, and metadata
 - **Abundance** for embeddings, marker distributions, annotations, and differential abundance
@@ -25,6 +25,8 @@ The Python app contains five top-level tabs:
   differential spatial scores, and 3D cellgraphs
 - **Patch Analysis** for receiver/target marker selection, prepared candidate
   screening, and stored patch burden/composition tables
+- **Documentation** for the complete workflow, parameter defaults, statistical
+  units, interpretation guidance, and reporting checklist
 - **Activity Log** for severity-tagged data-load and spatial-query status and a
   downloadable, path-sanitized diagnostics bundle
 

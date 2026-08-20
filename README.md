@@ -19,6 +19,8 @@ demand.
   clustering, differential colocalization, and 3D layouts.
 - **Patch Analysis**: receiver/target marker selection, prepared candidate
   screening from PXL, and stored patch burden/composition views.
+- **Documentation**: an in-app production workflow, parameter reference,
+  interpretation guidance, and reporting checklist shared with the MkDocs site.
 - **Activity Log**: structured session events and downloadable sanitized
   diagnostics.
 - **Analysis grouping**: metadata-derived or custom sample groups shared across

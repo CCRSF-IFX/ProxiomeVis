@@ -4,6 +4,9 @@ ProxiomeVis Python is an interactive Shiny application for reviewing processed
 Pixelgen AnnData. It accepts one `.h5ad` file and uses the stored counts,
 normalized abundance, QC history, annotations, and embeddings.
 
+Start with the [User Guide and Parameter Reference](user-guide.md) for the
+production workflow, control behavior, defaults, and interpretation guidance.
+
 ## What the app shows
 
 - **QC**: filtering summaries, molecule-rank plots, QC distributions, and metadata

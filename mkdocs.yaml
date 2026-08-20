@@ -25,6 +25,7 @@ nav:
   - Introduction:
       - Overview: index.md
       - Getting started: getting-started.md
+      - User guide and parameter reference: user-guide.md
       - Data input: data-input.md
   - App guide:
       - QC: qc.md

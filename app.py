@@ -827,6 +827,14 @@ def activity_log_ui():
     )
 
 
+def documentation_ui():
+    guide = (APP_DIR / "docs" / "user-guide.md").read_text(encoding="utf-8")
+    return ui.nav_panel(
+        "Documentation",
+        ui.div(ui.markdown(guide), class_="documentation-page py-4 px-3"),
+    )
+
+
 
 def data_popover():
     return ui.nav_control(
@@ -879,6 +887,7 @@ app_ui = ui.page_navbar(
         ),
     ),
     patch_ui(),
+    documentation_ui(),
     activity_log_ui(),
     ui.nav_spacer(),
     data_popover(),
