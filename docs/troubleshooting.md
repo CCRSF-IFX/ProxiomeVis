@@ -39,11 +39,12 @@ nodes** or choose a smaller component.
 Highlighted marker nodes are kept; the cap mainly reduces non-highlighted
 background nodes.
 
-## PNG or SVG download fails
+## SVG download fails
 
-Try a smaller plot width and height first. If SVG fails for a complex plot, use
-PNG. The 3D Layout view is interactive and does not currently use the app-level
-PNG/SVG download buttons.
+Open **Activity Log** and check the latest operation. SVG export uses Plotly's
+static-image engine and requires the application's Kaleido runtime. If the
+problem persists, download the diagnostics bundle and provide it to the
+application administrator.
 
 ## An operation reports a reference ID
 

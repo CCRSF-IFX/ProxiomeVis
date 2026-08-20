@@ -2,13 +2,15 @@
 
 Most static plots include controls next to the figure:
 
-- **PNG**: download a raster image.
-- **PDF**: download a vector document.
+- **SVG**: download a vector image generated from the current Plotly figure.
 - **Options**: adjust plot width, height, and plot-specific point settings.
 
 The options live next to each plot so sizing and export controls stay close to
 the figure they affect. Filters and marker selections remain in the sidebar
 because they change the data or meaning of the plot.
+
+SVG preserves text and lines as vector elements and is suitable for reports,
+slides, and downstream editing. The export uses a 1200 × 800 canvas.
 
 ## Plot size
 

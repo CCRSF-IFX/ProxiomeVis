@@ -187,8 +187,7 @@ def selectize(id: str, label: str, *, multiple: bool = False):
 def plot_pane(output_id: str, *, height: str = "520px", class_: str = "plot-pane-standard"):
     return ui.div(
         ui.div(
-            ui.download_button(f"{output_id}_png", "PNG", class_="btn-sm btn-outline-secondary"),
-            ui.download_button(f"{output_id}_pdf", "PDF", class_="btn-sm btn-outline-secondary"),
+            ui.download_button(f"{output_id}_svg", "SVG", class_="btn-sm btn-outline-secondary"),
             class_="plot-pane-controls",
         ),
         output_widget(output_id, height=height),
@@ -1918,15 +1917,25 @@ def server(input: Inputs, output: Outputs, session: Session):
         return rows
 
     def register_downloads(output_id: str, producer):
-        @output(id=f"{output_id}_png")
-        @render.download_button(filename=f"{output_id.replace('_', '-')}.png")
-        def _png():
-            yield producer().to_image(format="png", width=1200, height=800, scale=2)
-
-        @output(id=f"{output_id}_pdf")
-        @render.download_button(filename=f"{output_id.replace('_', '-')}.pdf")
-        def _pdf():
-            yield producer().to_image(format="pdf", width=1200, height=800)
+        @output(id=f"{output_id}_svg")
+        @render.download_button(
+            filename=f"{output_id.replace('_', '-')}.svg",
+            media_type="image/svg+xml",
+        )
+        def _svg():
+            started = perf_counter()
+            try:
+                payload = producer().to_image(format="svg", width=1200, height=800)
+            except Exception as error:
+                message = report_error("SVG export", error, perf_counter() - started)
+                raise RuntimeError(message) from None
+            log_activity(
+                "SVG export",
+                "Completed",
+                f"Generated {output_id.replace('_', '-')}.",
+                perf_counter() - started,
+            )
+            yield payload
 
     def grid(frame: pd.DataFrame, *, max_rows: int = 2000):
         return render.DataGrid(frame.head(max_rows), filters=True, width="100%", height="520px")

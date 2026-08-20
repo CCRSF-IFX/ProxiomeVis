@@ -325,8 +325,8 @@ reports them as unavailable instead of estimating patches from proximity.
 
 ## Tables, Downloads, and Reproducibility
 
-- Plot **PNG** exports are raster images suitable for slides.
-- Plot **PDF** exports are vector files suitable for reports and editing.
+- Plot **SVG** exports are vector images suitable for reports, slides, and
+  downstream editing.
 - Interactive tables can be sorted and filtered without changing the analysis.
 - Record the H5AD name, PXL names, analysis grouping, active retrieval summary,
   applied proximity settings, contrasts, and app commit with every report.
@@ -356,4 +356,3 @@ Before reporting a result, confirm all of the following:
 - Sample-level inference is used when biological samples are the replicates.
 - Candidate patch signal is not described as detected patches.
 - Figures are accompanied by their underlying table or settings record.
-
