@@ -72,6 +72,12 @@ The default reference is:
 /Volumes/ccrsf-static/illumina/CCRSFIFX-23_MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/python_results/pg_data_combined_filtered_annotated.h5ad
 ```
 
+The matching default PXL glob is:
+
+```text
+/Volumes/ccrsf-static/singlecell_projects/MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/Analysis_2nd_combo/Analysis/pixelator/*.pxl
+```
+
 The Python app reads observations, marker names, abundance layers, QC history,
 cell annotations, embeddings, and optional patch tables from H5AD. It ignores
 any embedded H5AD proximity table and reads precomputed spatial scores from the

@@ -19,6 +19,10 @@ REFERENCE_H5AD = Path(
     "/Volumes/ccrsf-static/illumina/CCRSFIFX-23_MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/"
     "python_results/pg_data_combined_filtered_annotated.h5ad"
 )
+REFERENCE_PXL = (
+    "/Volumes/ccrsf-static/singlecell_projects/MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/"
+    "Analysis_2nd_combo/Analysis/pixelator/*.pxl"
+)
 
 PATCH_TABLES = (
     "run_plan",
@@ -70,7 +74,7 @@ def default_h5ad_path() -> str:
 
 
 def default_pxl_spec() -> str:
-    return os.getenv("PROXIOME_PXL", "").strip()
+    return os.getenv("PROXIOME_PXL", REFERENCE_PXL).strip()
 
 
 def resolve_pxl_paths(spec: str | Path | None) -> list[Path]:
@@ -595,30 +599,29 @@ def build_abundance(adata) -> pd.DataFrame:
 
 
 
-def build_qc_filter_counts(metadata: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for sample, values in metadata.groupby("sample_alias", observed=True):
-        condition = values["condition"].iloc[0]
-        count = len(values)
-        rows.extend(
-            (
-                {"sample": sample, "condition": condition, "step": "00_loaded", "step_label": "Loaded", "n_cells": count, "fraction_loaded": 1.0},
-                {"sample": sample, "condition": condition, "step": "99_filtered", "step_label": "Filtered", "n_cells": count, "fraction_loaded": 1.0},
-            )
-        )
-    return pd.DataFrame(rows)
+def empty_qc_filter_counts() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "sample",
+            "condition",
+            "step",
+            "step_label",
+            "n_cells",
+            "fraction_loaded",
+        ]
+    )
 
 
 def build_h5ad_qc_filter_counts(adata, metadata: pd.DataFrame) -> pd.DataFrame:
-    """Use QC history stored by the reference notebook, with a safe fallback."""
+    """Use QC history stored by the reference notebook when available."""
     history = adata.uns.get("qc_cell_counts_by_step")
     if not isinstance(history, Mapping):
-        return build_qc_filter_counts(metadata)
+        return empty_qc_filter_counts()
 
     rows = pd.DataFrame(history)
     required = {"sample", "step", "n_cells"}
     if rows.empty or not required.issubset(rows):
-        return build_qc_filter_counts(metadata)
+        return empty_qc_filter_counts()
 
     sample_metadata = metadata[["sample", "sample_alias", "condition"]].drop_duplicates("sample")
     sample_alias = sample_metadata.set_index("sample")["sample_alias"].astype(str)

@@ -11,9 +11,11 @@ from proxiome import (
     adjust_bh,
     analysis_grouping_summary,
     apply_analysis_grouping,
+    build_h5ad_qc_filter_counts,
     build_spatial_retrieval,
     calculate_differential,
     clear_pxl_cache,
+    default_pxl_spec,
     load_h5ad_data,
     load_pxl_proximity,
     new_analysis_grouping_config,
@@ -28,6 +30,27 @@ from proxiome import (
     summarize_spatial,
     update_analysis_grouping_config,
 )
+
+
+def test_default_pxl_spec_can_be_overridden(monkeypatch):
+    monkeypatch.delenv("PROXIOME_PXL", raising=False)
+    assert default_pxl_spec().endswith("/Analysis_2nd_combo/Analysis/pixelator/*.pxl")
+    monkeypatch.setenv("PROXIOME_PXL", "/tmp/custom/*.pxl")
+    assert default_pxl_spec() == "/tmp/custom/*.pxl"
+
+
+def test_missing_qc_history_is_unavailable_instead_of_fabricated():
+    rows = build_h5ad_qc_filter_counts(SimpleNamespace(uns={}), make_data().metadata)
+
+    assert rows.empty
+    assert list(rows) == [
+        "sample",
+        "condition",
+        "step",
+        "step_label",
+        "n_cells",
+        "fraction_loaded",
+    ]
 
 
 def make_data() -> AppData:
@@ -477,6 +500,9 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
                 "PixelatorES proximity profile", "Strongest proximity pairs",
                 "Load PixelatorES defaults", "Apply analysis settings", "Summarize by",
                 "Settings JSON",
+                "Reference lines", "n_umi reference line",
+                "Isotype fraction reference line",
+                "These lines do not filter or modify the loaded cells.",
                 "Processed .h5ad path", "PXL path(s) for proximity and cellgraph data",
             "Data source", "Analysis grouping",
         ):
@@ -497,6 +523,7 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in Path("www/proixome.css").read_text()
     for token in ("Use metadata column", "Edit sample groups", "Reset to condition", "analysis_group_editor"):
         assert token in source
+    assert "QC history unavailable" in source
     assert "input.abundance_color_by === 'abundance'" in source
     assert (
         'id="abundance_umap" class="shiny-ipywidget-output '

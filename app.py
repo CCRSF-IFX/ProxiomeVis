@@ -106,16 +106,17 @@ def qc_ui():
                 selectize("qc_sample_filter", "Sample", multiple=True),
             ),
             ui.accordion_panel(
-                "Cutoffs",
-                ui.input_numeric("qc_n_umi_cutoff", "n_umi cutoff", 10000, min=0, step=500),
-                ui.input_numeric("qc_isotype_cutoff", "Isotype fraction cutoff", 0.001, min=0, max=1, step=0.0005),
+                "Reference lines",
+                ui.input_numeric("qc_n_umi_cutoff", "n_umi reference line", 10000, min=0, step=500),
+                ui.input_numeric("qc_isotype_cutoff", "Isotype fraction reference line", 0.001, min=0, max=1, step=0.0005),
+                ui.help_text("These lines do not filter or modify the loaded cells."),
             ),
             ui.accordion_panel(
                 "Display",
                 ui.input_select("qc_filter_y", "Filter count y-axis", {"count": "Number of cells", "fraction_loaded": "Fraction of loaded cells"}),
                 ui.input_select("qc_metric", "Distribution metric", []),
             ),
-            open=["Filters", "Cutoffs", "Display"],
+            open=["Filters", "Reference lines", "Display"],
         ),
         title="QC controls",
         width=300,
@@ -125,7 +126,7 @@ def qc_ui():
         ui.layout_sidebar(
             sidebar,
             ui.navset_card_underline(
-                ui.nav_panel("Filtering", ui.output_ui("qc_metric_row"), plot_pane("qc_filter_plot"), table_pane("qc_filter_table")),
+                ui.nav_panel("Filtering", ui.output_ui("qc_history_notice"), ui.output_ui("qc_metric_row"), plot_pane("qc_filter_plot"), table_pane("qc_filter_table")),
                 ui.nav_panel("Cell Calling", plot_pane("qc_molecule_rank_plot", height="560px")),
                 ui.nav_panel("Distributions", plot_pane("qc_distribution_plot")),
                 ui.nav_panel("Metadata", table_pane("qc_metadata_table")),
@@ -1479,15 +1480,31 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @output
     @render.ui
+    def qc_history_notice():
+        data = get_data()
+        if data is None or not data.qc_filter_counts.empty:
+            return None
+        return ui.div(
+            "QC history unavailable: this H5AD does not contain notebook-generated filtering counts.",
+            class_="alert alert-warning",
+        )
+
+    @output
+    @render.ui
     def qc_metric_row():
         data = get_data()
         if data is None:
             return metric_boxes([("Loaded Cells", "—"), ("Final Cells", "—"), ("Retained", "—"), ("Samples", "—")])
         samples = selected(input.qc_sample_filter(), data.metadata["sample_alias"])
         history = data.qc_filter_counts[data.qc_filter_counts["sample"].astype(str).isin(samples)]
-        loaded = history.loc[history["step"].astype(str) == "00_loaded", "n_cells"].sum()
         final = len(data.metadata[data.metadata["sample_alias"].astype(str).isin(samples)])
-        loaded = int(loaded) if loaded else final
+        if history.empty:
+            return metric_boxes([
+                ("Loaded Cells", "—"), ("Final Cells", f"{final:,}"),
+                ("Retained", "—"), ("Samples", f"{len(samples):,}"),
+            ])
+        loaded = history.loc[history["step"].astype(str) == "00_loaded", "n_cells"].sum()
+        loaded = int(loaded) if loaded else 0
         retained = final / loaded if loaded else math.nan
         return metric_boxes([
             ("Loaded Cells", f"{loaded:,}"), ("Final Cells", f"{final:,}"),
@@ -1499,6 +1516,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         if data is None:
             return empty_figure()
         rows = data.qc_filter_counts.copy()
+        if rows.empty:
+            return empty_figure("QC history unavailable for this H5AD.")
         samples = selected(input.qc_sample_filter(), rows["sample"])
         rows = rows[rows["sample"].astype(str).isin(samples)]
         value = "fraction_loaded" if input.qc_filter_y() == "fraction_loaded" else "n_cells"
