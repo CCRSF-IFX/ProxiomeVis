@@ -22,8 +22,9 @@ scores and component layouts are queried from PXL on demand.
   their precomputed tables are stored in the H5AD.
 - **On-demand PXL queries**: read only the selected components and markers for
   spatial tables and stored 3D layouts.
-- **Activity Log**: watch H5AD loading, spatial retrieval, PXL queries, and 3D
-  layout reads during the current browser session.
+- **Activity Log**: watch severity-tagged H5AD loading, spatial retrieval, PXL
+  queries, and 3D layout reads for the current session, then download a
+  sanitized diagnostics bundle for support.
 - **Global analysis grouping**: choose a sample-level metadata column or assign
   custom sample groups for filters, summaries, heatmaps, and comparisons, with
   one-click reset to the H5AD's original `condition` values.
@@ -63,8 +64,16 @@ Alternatively, set the default before starting the app:
 ```bash
 export PROXIOME_H5AD='/path/to/processed_data.h5ad'
 export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
+export PROXIOMEVIS_HOME="$HOME/.ProxiomeVis"
 uv run shiny run app.py
 ```
+
+The Python server writes one structured JSONL log per browser session under
+`$PROXIOMEVIS_HOME/runtime` (default: `$HOME/.ProxiomeVis/runtime`). Each event
+includes the session ID, severity, app version, Git commit, and traceback for
+failures. Set `PROXIOMEVIS_VERSION` and `PROXIOMEVIS_COMMIT` in packaged
+deployments where Git metadata is unavailable. Browser errors and downloaded
+diagnostics redact full server paths.
 
 The default reference is:
 

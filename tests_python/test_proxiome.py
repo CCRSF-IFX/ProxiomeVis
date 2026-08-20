@@ -1,6 +1,8 @@
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
@@ -496,7 +498,7 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
             "All markers", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
-            "Activity Log", "Clear log",
+            "Activity Log", "Clear log", "Download diagnostics",
                 "PixelatorES proximity profile", "Strongest proximity pairs",
                 "Load PixelatorES defaults", "Apply analysis settings", "Summarize by",
                 "Settings JSON",
@@ -538,8 +540,40 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert [axis.title.text for axis in figure.select_xaxes()] == ["Embedding 1"] * 3 + [None] * 3
     assert app.split_umap_height(6, 3) == 760
     assert app.split_umap_height(6, 1) == 2040
-
     embeddings = app.embedding_columns(
         pd.DataFrame(columns=["umap_1", "umap_2", "k_core_1", "k_core_2"])
     )
     assert embeddings == {"umap": ("umap_1", "umap_2")}
+
+
+def test_diagnostics_bundle_is_structured_and_sanitized():
+    import app
+
+    try:
+        raise RuntimeError("Could not read /Volumes/private/study/input.h5ad")
+    except RuntimeError as error:
+        record = app.structured_log_record(
+            "session-123",
+            "Load data",
+            "Failed",
+            str(error),
+            severity="ERROR",
+            error_id="abc123",
+            error=error,
+        )
+
+    assert record["session_id"] == "session-123"
+    assert record["severity"] == "ERROR"
+    assert record["app_version"] == app.APP_VERSION
+    assert record["commit"] == app.APP_COMMIT
+    assert "Traceback" in record["traceback"]
+
+    bundle = app.diagnostics_bundle(
+        [record],
+        {"session_id": "session-123", "source": "/Volumes/private/study/input.h5ad"},
+    )
+    with ZipFile(BytesIO(bundle)) as archive:
+        assert set(archive.namelist()) == {"README.txt", "diagnostics.json", "session-log.jsonl"}
+        contents = archive.read("diagnostics.json") + archive.read("session-log.jsonl")
+    assert b"/Volumes/private" not in contents
+    assert b"<path>/input.h5ad" in contents

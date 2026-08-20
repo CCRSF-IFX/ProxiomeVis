@@ -46,6 +46,15 @@ Try a smaller plot width and height first. If SVG fails for a complex plot, use
 PNG. The 3D Layout view is interactive and does not currently use the app-level
 PNG/SVG download buttons.
 
+## An operation reports a reference ID
+
+Open **Activity Log** and click **Download diagnostics**. The ZIP contains
+sanitized runtime metadata and structured events for the current browser
+session, including app version, Git commit, severity, and error traceback. It
+does not include H5AD/PXL contents or full server paths. Server-side JSONL logs
+are stored under `$PROXIOMEVIS_HOME/runtime` (default:
+`$HOME/.ProxiomeVis/runtime`) for administrators.
+
 ## Build the documentation locally
 
 From the app directory:

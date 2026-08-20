@@ -24,7 +24,8 @@ The Python app contains five top-level tabs:
 - **Spatial Metrics** for PXL-backed self-clustering, colocalization,
   differential spatial scores, and 3D cellgraphs
 - **Patch Analysis** for stored patch marker, Raji signal, and burden tables
-- **Activity Log** for live data-load and spatial-query status
+- **Activity Log** for severity-tagged data-load and spatial-query status and a
+  downloadable, path-sanitized diagnostics bundle
 
 Spatial plots require assigned PXL files with matching H5AD component IDs.
 Patch plots require their optional precomputed H5AD payload.

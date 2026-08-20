@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import logging
 import math
+import os
+import platform
+import re
+import subprocess
+import traceback
+import uuid
+import zipfile
 from datetime import datetime
 from itertools import combinations, combinations_with_replacement
 from pathlib import Path
@@ -47,9 +56,125 @@ from proxiome import (
 
 
 APP_DIR = Path(__file__).resolve().parent
+APP_VERSION = os.getenv("PROXIOMEVIS_VERSION", "0.1.0")
 TEAL = "#176d73"
 CORAL = "#c7503e"
 PLOT_COLORS = ["#176d73", "#c7503e", "#c58a20", "#62879a", "#7b6aa2", "#56875d"]
+ABSOLUTE_PATH = re.compile(r"(?<![\w.])/(?:[^ \t\r\n\"'<>]+)")
+SERVER_LOG = logging.getLogger("proxiomevis")
+if not SERVER_LOG.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    SERVER_LOG.addHandler(handler)
+SERVER_LOG.setLevel(logging.INFO)
+SERVER_LOG.propagate = False
+
+
+def resolve_app_commit() -> str:
+    configured = os.getenv("PROXIOMEVIS_COMMIT", "").strip()
+    if configured:
+        return configured
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=APP_DIR,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=2,
+        )
+        return result.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+APP_COMMIT = resolve_app_commit()
+
+
+def sanitize_text(value: object) -> str:
+    """Remove server paths from text shown in the browser or diagnostics ZIP."""
+    def replace_path(match: re.Match) -> str:
+        raw = match.group(0)
+        suffix = ""
+        while raw and raw[-1] in ",.;:)]:":
+            suffix = raw[-1] + suffix
+            raw = raw[:-1]
+        return f"<path>/{Path(raw).name or 'root'}{suffix}"
+
+    return ABSOLUTE_PATH.sub(replace_path, str(value))
+
+
+def sanitize_diagnostic_value(value):
+    if isinstance(value, dict):
+        return {str(key): sanitize_diagnostic_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_diagnostic_value(item) for item in value]
+    return sanitize_text(value) if isinstance(value, (str, Path)) else value
+
+
+def structured_log_record(
+    session_id: str,
+    operation: str,
+    status: str,
+    details: str = "",
+    *,
+    severity: str = "INFO",
+    elapsed: float | None = None,
+    error_id: str | None = None,
+    error: Exception | None = None,
+) -> dict:
+    record = {
+        "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "session_id": session_id,
+        "severity": severity.upper(),
+        "app_version": APP_VERSION,
+        "commit": APP_COMMIT,
+        "operation": operation,
+        "status": status,
+        "details": str(details),
+        "seconds": round(elapsed, 2) if elapsed is not None else None,
+    }
+    if error is not None:
+        record.update(
+            error_id=error_id,
+            exception_type=type(error).__name__,
+            traceback="".join(traceback.format_exception(type(error), error, error.__traceback__)),
+        )
+    return record
+
+
+def diagnostics_bundle(records: list[dict], metadata: dict) -> bytes:
+    """Build a support ZIP containing sanitized metadata and session events."""
+    safe_records = [sanitize_diagnostic_value(record) for record in records]
+    safe_metadata = sanitize_diagnostic_value(metadata)
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("diagnostics.json", json.dumps(safe_metadata, indent=2, default=str))
+        archive.writestr(
+            "session-log.jsonl",
+            "".join(json.dumps(record, default=str) + "\n" for record in safe_records),
+        )
+        archive.writestr(
+            "README.txt",
+            "ProxiomeVis diagnostics bundle\n"
+            "Contains sanitized runtime metadata and this browser session's structured log.\n"
+            "H5AD/PXL contents and full server paths are not included.\n",
+        )
+    return payload.getvalue()
+
+
+def session_log_path(session_id: str) -> Path:
+    root = os.getenv("PROXIOMEVIS_HOME", "").strip()
+    runtime = Path(root).expanduser() if root else Path.home() / ".ProxiomeVis"
+    safe_session_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
+    return runtime / "runtime" / f"python-session-{safe_session_id}.jsonl"
+
+
+def read_log_records(path: Path) -> list[dict]:
+    try:
+        return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return []
 
 
 def selectize(id: str, label: str, *, multiple: bool = False):
@@ -595,11 +720,20 @@ def activity_log_ui():
             ui.div(
                 ui.div(
                     ui.h2("Activity Log", class_="mb-1"),
-                    ui.p("Live session activity for data loading and PXL queries.", class_="text-muted mb-0"),
+                    ui.p("Structured session activity for data loading and PXL queries.", class_="text-muted mb-0"),
                 ),
-                ui.input_action_button("clear_activity_log", "Clear log", class_="btn-outline-secondary"),
+                ui.div(
+                    ui.download_button(
+                        "download_diagnostics",
+                        "Download diagnostics",
+                        class_="btn-outline-primary",
+                    ),
+                    ui.input_action_button("clear_activity_log", "Clear log", class_="btn-outline-secondary"),
+                    class_="d-flex gap-2",
+                ),
                 class_="d-flex justify-content-between align-items-center mb-3",
             ),
+            ui.p(ui.output_text("activity_context", inline=True), class_="text-muted"),
             ui.p(ui.strong("Latest: "), ui.output_text("activity_status", inline=True)),
             ui.output_data_frame("activity_log_table"),
             class_="container-fluid py-3",
@@ -747,6 +881,8 @@ def embedding_columns(metadata: pd.DataFrame) -> dict[str, tuple[str, str]]:
 
 
 def server(input: Inputs, output: Outputs, session: Session):
+    session_id = str(session.id)
+    log_path = session_log_path(session_id)
     data_state: reactive.Value[AppData | None] = reactive.Value(None)
     grouping_state: reactive.Value[dict | None] = reactive.Value(None)
     spatial_retrieval_state: reactive.Value[SpatialRetrieval | None] = reactive.Value(None)
@@ -755,14 +891,60 @@ def server(input: Inputs, output: Outputs, session: Session):
     activity_queue: SimpleQueue[dict] = SimpleQueue()
     activity_state: reactive.Value[tuple[dict, ...]] = reactive.Value(())
 
-    def log_activity(operation: str, status: str, details: str = "", elapsed: float | None = None):
-        activity_queue.put({
-            "time": datetime.now().astimezone().strftime("%H:%M:%S"),
-            "operation": operation,
-            "status": status,
-            "details": details,
-            "seconds": round(elapsed, 2) if elapsed is not None else None,
-        })
+    def log_activity(
+        operation: str,
+        status: str,
+        details: str = "",
+        elapsed: float | None = None,
+        *,
+        severity: str | None = None,
+        error: Exception | None = None,
+    ) -> str | None:
+        severity = severity or (
+            "ERROR" if status == "Failed" else "WARNING" if status == "Discarded" else "INFO"
+        )
+        error_id = uuid.uuid4().hex[:12] if error is not None else None
+        record = structured_log_record(
+            session_id,
+            operation,
+            status,
+            details,
+            severity=severity,
+            elapsed=elapsed,
+            error_id=error_id,
+            error=error,
+        )
+        payload = json.dumps(record, ensure_ascii=False, default=str)
+        SERVER_LOG.log(getattr(logging, record["severity"], logging.INFO), payload)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as stream:
+                stream.write(payload + "\n")
+        except OSError:
+            SERVER_LOG.exception("Unable to write the ProxiomeVis session log")
+        activity_queue.put(sanitize_diagnostic_value(record))
+        return error_id
+
+    def report_error(
+        operation: str,
+        error: Exception,
+        elapsed: float | None = None,
+        *,
+        severity: str = "ERROR",
+    ) -> str:
+        error_id = log_activity(
+            operation,
+            "Failed",
+            str(error),
+            elapsed,
+            severity=severity,
+            error=error,
+        )
+        if isinstance(error, (ValueError, FileNotFoundError, PermissionError)):
+            summary = sanitize_text(error)
+        else:
+            summary = "An unexpected server error occurred."
+        return f"{operation} failed: {summary} Reference ID: {error_id}."
 
     def default_coloc_settings(retrieval: SpatialRetrieval) -> dict:
         celltypes = sorted(
@@ -838,6 +1020,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     log_activity("Session", "Ready", "Waiting for data.")
+    session.on_ended(lambda: log_activity("Session", "Ended", "Browser session disconnected."))
 
     @reactive.effect
     def _drain_activity_queue():
@@ -859,8 +1042,9 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             loaded = await asyncio.to_thread(load_h5ad_data, path, pxl_spec=pxl_path or None)
         except Exception as error:
-            log_activity("Load data", "Failed", str(error), perf_counter() - started)
-            raise
+            message = report_error("Load data", error, perf_counter() - started)
+            inspect_message.set(message)
+            raise RuntimeError(message) from None
         log_activity(
             "Load data",
             "Completed",
@@ -895,8 +1079,8 @@ def server(input: Inputs, output: Outputs, session: Session):
                 request=request,
             )
         except Exception as error:
-            log_activity("Spatial retrieval", "Failed", str(error), perf_counter() - started)
-            raise
+            message = report_error("Spatial retrieval", error, perf_counter() - started)
+            raise RuntimeError(message) from None
         log_activity(
             "Spatial retrieval",
             "Completed",
@@ -913,8 +1097,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             inspect_message.set(f"Ready: {path.name}, {path.stat().st_size / 1024**2:.1f} MiB.")
             log_activity("Inspect H5AD", "Completed", f"{path.name}: {path.stat().st_size / 1024**2:.1f} MiB.")
         except Exception as error:
-            inspect_message.set(str(error))
-            log_activity("Inspect H5AD", "Failed", str(error))
+            inspect_message.set(report_error("Inspect H5AD", error))
 
     @reactive.effect
     @reactive.event(input.load_h5ad)
@@ -998,6 +1181,11 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @output
     @render.text
+    def activity_context():
+        return f"Session {session_id} · ProxiomeVis {APP_VERSION} · commit {APP_COMMIT}"
+
+    @output
+    @render.text
     def activity_status():
         events = activity_state.get()
         if not events:
@@ -1009,9 +1197,42 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.data_frame
     def activity_log_table():
         events = activity_state.get()
-        columns = ["time", "operation", "status", "details", "seconds"]
+        columns = ["timestamp", "severity", "operation", "status", "details", "seconds", "error_id"]
         frame = pd.DataFrame(events, columns=columns).iloc[::-1].reset_index(drop=True)
         return render.DataGrid(frame, filters=True, width="100%", height="620px")
+
+    @output
+    @render.download_button(
+        filename=lambda: f"proxiomevis-diagnostics-{session_id}.zip",
+        media_type="application/zip",
+    )
+    def download_diagnostics():
+        data = data_state.get()
+        retrieval = spatial_retrieval_state.get()
+        source = {}
+        if data is not None:
+            source = {
+                "h5ad_file": Path(data.source.get("h5ad_path", "unknown")).name,
+                "cells": data.source.get("n_cells"),
+                "markers": data.source.get("n_markers"),
+                "pxl_files": [Path(path).name for path in data.pxl_files],
+            }
+        metadata = {
+            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "session_id": session_id,
+            "app_version": APP_VERSION,
+            "commit": APP_COMMIT,
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "source": source,
+            "active_retrieval": {
+                "cells": len(retrieval.metadata),
+                "markers": len(retrieval.markers),
+                "retrieved_at": retrieval.retrieved_at,
+            } if retrieval is not None else None,
+        }
+        records = read_log_records(log_path) or list(activity_state.get())
+        yield diagnostics_bundle(records, metadata)
 
     @output
     @render.ui
@@ -1380,8 +1601,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.notification_show(analysis_grouping_summary(config), type="message")
             log_activity("Analysis grouping", "Completed", analysis_grouping_summary(config))
         except Exception as error:
-            ui.notification_show(str(error), type="error", duration=None)
-            log_activity("Analysis grouping", "Failed", str(error))
+            ui.notification_show(report_error("Analysis grouping", error), type="error", duration=None)
 
     @reactive.effect
     @reactive.event(input.reset_analysis_grouping)
@@ -1414,8 +1634,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             rows = load_pxl_proximity(data, metadata, **kwargs)
         except Exception as error:
-            log_activity(operation, "Failed", str(error), perf_counter() - started)
-            raise
+            message = report_error(operation, error, perf_counter() - started)
+            raise RuntimeError(message) from None
         log_activity(operation, "Completed", f"Returned {len(rows):,} rows.", perf_counter() - started)
         return rows
 
@@ -1435,8 +1655,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             rows = sample_pxl_colocalization(data, metadata, **kwargs)
         except Exception as error:
-            log_activity(operation, "Failed", str(error), perf_counter() - started)
-            raise
+            message = report_error(operation, error, perf_counter() - started)
+            raise RuntimeError(message) from None
         log_activity(
             operation,
             "Completed",
@@ -1451,8 +1671,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             rows = read_component_layout(data, sample, component)
         except Exception as error:
-            log_activity("3D layout", "Failed", str(error), perf_counter() - started)
-            raise
+            message = report_error("3D layout", error, perf_counter() - started)
+            raise RuntimeError(message) from None
         log_activity("3D layout", "Completed", f"Returned {len(rows):,} nodes.", perf_counter() - started)
         return rows
 
@@ -2116,7 +2336,11 @@ def server(input: Inputs, output: Outputs, session: Session):
             settings = draft_coloc_settings(retrieval)
             validate_coloc_settings(settings, retrieval)
         except ValueError as error:
-            ui.notification_show(str(error), type="error", duration=None)
+            ui.notification_show(
+                report_error("Colocalization settings", error, severity="WARNING"),
+                type="error",
+                duration=None,
+            )
             return
         coloc_analysis_state.set(settings)
         description = describe_coloc_settings(settings)
@@ -2137,7 +2361,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             draft = draft_coloc_settings(retrieval)
             validate_coloc_settings(draft, retrieval)
         except ValueError as error:
-            return ui.div(str(error), class_="alert alert-danger py-2 mt-2")
+            return ui.div(sanitize_text(error), class_="alert alert-danger py-2 mt-2")
         if draft != settings:
             return ui.div(
                 ui.strong("Unapplied changes. "),
@@ -2170,7 +2394,10 @@ def server(input: Inputs, output: Outputs, session: Session):
                     min_cells=1,
                 )
             except ValueError as error:
-                ui.notification_show(str(error), type="warning")
+                ui.notification_show(
+                    report_error("Colocalization filters", error, severity="WARNING"),
+                    type="warning",
+                )
                 return pd.DataFrame()
         return scores
 
@@ -2212,7 +2439,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             return [markers[index] for index in leaves_list(tree)]
         except Exception as error:
-            log_activity("Heatmap clustering", "Failed", str(error))
+            log_activity(
+                "Heatmap clustering",
+                "Failed",
+                str(error),
+                severity="WARNING",
+                error=error,
+            )
             return markers
 
     @reactive.calc
@@ -2736,7 +2969,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         try:
             nodes = tracked_component_layout(data, str(sample), str(component))
         except Exception as error:
-            return empty_figure(str(error))
+            return empty_figure(sanitize_text(error))
         if "marker" not in nodes:
             nodes["marker"] = "unlabeled"
         highlights = [
