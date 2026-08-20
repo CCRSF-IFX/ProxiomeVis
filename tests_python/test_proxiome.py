@@ -487,6 +487,30 @@ def test_heatmap_click_selects_the_marker_pair(monkeypatch):
     assert updates == [("detail_pair", "CD19 / CD82", fake_session)]
 
 
+def test_heatmap_facet_titles_are_clear_of_column_labels():
+    import app
+    import plotly.express as px
+
+    figure = px.scatter(
+        pd.DataFrame(
+            {
+                "x": ["CD19", "CD82"],
+                "y": ["CD82", "CD19"],
+                "group": ["B3C2_CCMV", "B3C2_NC"],
+            }
+        ),
+        x="x",
+        y="y",
+        facet_col="group",
+    )
+    app.format_heatmap_facet_titles(figure, panels=2)
+
+    assert [annotation.text for annotation in figure.layout.annotations] == ["B3C2_CCMV", "B3C2_NC"]
+    assert [annotation.xanchor for annotation in figure.layout.annotations] == ["left", "left"]
+    assert [annotation.yshift for annotation in figure.layout.annotations] == [52, 52]
+    assert [annotation.x for annotation in figure.layout.annotations] == [0.0, 0.51]
+
+
 def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     import app
     import plotly.express as px

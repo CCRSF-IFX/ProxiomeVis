@@ -816,6 +816,26 @@ def style_figure(figure: go.Figure, *, height: int | None = None) -> go.Figure:
     return figure
 
 
+def format_heatmap_facet_titles(figure: go.Figure, panels: int) -> go.Figure:
+    domains = [tuple(axis.domain) for axis in figure.select_xaxes()]
+    for annotation in figure.layout.annotations:
+        if panels == 1:
+            annotation.update(text="")
+            continue
+        left = next(
+            (domain[0] for domain in domains if domain[0] <= annotation.x <= domain[1]),
+            annotation.x,
+        )
+        annotation.update(
+            text=annotation.text.split("=", 1)[-1],
+            x=left,
+            xanchor="left",
+            yshift=52,
+            font={"size": 15},
+        )
+    return figure
+
+
 def clickable_volcano(figure: go.Figure, input_id: str, session: Session):
     widget = go.FigureWidget(figure)
 
@@ -2646,12 +2666,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             title_text=None,
             tickfont={"size": 11},
         )
-        figure.for_each_annotation(
-            lambda annotation: annotation.update(
-                text="" if panels == 1 else annotation.text.split("=", 1)[-1],
-                font={"size": 15},
-            )
-        )
+        format_heatmap_facet_titles(figure, panels)
         groups = summary[group_col].dropna().astype(str).drop_duplicates().tolist()
         celltypes = colocalization_metadata()["celltype_manual"].dropna().astype(str).unique()
         population = str(celltypes[0]) if len(celltypes) == 1 else "selected cells"
