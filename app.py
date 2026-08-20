@@ -471,182 +471,199 @@ def clustering_ui():
     )
 
 
+def proximity_profile_ui():
+    sidebar = ui.sidebar(
+        ui.accordion(
+            ui.accordion_panel(
+                "Population",
+                selectize("coloc_celltype_filter", "Cell population"),
+                ui.help_text("One population from the active spatial retrieval."),
+            ),
+            ui.accordion_panel(
+                "Proximity definition",
+                ui.input_select(
+                    "coloc_mean_type",
+                    "Mean calculation",
+                    {
+                        "population": "Population mean",
+                        "detected": "Detected-cell mean",
+                    },
+                ),
+                ui.input_checkbox(
+                    "coloc_pixelator_filter",
+                    "Apply Pixelator marker filters",
+                    True,
+                ),
+                ui.panel_conditional(
+                    "input.coloc_pixelator_filter",
+                    ui.input_numeric(
+                        "coloc_min_fraction",
+                        "Minimum marker fraction",
+                        0.001,
+                        min=0,
+                        max=1,
+                        step=0.0005,
+                    ),
+                    ui.input_numeric(
+                        "coloc_min_count", "Minimum marker count", 0, min=0
+                    ),
+                ),
+                ui.input_action_button(
+                    "coloc_reset_pixelatores",
+                    "Load PixelatorES defaults",
+                    class_="btn-outline-secondary w-100 mb-2",
+                ),
+                ui.input_action_button(
+                    "coloc_apply_analysis",
+                    "Apply analysis settings",
+                    class_="btn-primary w-100",
+                ),
+                ui.output_ui("coloc_analysis_status"),
+            ),
+            ui.accordion_panel(
+                "Heatmap analysis",
+                ui.input_select(
+                    "coloc_scope",
+                    "Summarize by",
+                    {
+                        "condition": "Analysis group",
+                        "sample_alias": "Sample",
+                    },
+                ),
+                ui.input_select(
+                    "coloc_marker_mode",
+                    "Marker set",
+                    {
+                        "profile": "PixelatorES proximity profile",
+                        "abundance": "Top abundance markers",
+                        "manual": "Selected markers",
+                    },
+                ),
+                ui.panel_conditional(
+                    "input.coloc_marker_mode === 'profile'",
+                    ui.input_numeric("coloc_top_pairs", "Strongest proximity pairs", 60, min=1, max=500),
+                    ui.help_text("Markers are taken from pairs detected in more than 50% of cells."),
+                ),
+                ui.panel_conditional(
+                    "input.coloc_marker_mode === 'abundance'",
+                    ui.input_numeric("coloc_top_markers", "Top abundance markers", 40, min=2, max=40),
+                ),
+                ui.panel_conditional(
+                    "input.coloc_marker_mode === 'manual'",
+                    selectize("coloc_markers", "Heatmap markers", multiple=True),
+                ),
+            ),
+            ui.accordion_panel(
+                "Display",
+                ui.input_select(
+                    "coloc_view",
+                    "Group display",
+                    {"focused": "Focused group", "compare": "Compare groups"},
+                ),
+                ui.panel_conditional(
+                    "input.coloc_view === 'focused'",
+                    selectize("coloc_focus_group", "Displayed group"),
+                ),
+                ui.panel_conditional(
+                    "input.coloc_view === 'compare'",
+                    selectize("coloc_compare_groups", "Groups to compare", multiple=True),
+                ),
+                ui.input_select(
+                    "coloc_reference", "Clustering reference group", []
+                ),
+                ui.input_select(
+                    "coloc_ordering",
+                    "Marker ordering",
+                    {
+                        "ward": "Ward",
+                        "complete": "Complete",
+                        "average": "Average",
+                        "single": "Single",
+                    },
+                ),
+                ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
+                ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
+                selectize("coloc_detail_pair", "Pair detail"),
+            ),
+            ui.accordion_panel(
+                "Advanced",
+                ui.input_numeric(
+                    "coloc_min_cells",
+                    "Minimum detected cells per summarized group",
+                    1,
+                    min=1,
+                ),
+            ),
+            ui.accordion_panel(
+                "Interpretation",
+                ui.p(ui.strong("Positive:"), " closer than expected by chance."),
+                ui.p(ui.strong("Zero:"), " approximately random spatial organization."),
+                ui.p(ui.strong("Negative:"), " spatial segregation."),
+            ),
+            open=["Population", "Proximity definition", "Heatmap analysis", "Display"],
+        ),
+        title="Proximity profile controls",
+        width=300,
+    )
+    return ui.nav_panel(
+        "Proximity Profile",
+        ui.layout_sidebar(
+            sidebar,
+            ui.div(
+                ui.output_ui("proximity_profile_retrieval_notice"),
+                ui.output_ui("coloc_notice"),
+                ui.div(
+                    ui.download_button(
+                        "coloc_settings_json",
+                        "Settings JSON",
+                        class_="btn-sm btn-outline-secondary",
+                    ),
+                    class_="d-flex justify-content-end mb-2",
+                ),
+                plot_pane(
+                    "coloc_heatmap",
+                    height="auto",
+                    class_="plot-pane-scroll coloc-heatmap-pane",
+                ),
+                ui.card(
+                    ui.card_header("Pair detail"),
+                    ui.card_body(
+                        ui.output_ui("coloc_pair_metrics"),
+                        plot_pane("coloc_pair_detail"),
+                        table_pane("coloc_pair_table"),
+                    ),
+                ),
+                table_pane("coloc_table"),
+            ),
+        ),
+    )
+
+
 def colocalization_ui():
     sidebar = ui.sidebar(
-        ui.panel_conditional(
-            "input.colocalization_mode === 'Observed' || input.colocalization_mode === 'Differential'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Population",
-                    selectize("coloc_celltype_filter", "Cell population"),
-                    ui.help_text("One population from the active spatial retrieval."),
-                ),
-                ui.accordion_panel(
-                    "Proximity definition",
-                    ui.input_select(
-                        "coloc_mean_type",
-                        "Mean calculation",
-                        {
-                            "population": "Population mean",
-                            "detected": "Detected-cell mean",
-                        },
-                    ),
-                    ui.input_checkbox(
-                        "coloc_pixelator_filter",
-                        "Apply Pixelator marker filters",
-                        True,
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_pixelator_filter",
-                        ui.input_numeric(
-                            "coloc_min_fraction",
-                            "Minimum marker fraction",
-                            0.001,
-                            min=0,
-                            max=1,
-                            step=0.0005,
-                        ),
-                        ui.input_numeric(
-                            "coloc_min_count", "Minimum marker count", 0, min=0
-                        ),
-                    ),
-                    ui.input_action_button(
-                        "coloc_reset_pixelatores",
-                        "Load PixelatorES defaults",
-                        class_="btn-outline-secondary w-100 mb-2",
-                    ),
-                    ui.input_action_button(
-                        "coloc_apply_analysis",
-                        "Apply analysis settings",
-                        class_="btn-primary w-100",
-                    ),
-                    ui.output_ui("coloc_analysis_status"),
-                ),
-                open=["Population", "Proximity definition"],
-            ),
+        ui.div(
+            "Uses the population and proximity settings applied in Proximity Profile.",
+            class_="alert alert-info py-2",
         ),
-        ui.panel_conditional(
-            "input.colocalization_mode === 'Observed'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Heatmap analysis",
-                    ui.input_select(
-                        "coloc_scope",
-                        "Summarize by",
-                        {
-                            "condition": "Analysis group",
-                            "sample_alias": "Sample",
-                        },
-                    ),
-                    ui.input_select(
-                        "coloc_marker_mode",
-                        "Marker set",
-                        {
-                            "profile": "PixelatorES proximity profile",
-                            "abundance": "Top abundance markers",
-                            "manual": "Selected markers",
-                        },
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_marker_mode === 'profile'",
-                        ui.input_numeric("coloc_top_pairs", "Strongest proximity pairs", 60, min=1, max=500),
-                        ui.help_text("Markers are taken from pairs detected in more than 50% of cells."),
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_marker_mode === 'abundance'",
-                        ui.input_numeric("coloc_top_markers", "Top abundance markers", 40, min=2, max=40),
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_marker_mode === 'manual'",
-                        selectize("coloc_markers", "Heatmap markers", multiple=True),
-                    ),
-                ),
-                ui.accordion_panel(
-                    "Display",
-                    ui.input_select(
-                        "coloc_view",
-                        "Group display",
-                        {"focused": "Focused group", "compare": "Compare groups"},
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_view === 'focused'",
-                        selectize("coloc_focus_group", "Displayed group"),
-                    ),
-                    ui.panel_conditional(
-                        "input.coloc_view === 'compare'",
-                        selectize("coloc_compare_groups", "Groups to compare", multiple=True),
-                    ),
-                    ui.input_select(
-                        "coloc_reference", "Clustering reference group", []
-                    ),
-                    ui.input_select(
-                        "coloc_ordering",
-                        "Marker ordering",
-                        {
-                            "ward": "Ward",
-                            "complete": "Complete",
-                            "average": "Average",
-                            "single": "Single",
-                        },
-                    ),
-                    ui.input_numeric("coloc_legend_min", "Legend minimum", -1, step=0.1),
-                    ui.input_numeric("coloc_legend_max", "Legend maximum", 1, step=0.1),
-                    selectize("coloc_detail_pair", "Pair detail"),
-                ),
-                ui.accordion_panel(
-                    "Advanced",
-                    ui.input_numeric(
-                        "coloc_min_cells",
-                        "Minimum detected cells per summarized group",
-                        1,
-                        min=1,
-                    ),
-                ),
-                ui.accordion_panel(
-                    "Interpretation",
-                    ui.p(ui.strong("Positive:"), " closer than expected by chance."),
-                    ui.p(ui.strong("Zero:"), " approximately random spatial organization."),
-                    ui.p(ui.strong("Negative:"), " spatial segregation."),
-                ),
-                open=["Heatmap analysis", "Display"],
+        ui.accordion(
+            ui.accordion_panel(
+                "Contrast",
+                ui.input_select("coloc_diff_group_a", "Group A", []),
+                ui.input_select("coloc_diff_group_b", "Group B (reference)", []),
+                ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=2),
             ),
-        ),
-        ui.panel_conditional(
-            "input.colocalization_mode === 'Differential'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Contrast",
-                    ui.input_select("coloc_diff_group_a", "Group A", []),
-                    ui.input_select("coloc_diff_group_b", "Group B (reference)", []),
-                    ui.input_numeric("coloc_diff_min_samples", "Minimum samples per group", 2, min=2),
-                ),
-                ui.accordion_panel(
-                    "Pair display",
-                    ui.input_select("coloc_diff_pair_scope", "Pairs shown", {"all": "All marker pairs", "anchor": "Pairs containing one marker"}),
-                    selectize("coloc_diff_anchor", "Marker"),
-                    selectize("coloc_diff_pair", "Detail pair"),
-                ),
-                ui.accordion_panel(
-                    "Thresholds",
-                    ui.input_numeric("coloc_diff_fdr", "FDR threshold", 0.05, min=0, max=1, step=0.01),
-                    ui.input_numeric("coloc_diff_effect", "Minimum median-sample difference", 0.25, min=0, step=0.05),
-                ),
-                open=["Contrast", "Pair display"],
+            ui.accordion_panel(
+                "Pair display",
+                ui.input_select("coloc_diff_pair_scope", "Pairs shown", {"all": "All marker pairs", "anchor": "Pairs containing one marker"}),
+                selectize("coloc_diff_anchor", "Marker"),
+                selectize("coloc_diff_pair", "Detail pair"),
             ),
-        ),
-        ui.panel_conditional(
-            "input.colocalization_mode === '3D Layout'",
-            ui.accordion(
-                ui.accordion_panel(
-                    "Cell",
-                    selectize("coloc_3d_sample", "Sample"),
-                    selectize("coloc_3d_celltypes", "Cell type", multiple=True),
-                    selectize("coloc_3d_component", "Cell/component"),
-                    ui.input_numeric("coloc_3d_max_background", "Max background nodes", 7000, min=0, max=50000, step=500),
-                ),
-                ui.accordion_panel("Markers", selectize("coloc_3d_markers", "Highlighted markers", multiple=True)),
-                open=["Cell", "Markers"],
+            ui.accordion_panel(
+                "Thresholds",
+                ui.input_numeric("coloc_diff_fdr", "FDR threshold", 0.05, min=0, max=1, step=0.01),
+                ui.input_numeric("coloc_diff_effect", "Minimum median-sample difference", 0.25, min=0, step=0.05),
             ),
+            open=["Contrast", "Pair display"],
         ),
         title="Colocalization controls",
         width=300,
@@ -657,35 +674,37 @@ def colocalization_ui():
             sidebar,
             ui.div(
                 ui.output_ui("colocalization_retrieval_notice"),
-                ui.navset_card_underline(
-                    ui.nav_panel(
-                        "Observed",
-                        ui.output_ui("coloc_notice"),
-                        ui.div(
-                            ui.download_button(
-                                "coloc_settings_json",
-                                "Settings JSON",
-                                class_="btn-sm btn-outline-secondary",
-                            ),
-                            class_="d-flex justify-content-end mb-2",
-                        ),
-                        plot_pane(
-                            "coloc_heatmap",
-                            height="auto",
-                            class_="plot-pane-scroll coloc-heatmap-pane",
-                        ),
-                        ui.card(
-                            ui.card_header("Pair detail"),
-                            ui.card_body(ui.output_ui("coloc_pair_metrics"), plot_pane("coloc_pair_detail"), table_pane("coloc_pair_table")),
-                        ),
-                        table_pane("coloc_table"),
-                    ),
-                    ui.nav_panel("Differential", ui.output_ui("coloc_diff_method"), differential_panel("coloc_diff")),
-                    ui.nav_panel("3D Layout", plot_pane("coloc_3d_layout", height="640px"), table_pane("coloc_3d_table")),
-                    id="colocalization_mode",
-                    title="Colocalization",
-                    full_screen=True,
-                ),
+                ui.output_ui("coloc_diff_method"),
+                differential_panel("coloc_diff"),
+            ),
+        ),
+    )
+
+
+def layout_3d_ui():
+    sidebar = ui.sidebar(
+        ui.accordion(
+            ui.accordion_panel(
+                "Cell",
+                selectize("coloc_3d_sample", "Sample"),
+                selectize("coloc_3d_celltypes", "Cell type", multiple=True),
+                selectize("coloc_3d_component", "Cell/component"),
+                ui.input_numeric("coloc_3d_max_background", "Max background nodes", 7000, min=0, max=50000, step=500),
+            ),
+            ui.accordion_panel("Markers", selectize("coloc_3d_markers", "Highlighted markers", multiple=True)),
+            open=["Cell", "Markers"],
+        ),
+        title="3D layout controls",
+        width=300,
+    )
+    return ui.nav_panel(
+        "3D Layout",
+        ui.layout_sidebar(
+            sidebar,
+            ui.div(
+                ui.output_ui("layout_3d_retrieval_notice"),
+                plot_pane("coloc_3d_layout", height="640px"),
+                table_pane("coloc_3d_table"),
             ),
         ),
     )
@@ -783,7 +802,14 @@ app_ui = ui.page_navbar(
     abundance_ui(),
     ui.nav_panel(
         "Spatial Metrics",
-        ui.navset_tab(spatial_retrieval_ui(), clustering_ui(), colocalization_ui(), id="spatial_metric_readout"),
+        ui.navset_tab(
+            spatial_retrieval_ui(),
+            proximity_profile_ui(),
+            clustering_ui(),
+            colocalization_ui(),
+            layout_3d_ui(),
+            id="spatial_metric_readout",
+        ),
     ),
     patch_ui(),
     activity_log_ui(),
@@ -1317,10 +1343,21 @@ def server(input: Inputs, output: Outputs, session: Session):
                 "Retrieve data in Spatial Metrics > Retrieve Data to enable this view.",
                 class_="alert alert-warning m-3 mb-0",
             )
-        return ui.div(
-            f"Active retrieval: {len(retrieval.metadata):,} cells, "
+        details = (
+            f"{len(retrieval.metadata):,} cells, "
             f"{retrieval.metadata['sample_alias'].nunique():,} samples, and "
-            f"{len(retrieval.markers):,} markers. View controls can only narrow this scope.",
+            f"{len(retrieval.markers):,} markers"
+        )
+        if retrieval.request != current_spatial_request():
+            return ui.div(
+                ui.strong("Pending retrieval changes. "),
+                f"Results still use the active retrieval from {retrieval.retrieved_at}: "
+                f"{details}. Return to Retrieve Data and click Retrieve Spatial Data "
+                "to replace it.",
+                class_="alert alert-warning m-3 mb-0 py-2",
+            )
+        return ui.div(
+            f"Active retrieval: {details}. View controls can only narrow this scope.",
             class_="alert alert-info m-3 mb-0 py-2",
         )
 
@@ -1331,7 +1368,17 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @output
     @render.ui
+    def proximity_profile_retrieval_notice():
+        return active_retrieval_notice()
+
+    @output
+    @render.ui
     def colocalization_retrieval_notice():
+        return active_retrieval_notice()
+
+    @output
+    @render.ui
+    def layout_3d_retrieval_notice():
         return active_retrieval_notice()
 
     @output(id="analysis_grouping_summary")

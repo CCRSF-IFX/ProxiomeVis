@@ -38,5 +38,6 @@ Patch plots require their optional precomputed H5AD payload.
 4. Open **Abundance > Cell Annotation** to verify the cell populations.
 5. Open **Spatial Metrics > Retrieve Data**, choose the population, leave
    **Number of markers** at **All markers**, and click **Retrieve Spatial Data**.
-6. Use Clustering or Colocalization; their controls can only narrow the active
-   retrieval. Return to Retrieve Data and run it again to replace that scope.
+6. Open **Proximity Profile** to profile proximity scores, then continue to
+   Clustering, Colocalization, or 3D Layout. Return to Retrieve Data and run it
+   again to replace the active scope.

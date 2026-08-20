@@ -16,8 +16,8 @@ scores and component layouts are queried from PXL on demand.
   distributions, and original metadata inspection.
 - **Abundance**: UMAP marker abundance views, marker distribution plots,
   cell-type composition, annotation heatmaps, and differential abundance.
-- **Spatial Metrics**: one shared retrieval defines the population and marker
-  scope used by clustering, colocalization, differential tests, and 3D layouts.
+- **Spatial Metrics**: one shared retrieval feeds proximity profiling,
+  clustering, differential colocalization, and 3D layouts.
 - **Patch Analysis**: marker unmixing, Raji signal, and patch-burden views when
   their precomputed tables are stored in the H5AD.
 - **On-demand PXL queries**: read only the selected components and markers for

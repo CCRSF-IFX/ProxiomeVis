@@ -521,7 +521,7 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
         "QC", "Filtering", "Cell Calling", "Distributions", "Metadata",
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
-            "All markers", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
+            "All markers", "Proximity Profile", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
             "Activity Log", "Clear log", "Download diagnostics",
                 "PixelatorES proximity profile", "Strongest proximity pairs",
                 "Load PixelatorES defaults", "Apply analysis settings", "Summarize by",
@@ -540,12 +540,25 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert 'id="custom_grouping"' not in html
     assert 'id="apply_coloc"' not in html
     assert 'id="coloc_apply_analysis"' in html
+    assert 'id="proximity_profile_retrieval_notice"' in html
+    assert 'id="layout_3d_retrieval_notice"' in html
+    assert "Pending retrieval changes." in source
+    notice_source = source[source.index("def active_retrieval_notice"):source.index("def clustering_retrieval_notice")]
+    assert "retrieval.request != current_spatial_request()" in notice_source
     assert 'id="coloc_condition_filter"' not in html
     assert 'id="coloc_diff_celltype_filter"' not in html
     assert 'id="coloc_diff_mean"' not in html
     assert 'id="coloc_run_differential"' not in html
     assert 'id="clustering_run_differential"' not in html
     assert 'class="data-source-actions"' in html
+    assert "colocalization_mode" not in source
+    assert (
+        html.index(">Retrieve Data<")
+        < html.index(">Proximity Profile<")
+        < html.index(">Clustering<")
+        < html.index(">Colocalization<")
+        < html.index(">3D Layout<")
+    )
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in Path("www/proixome.css").read_text()
     for token in ("Use metadata column", "Edit sample groups", "Reset to condition", "analysis_group_editor"):
         assert token in source

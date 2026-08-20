@@ -1,10 +1,12 @@
 # Spatial Metrics
 
-Spatial Metrics contains a shared retrieval step and two readouts:
+Spatial Metrics contains a shared retrieval step and four downstream views:
 
 - **Retrieve Data**: defines the cell population and marker scope.
+- **Proximity Profile**: profiles marker-pair proximity scores and pair details.
 - **Clustering**: marker self-proximity within each cell graph.
-- **Colocalization**: marker-pair proximity between two different proteins.
+- **Colocalization**: differential marker-pair tests.
+- **3D Layout**: interactive views of individual Pixelator cell graphs.
 
 These readouts query the precomputed `proximity` table in the assigned PXL
 files. The app uses H5AD component IDs to push the active cell and marker
@@ -30,6 +32,17 @@ PXL proximity table into browser memory. Each visualization pushes its smaller
 query into the PXL-backed DuckDB view. This preserves a consistent retrieval
 boundary without materializing every marker pair.
 
+## Proximity Profile
+
+Use **Proximity Profile** immediately after retrieval to view marker-pair
+proximity heatmaps. The heatmap can summarize by analysis group or sample and
+can focus on one group or compare groups.
+
+The default retrieval includes all markers, while the default heatmap uses the
+PixelatorES proximity profile for readability and query performance. A manual
+heatmap marker set must be a subset of the retrieved markers. The applied
+population and proximity definition are reused by differential colocalization.
+
 ## Clustering
 
 Use **Clustering > Observed** to inspect a selected marker's self-proximity
@@ -49,14 +62,7 @@ there is no separate run button.
 
 ## Colocalization
 
-Use **Colocalization > Observed** to view marker-pair proximity heatmaps. The
-heatmap can summarize by condition, sample, or focused cell type.
-
-The default retrieval includes all markers, while the default heatmap remains
-an abundance-ranked top-40 display for readability and query performance. A
-manual heatmap marker set must be a subset of the retrieved markers.
-
-Use **Colocalization > Differential** to compare marker-pair proximity between
+Use **Colocalization** to compare marker-pair proximity between
 two groups within one cell population. The analysis first calculates the
 selected population or detected-cell mean for every sample, then compares the
 median sample values between groups. Samples—not cells—are the statistical
@@ -67,7 +73,7 @@ The volcano shows every marker pair by default. Use **Pairs shown** to focus on
 pairs containing one marker, and click a volcano point to update the sample-level
 detail plot. Missing pairs are included as zero only for the population mean.
 
-Use **Colocalization > 3D Layout** to inspect one selected Pixelator cell graph
+Use **3D Layout** to inspect one selected Pixelator cell graph
 in 3D. Assign one or more `.layout.pxl` paths in **Data**. The app reads that
 component's stored layout on demand and renders an interactive Plotly scatter
 plot. The same assigned PXL files provide the spatial analysis tables.
