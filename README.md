@@ -18,8 +18,8 @@ scores and component layouts are queried from PXL on demand.
   cell-type composition, annotation heatmaps, and differential abundance.
 - **Spatial Metrics**: one shared retrieval feeds proximity profiling,
   clustering, differential colocalization, and 3D layouts.
-- **Patch Analysis**: marker unmixing, Raji signal, and patch-burden views when
-  their precomputed tables are stored in the H5AD.
+- **Patch Analysis**: dataset-neutral receiver/target marker selection, live
+  candidate screening from PXL, and stored patch burden/composition views.
 - **On-demand PXL queries**: read only the selected components and markers for
   spatial tables and stored 3D layouts.
 - **Activity Log**: watch severity-tagged H5AD loading, spatial retrieval, PXL

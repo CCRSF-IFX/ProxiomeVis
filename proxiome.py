@@ -27,9 +27,13 @@ REFERENCE_PXL = (
 PATCH_TABLES = (
     "run_plan",
     "marker_unmixing",
+    "target_marker_abundance",
+    "target_marker_proximity",
+    "patch_sizes",
     "raji_marker_abundance",
     "raji_marker_proximity",
     "patch_burden",
+    "patch_composition",
 )
 
 
@@ -57,6 +61,16 @@ class SpatialRetrieval:
     metadata: pd.DataFrame
     markers: tuple[str, ...]
     marker_mode: str
+
+
+@dataclass(frozen=True)
+class PatchRetrieval:
+    prepared_at: str
+    request: tuple
+    metadata: pd.DataFrame
+    candidate_data: pd.DataFrame
+    target_markers: tuple[str, ...]
+    receiver_markers: tuple[str, ...]
 
 
 def resolve_h5ad_path(spec: str | Path) -> Path:
@@ -132,7 +146,10 @@ def load_h5ad_data(spec: str | Path, *, pxl_spec: str | Path | None = None) -> A
             "h5ad_path": str(path),
             "analysis_group_label": "condition",
             "has_spatial_metrics": bool(pxl_files),
-            "has_patch_analysis": any(table is not None and not table.empty for table in patch.values()),
+            "has_patch_analysis": any(
+                patch.get(name) is not None and not patch[name].empty
+                for name in ("patch_sizes", "patch_burden", "patch_composition")
+            ),
             "has_component_layouts": bool(component_layouts),
             "pxl_files": len(pxl_files),
         },
@@ -471,6 +488,168 @@ def sample_pxl_colocalization(
     return result
 
 
+def joint_marker_proximity(
+    data: AppData,
+    metadata: pd.DataFrame,
+    markers: Sequence[str],
+) -> pd.DataFrame:
+    """Calculate the joint proximity score for one marker set per component."""
+    metadata = filter_pxl_metadata(data, metadata)
+    selected_markers = list(dict.fromkeys(map(str, markers)))
+    if metadata.empty or not selected_markers:
+        return pd.DataFrame()
+    components = metadata["component"].dropna().astype(str).drop_duplicates().tolist()
+    query = """
+        SELECT component,
+               sum(CAST(join_count AS DOUBLE)) AS join_count,
+               sum(join_count_expected_mean) AS join_count_expected_mean,
+               log2(
+                   greatest(sum(CAST(join_count AS DOUBLE)), 1) /
+                   greatest(sum(join_count_expected_mean), 1)
+               ) AS log2_ratio
+        FROM proximity
+        WHERE component IN $components
+          AND marker_1 IN $markers
+          AND marker_2 IN $markers
+        GROUP BY component
+    """
+    dataset = _read_pxl_dataset(data.pxl_files)
+    with dataset.view.open() as session:
+        rows = session.get_connection().execute(
+            query,
+            {"components": components, "markers": selected_markers},
+        ).fetchdf()
+    if rows.empty:
+        rows = pd.DataFrame(
+            columns=["component", "join_count", "join_count_expected_mean", "log2_ratio"]
+        )
+    else:
+        rows["component"] = rows["component"].astype(str)
+    meta_columns = [
+        column
+        for column in ("component", "sample", "sample_alias", "condition", "celltype_manual")
+        if column in metadata
+    ]
+    return metadata[meta_columns].drop_duplicates("component").merge(
+        rows,
+        on="component",
+        how="left",
+        validate="one_to_one",
+    )
+
+
+def build_patch_retrieval(
+    data: AppData,
+    request: tuple,
+    *,
+    prepared_at: str,
+) -> PatchRetrieval:
+    """Freeze one receiver/target patch scope and its candidate signal."""
+    (
+        conditions,
+        population_col,
+        receiver,
+        target,
+        target_markers,
+        receiver_markers,
+    ) = request
+    if population_col not in data.metadata:
+        raise ValueError("Select a valid population metadata field.")
+    if not receiver or not target or receiver == target:
+        raise ValueError("Select two different receiver and target populations.")
+    if len(target_markers) < 2:
+        raise ValueError("Select at least two target markers.")
+
+    metadata = data.metadata[
+        data.metadata["condition"].astype(str).isin(conditions)
+    ].copy()
+    receiver_metadata = metadata[
+        metadata[population_col].astype(str) == str(receiver)
+    ].copy()
+    target_metadata = metadata[
+        metadata[population_col].astype(str) == str(target)
+    ]
+    if receiver_metadata.empty or target_metadata.empty:
+        raise ValueError("The active analysis groups must contain both populations.")
+
+    if data.pxl_files:
+        candidate_data = joint_marker_proximity(data, receiver_metadata, target_markers)
+        counts = data.abundance[
+            data.abundance["component"].astype(str).isin(
+                receiver_metadata["component"].astype(str)
+            )
+            & data.abundance["marker"].astype(str).isin(target_markers)
+        ].copy()
+        counts["count"] = pd.to_numeric(counts["count"], errors="coerce").fillna(0)
+        counts = (
+            counts.groupby("component", observed=True)["count"]
+            .sum()
+            .rename("target_marker_count")
+        )
+        candidate_data = candidate_data.merge(counts, on="component", how="left")
+        candidate_data["source"] = "Live PXL query"
+    else:
+        candidate_data = data.patch.get("target_marker_proximity")
+        candidate_data = candidate_data.copy() if candidate_data is not None else pd.DataFrame()
+        if not candidate_data.empty and "component" in candidate_data:
+            candidate_data = candidate_data.rename(
+                columns={"raji_marker_count": "target_marker_count"}
+            )
+            if "target_marker_count" not in candidate_data:
+                abundance = data.patch.get("target_marker_abundance")
+                abundance = abundance.copy() if abundance is not None else pd.DataFrame()
+                count_col = next(
+                    (
+                        column
+                        for column in ("target_marker_count", "raji_marker_count", "count")
+                        if column in abundance
+                    ),
+                    None,
+                )
+                if "component" in abundance and count_col:
+                    abundance = abundance[["component", count_col]].rename(
+                        columns={count_col: "target_marker_count"}
+                    )
+                    abundance["component"] = abundance["component"].astype(str)
+                    candidate_data["component"] = candidate_data["component"].astype(str)
+                    candidate_data = candidate_data.merge(
+                        abundance.drop_duplicates("component"),
+                        on="component",
+                        how="left",
+                    )
+            columns = [
+                column
+                for column in (
+                    "component",
+                    "sample",
+                    "sample_alias",
+                    "condition",
+                    "celltype_manual",
+                )
+                if column in receiver_metadata
+            ]
+            candidate_data["component"] = candidate_data["component"].astype(str)
+            candidate_data = candidate_data.drop(
+                columns=columns[1:], errors="ignore"
+            ).merge(
+                receiver_metadata[columns].drop_duplicates("component"),
+                on="component",
+                how="inner",
+            )
+            candidate_data["source"] = "Stored H5AD table"
+        else:
+            candidate_data = pd.DataFrame()
+
+    return PatchRetrieval(
+        prepared_at=prepared_at,
+        request=request,
+        metadata=metadata,
+        candidate_data=candidate_data,
+        target_markers=tuple(target_markers),
+        receiver_markers=tuple(receiver_markers),
+    )
+
+
 def summarize_sample_colocalization(
     samples: pd.DataFrame,
     *,
@@ -528,13 +707,89 @@ def select_proximity_profile_markers(
     return list(dict.fromkeys([*rows["pair_1"].tolist(), *rows["pair_2"].tolist()]))
 
 
+def patch_marker_profiles(
+    abundance: pd.DataFrame,
+    metadata: pd.DataFrame,
+    *,
+    population_col: str,
+    receiver_population: str,
+    target_population: str,
+    min_fraction: float = 0.01,
+    min_enrichment: float = 3,
+) -> pd.DataFrame:
+    """Screen raw marker frequencies for receiver- and target-specific markers."""
+    required_abundance = {"component", "marker", "count"}
+    required_metadata = {"component", population_col}
+    if missing := required_abundance.difference(abundance.columns):
+        raise ValueError("Abundance table is missing: " + ", ".join(sorted(missing)))
+    if missing := required_metadata.difference(metadata.columns):
+        raise ValueError("Metadata table is missing: " + ", ".join(sorted(missing)))
+    if receiver_population == target_population:
+        raise ValueError("Receiver and target populations must be different.")
+
+    population = metadata[["component", population_col]].drop_duplicates("component").copy()
+    population["component"] = population["component"].astype(str)
+    population[population_col] = population[population_col].astype(str)
+    rows = abundance[["component", "marker", "count"]].copy()
+    rows["component"] = rows["component"].astype(str)
+    rows["marker"] = rows["marker"].astype(str)
+    rows["count"] = pd.to_numeric(rows["count"], errors="coerce").fillna(0)
+    rows = rows.merge(population, on="component", how="inner")
+    rows = rows[
+        rows[population_col].isin([str(receiver_population), str(target_population)])
+    ]
+    if rows.empty:
+        return pd.DataFrame()
+
+    counts = rows.groupby([population_col, "marker"], observed=True)["count"].sum()
+    totals = counts.groupby(level=0).transform("sum").replace(0, np.nan)
+    frequencies = (counts / totals).rename("frequency").reset_index()
+    profiles = frequencies.pivot(index="marker", columns=population_col, values="frequency")
+    profiles = profiles.reindex(
+        columns=[str(receiver_population), str(target_population)], fill_value=0
+    ).fillna(0)
+    profiles.columns = ["receiver_freq", "target_freq"]
+    profiles = profiles.reset_index()
+    receiver = profiles["receiver_freq"]
+    target = profiles["target_freq"]
+    enrichment = max(float(min_enrichment), 1)
+    threshold = max(float(min_fraction), 0)
+    profiles["marker_class"] = np.select(
+        [
+            (target >= threshold) & (target >= receiver * enrichment),
+            (receiver >= threshold) & (receiver >= target * enrichment),
+        ],
+        ["Target marker", "Receiver marker"],
+        default="Shared / low signal",
+    )
+    profiles["target_enrichment"] = target / receiver.replace(0, np.nan)
+    profiles["receiver_enrichment"] = receiver / target.replace(0, np.nan)
+    return profiles.sort_values(
+        ["marker_class", "target_freq", "receiver_freq", "marker"],
+        ascending=[True, False, False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
 def load_h5ad_patch(adata) -> dict[str, pd.DataFrame | None]:
     payload = h5ad_proxiome_payload(adata).get("patch", {})
     if payload is None:
         return empty_patch()
     if not isinstance(payload, Mapping):
         raise ValueError('H5AD uns["proxiome"]["patch"] must be a mapping of tables.')
-    return {name: payload_frame(payload, name) for name in PATCH_TABLES}
+    result = {
+        name: payload_frame(payload, name)
+        for name in PATCH_TABLES
+        if name in payload
+    }
+    aliases = {
+        "target_marker_abundance": "raji_marker_abundance",
+        "target_marker_proximity": "raji_marker_proximity",
+    }
+    for generic, legacy in aliases.items():
+        if generic not in result and legacy in result:
+            result[generic] = result[legacy].copy()
+    return result
 
 
 def load_h5ad_component_layouts(adata) -> dict[str, pd.DataFrame]:

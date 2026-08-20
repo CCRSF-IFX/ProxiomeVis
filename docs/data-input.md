@@ -34,8 +34,9 @@ export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
 - `obsm`: stored two-dimensional or higher embeddings such as UMAP, PCA, or Harmony
 - `uns["qc_cell_counts_by_step"]`: optional notebook-generated QC retention history
 - `uns["proxiome"]["patch"]`: optional mapping containing `run_plan`,
-  `marker_unmixing`, `raji_marker_abundance`, `raji_marker_proximity`, and
-  `patch_burden` tables
+  `marker_unmixing`, `target_marker_abundance`, `target_marker_proximity`,
+  `patch_sizes`, `patch_burden`, and `patch_composition` tables. Legacy
+  `raji_marker_*` names remain readable as aliases.
 - `uns["proxiome"]["component_layouts"]`: optional mapping from component ID
   to a node table containing `x`, `y`, and `z`
 

@@ -14,14 +14,17 @@ from proxiome import (
     analysis_grouping_summary,
     apply_analysis_grouping,
     build_h5ad_qc_filter_counts,
+    build_patch_retrieval,
     build_spatial_retrieval,
     calculate_differential,
     clear_pxl_cache,
     default_pxl_spec,
+    joint_marker_proximity,
     load_h5ad_data,
     load_pxl_proximity,
     new_analysis_grouping_config,
     read_component_layout,
+    patch_marker_profiles,
     resolve_pxl_paths,
     resolve_h5ad_path,
     sample_pxl_colocalization,
@@ -147,6 +150,7 @@ def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypat
     assert set(data.metadata) >= {"component", "umap_1", "umap_2"}
     assert data.qc_filter_counts["n_cells"].sum() == 6
     assert data.source["has_spatial_metrics"] is True
+    assert data.source["has_patch_analysis"] is False
     assert not hasattr(data, "proximity")
     assert data.patch["marker_unmixing"].iloc[0]["marker"] == "CD19"
     assert data.component_layouts["c1"].iloc[0]["marker"] == "CD3"
@@ -443,6 +447,142 @@ def test_sample_colocalization_query_is_restricted_to_retrieved_markers(monkeypa
     assert set(rows["marker_pair"]) == {"A / B"}
 
 
+def test_patch_marker_profiles_are_dataset_driven():
+    metadata = pd.DataFrame(
+        {
+            "component": ["r1", "r2", "t1", "t2"],
+            "celltype": ["Receiver", "Receiver", "Target", "Target"],
+        }
+    )
+    abundance = pd.DataFrame(
+        {
+            "component": ["r1", "r1", "r2", "r2", "t1", "t1", "t2", "t2"],
+            "marker": ["R", "T"] * 4,
+            "count": [90, 10, 90, 10, 5, 95, 5, 95],
+        }
+    )
+
+    profiles = patch_marker_profiles(
+        abundance,
+        metadata,
+        population_col="celltype",
+        receiver_population="Receiver",
+        target_population="Target",
+        min_fraction=0.1,
+        min_enrichment=3,
+    ).set_index("marker")
+
+    assert profiles.loc["R", "marker_class"] == "Receiver marker"
+    assert profiles.loc["T", "marker_class"] == "Target marker"
+    assert profiles.loc["T", "target_freq"] == pytest.approx(0.95)
+
+
+def test_patch_population_choices_exclude_numeric_qc_fields():
+    from app import patch_population_columns
+
+    metadata = pd.DataFrame(
+        {
+            "component": ["c1", "c2", "c3", "c4"],
+            "cell_type": ["B", "B", "T", "T"],
+            "leiden": [0, 0, 1, 1],
+            "n_antibodies": [1, 2, 3, 4],
+            "umap_1": [0.1, 0.2, 0.3, 0.4],
+        }
+    )
+
+    choices = patch_population_columns(metadata)
+
+    assert "cell_type" in choices
+    assert "leiden" in choices
+    assert "n_antibodies" not in choices
+    assert "umap_1" not in choices
+
+
+def test_patch_retrieval_freezes_scope_and_uses_stored_candidate_tables():
+    data = make_data()
+    metadata = data.metadata.copy()
+    metadata["celltype_manual"] = ["Receiver", "Receiver", "Target", "Target"]
+    abundance = pd.DataFrame(
+        {
+            "component": ["c1", "c1", "c2", "c2", "c3", "c3", "c4", "c4"],
+            "marker": ["A", "B"] * 4,
+            "count": [10, 20, 30, 40, 50, 60, 70, 80],
+        }
+    )
+    patch = {
+        "target_marker_proximity": pd.DataFrame(
+            {"component": ["c1", "c2", "c3"], "log2_ratio": [0.5, 0.1, 0.9]}
+        ),
+        "target_marker_abundance": pd.DataFrame(
+            {"component": ["c1", "c2", "c3"], "count": [30, 70, 110]}
+        ),
+    }
+    data = replace(data, metadata=metadata, abundance=abundance, patch=patch)
+    request = (
+        ("A", "B"),
+        "celltype_manual",
+        "Receiver",
+        "Target",
+        ("A", "B"),
+        ("A",),
+    )
+
+    retrieval = build_patch_retrieval(data, request, prepared_at="now")
+
+    assert retrieval.request == request
+    assert retrieval.prepared_at == "now"
+    assert retrieval.candidate_data["component"].tolist() == ["c1", "c2"]
+    assert retrieval.candidate_data["target_marker_count"].tolist() == [30, 70]
+    assert set(retrieval.candidate_data["source"]) == {"Stored H5AD table"}
+
+
+def test_joint_marker_proximity_uses_selected_components_and_markers(monkeypatch):
+    data = replace(make_data(), pxl_files=("fake.pxl",))
+    captured = {}
+
+    class FakeConnection:
+        def execute(self, query, parameters):
+            captured["query"] = query
+            captured["parameters"] = parameters
+            return self
+
+        def fetchdf(self):
+            return pd.DataFrame(
+                {
+                    "component": ["c1"],
+                    "join_count": [8.0],
+                    "join_count_expected_mean": [4.0],
+                    "log2_ratio": [1.0],
+                }
+            )
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get_connection(self):
+            return FakeConnection()
+
+    monkeypatch.setattr(
+        "proxiome.filter_pxl_metadata",
+        lambda _data, metadata=None: _data.metadata if metadata is None else metadata,
+    )
+    monkeypatch.setattr(
+        "proxiome._read_pxl_dataset",
+        lambda _paths: SimpleNamespace(view=SimpleNamespace(open=FakeSession)),
+    )
+
+    rows = joint_marker_proximity(data, data.metadata.iloc[:2], ["A", "B"])
+
+    assert captured["parameters"] == {"components": ["c1", "c2"], "markers": ["A", "B"]}
+    assert "sum(CAST(join_count AS DOUBLE))" in captured["query"]
+    assert rows["component"].tolist() == ["c1", "c2"]
+    assert rows.loc[rows["component"] == "c1", "log2_ratio"].item() == 1
+
+
 def test_volcano_click_selects_its_custom_data(monkeypatch):
     import app
     import plotly.graph_objects as go
@@ -522,6 +662,9 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
             "Abundance", "Observed", "Marker Distributions", "Cell Annotation", "Differential",
             "Spatial Metrics", "Retrieve Data", "Retrieve Spatial Data", "Number of markers",
             "All markers", "Proximity Profile", "Clustering", "Colocalization", "3D Layout", "Patch Analysis",
+            "Marker Selection", "Candidate Signal", "Detected Patches", "Composition",
+            "Receiver population", "Target population", "Use suggested markers",
+            "Prepare Patch Data",
             "Activity Log", "Clear log", "Download diagnostics",
                 "PixelatorES proximity profile", "Strongest proximity pairs",
                 "Load PixelatorES defaults", "Apply analysis settings", "Summarize by",
@@ -535,6 +678,7 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
             assert label in html
     for label in ("Optional patch-analysis directory", "Analyze PXL"):
         assert label not in html
+    assert "Raji Signal" not in html
     assert 'id="configure_analysis_grouping"' in html
     assert 'id="analysis_grouping_summary"' in html
     assert 'id="custom_grouping"' not in html

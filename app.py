@@ -31,10 +31,12 @@ from shinywidgets import output_widget, render_plotly
 
 from proxiome import (
     AppData,
+    PatchRetrieval,
     SpatialRetrieval,
     analysis_grouping_summary,
     apply_analysis_grouping,
     build_spatial_retrieval,
+    build_patch_retrieval,
     calculate_differential,
     default_h5ad_path,
     default_pxl_spec,
@@ -43,6 +45,7 @@ from proxiome import (
     load_pxl_proximity,
     mapping_for_column,
     new_analysis_grouping_config,
+    patch_marker_profiles,
     read_component_layout,
     resolve_h5ad_path,
     sample_pxl_colocalization,
@@ -712,21 +715,85 @@ def layout_3d_ui():
 
 def patch_ui():
     sidebar = ui.sidebar(
-        ui.accordion(ui.accordion_panel("Markers", selectize("patch_label_filter", "Marker class", multiple=True)), open="Markers"),
+        ui.accordion(
+            ui.accordion_panel(
+                "Populations",
+                ui.input_select("patch_population_column", "Population metadata", []),
+                ui.input_select("patch_receiver_population", "Receiver population", []),
+                ui.input_select("patch_target_population", "Target population", []),
+                selectize("patch_condition_filter", "Analysis groups", multiple=True),
+                ui.help_text("Patch detection compares exactly one receiver and one target population."),
+            ),
+            ui.accordion_panel(
+                "Marker selection",
+                ui.input_numeric("patch_min_marker_fraction", "Minimum population fraction", 0.01, min=0, max=1, step=0.005),
+                ui.input_numeric("patch_min_marker_enrichment", "Minimum fold enrichment", 3, min=1, step=0.5),
+                ui.input_action_button("patch_use_suggested_markers", "Use suggested markers", class_="btn-outline-secondary w-100 mb-2"),
+                selectize("patch_target_markers", "Target/patch markers", multiple=True),
+                selectize("patch_receiver_markers", "Receiver/blocking markers", multiple=True),
+            ),
+            ui.accordion_panel(
+                "Candidate screen",
+                ui.input_numeric("patch_candidate_min_count", "Minimum target-marker count", 100, min=0),
+                ui.input_numeric("patch_candidate_min_score", "Minimum joint log2 ratio", 0.3, step=0.1),
+            ),
+            ui.accordion_panel(
+                "Stored results",
+                ui.input_select("patch_burden_metric", "Patch metric", []),
+                ui.input_select("patch_result_group", "Group results by", []),
+            ),
+            open=["Populations", "Marker selection"],
+        ),
+        ui.input_task_button(
+            "prepare_patch_data",
+            "Prepare Patch Data",
+            class_="btn-primary w-100 mt-2",
+        ),
+        ui.output_ui("patch_retrieval_status"),
         title="Patch controls",
-        width=300,
+        width=320,
     )
     return ui.nav_panel(
         "Patch Analysis",
         ui.layout_sidebar(
             sidebar,
-            ui.navset_card_underline(
-                ui.nav_panel("Markers", ui.output_ui("patch_metric_row"), plot_pane("patch_marker_plot"), table_pane("patch_marker_table")),
-                ui.nav_panel("Raji Signal", plot_pane("patch_raji_plot"), table_pane("patch_raji_table")),
-                ui.nav_panel("Patch Burden", table_pane("patch_burden_table")),
-                id="patch_mode",
-                title="Patch Analysis",
-                full_screen=True,
+            ui.div(
+                ui.div(
+                    ui.strong("Experimental workflow. "),
+                    "This app screens patch markers and candidate cells. Connected-subgraph patch detection must be run upstream; stored results are displayed without inventing missing patches.",
+                    class_="alert alert-warning m-3 mb-0 py-2",
+                ),
+                ui.output_ui("patch_retrieval_summary"),
+                ui.navset_card_underline(
+                    ui.nav_panel(
+                        "Marker Selection",
+                        ui.output_ui("patch_marker_notice"),
+                        ui.output_ui("patch_metric_row"),
+                        plot_pane("patch_marker_plot"),
+                        table_pane("patch_marker_table"),
+                    ),
+                    ui.nav_panel(
+                        "Candidate Signal",
+                        ui.output_ui("patch_candidate_notice"),
+                        ui.output_ui("patch_candidate_metrics"),
+                        plot_pane("patch_candidate_plot"),
+                        table_pane("patch_candidate_table"),
+                    ),
+                    ui.nav_panel(
+                        "Detected Patches",
+                        ui.output_ui("patch_results_notice"),
+                        plot_pane("patch_burden_plot"),
+                        table_pane("patch_burden_table"),
+                    ),
+                    ui.nav_panel(
+                        "Composition",
+                        plot_pane("patch_composition_plot", height="680px"),
+                        table_pane("patch_composition_table"),
+                    ),
+                    id="patch_mode",
+                    title="Patch Analysis",
+                    full_screen=True,
+                ),
             ),
         ),
     )
@@ -904,6 +971,31 @@ def selected(value, choices: pd.Series | list[str]) -> list[str]:
     return [str(item) for item in (value if isinstance(value, (list, tuple)) else [value])]
 
 
+def patch_population_columns(metadata: pd.DataFrame) -> list[str]:
+    """Return metadata fields suitable for choosing two biological populations."""
+    semantic_numeric = ("celltype", "cell_type", "cluster", "leiden", "population", "group")
+    candidates = [
+        column
+        for column in metadata.columns
+        if column != "component"
+        and not column.rsplit("_", 1)[-1].isdigit()
+        and (
+            not pd.api.types.is_numeric_dtype(metadata[column])
+            or any(token in column.lower() for token in semantic_numeric)
+        )
+        and 2 <= metadata[column].nunique(dropna=True) <= 100
+    ]
+    preferred = [
+        "celltype_manual",
+        "celltype",
+        "cell_type",
+        "seurat_clusters",
+        "leiden",
+        "condition",
+    ]
+    return list(dict.fromkeys([column for column in preferred if column in candidates] + candidates))
+
+
 def metric_boxes(items: list[tuple[str, str]]):
     return ui.layout_columns(
         *[ui.value_box(label, value, theme="teal", height="110px") for label, value in items],
@@ -932,6 +1024,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     data_state: reactive.Value[AppData | None] = reactive.Value(None)
     grouping_state: reactive.Value[dict | None] = reactive.Value(None)
     spatial_retrieval_state: reactive.Value[SpatialRetrieval | None] = reactive.Value(None)
+    patch_retrieval_state: reactive.Value[PatchRetrieval | None] = reactive.Value(None)
     coloc_analysis_state: reactive.Value[dict | None] = reactive.Value(None)
     inspect_message = reactive.Value("No data loaded.")
     activity_queue: SimpleQueue[dict] = SimpleQueue()
@@ -1135,6 +1228,35 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
         return id(data), retrieval
 
+    @ui.bind_task_button(button_id="prepare_patch_data")
+    @reactive.extended_task
+    async def patch_retrieval_task(data: AppData, request: tuple) -> tuple[int, PatchRetrieval]:
+        started = perf_counter()
+        receiver, target = request[2:4]
+        log_activity(
+            "Patch retrieval",
+            "Started",
+            f"Preparing {receiver} receiver cells against {target} with {len(request[4]):,} target markers.",
+        )
+        try:
+            retrieval = await asyncio.to_thread(
+                build_patch_retrieval,
+                data,
+                request,
+                prepared_at=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"),
+            )
+        except Exception as error:
+            message = report_error("Patch retrieval", error, perf_counter() - started)
+            raise RuntimeError(message) from None
+        log_activity(
+            "Patch retrieval",
+            "Completed",
+            f"Prepared {len(retrieval.metadata):,} scoped cells and "
+            f"{len(retrieval.candidate_data):,} receiver candidates.",
+            perf_counter() - started,
+        )
+        return id(data), retrieval
+
     @reactive.effect
     @reactive.event(input.inspect_h5ad)
     def _inspect_h5ad():
@@ -1188,6 +1310,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         loaded = load_task.result()
         data_state.set(loaded)
         spatial_retrieval_state.set(None)
+        patch_retrieval_state.set(None)
         coloc_analysis_state.set(None)
         inspect_message.set(
             f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers; "
@@ -1206,6 +1329,20 @@ def server(input: Inputs, output: Outputs, session: Session):
         coloc_analysis_state.set(None)
         ui.notification_show(
             f"Spatial retrieval ready: {len(retrieval.metadata):,} cells and {len(retrieval.markers):,} markers.",
+            type="message",
+        )
+
+    @reactive.effect
+    def _activate_patch_retrieval():
+        source_id, retrieval = patch_retrieval_task.result()
+        current_data = data_state.get()
+        if current_data is None or id(current_data) != source_id:
+            log_activity("Patch retrieval", "Discarded", "The source dataset changed before retrieval completed.")
+            return
+        patch_retrieval_state.set(retrieval)
+        ui.notification_show(
+            f"Patch data ready: {len(retrieval.metadata):,} scoped cells and "
+            f"{len(retrieval.candidate_data):,} receiver candidates.",
             type="message",
         )
 
@@ -1397,7 +1534,10 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.p(ui.strong(data.source.get("display_name", "AnnData"))),
             ui.p(f"{data.source['n_cells']:,} cells · {data.source['n_markers']:,} markers"),
             ui.p(f"Spatial metrics: {'available from PXL' if data.source.get('has_spatial_metrics') else 'assign PXL files'}"),
-            ui.p(f"Patch analysis: {'available' if data.source.get('has_patch_analysis') else 'not stored in H5AD'}"),
+            ui.p(
+                "Patch detection results: "
+                f"{'stored in H5AD' if data.source.get('has_patch_analysis') else 'not stored'}"
+            ),
             ui.p(f"PXL files: {len(data.pxl_files):,}"),
             ui.p(f"Grouping: {data.source.get('analysis_group_label', 'condition')}"),
             class_="source-chip",
@@ -1442,9 +1582,21 @@ def server(input: Inputs, output: Outputs, session: Session):
             selected=markers[: min(40, len(markers))],
             server=True,
         )
-        marker_table = data.patch.get("marker_unmixing")
-        labels = sorted(marker_table["label"].dropna().astype(str).unique()) if marker_table is not None and "label" in marker_table else []
-        ui.update_selectize("patch_label_filter", choices=labels, selected=labels, server=True)
+        population_columns = patch_population_columns(metadata)
+        population_choices = {
+            column: column.replace("_", " ").title() for column in population_columns
+        }
+        default_population = population_columns[0] if population_columns else None
+        ui.update_select(
+            "patch_population_column",
+            choices=population_choices,
+            selected=default_population,
+        )
+        ui.update_selectize(
+            "patch_condition_filter", choices=conditions, selected=conditions, server=True
+        )
+        for input_id in ("patch_target_markers", "patch_receiver_markers"):
+            ui.update_selectize(input_id, choices=markers, selected=[], server=True)
 
     @reactive.effect
     def _refresh_spatial_inputs():
@@ -1662,6 +1814,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
             spatial_retrieval_state.set(None)
+            patch_retrieval_state.set(None)
             coloc_analysis_state.set(None)
             grouping_state.set(config)
             ui.modal_remove()
@@ -1681,6 +1834,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         config = update_analysis_grouping_config(config, mode="column", column=column)
         data_state.set(apply_analysis_grouping(data, config["mapping"], config["label"]))
         spatial_retrieval_state.set(None)
+        patch_retrieval_state.set(None)
         coloc_analysis_state.set(None)
         grouping_state.set(config)
         ui.modal_remove()
@@ -1692,6 +1846,9 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     def get_spatial_retrieval() -> SpatialRetrieval | None:
         return spatial_retrieval_state.get()
+
+    def get_patch_retrieval() -> PatchRetrieval | None:
+        return patch_retrieval_state.get()
 
     def tracked_pxl_proximity(operation: str, data: AppData, metadata: pd.DataFrame, **kwargs) -> pd.DataFrame:
         started = perf_counter()
@@ -3089,34 +3246,274 @@ def server(input: Inputs, output: Outputs, session: Session):
             return pd.DataFrame()
         return data.patch[name].copy()
 
+    def patch_input_values(value) -> list[str]:
+        if value is None or value == "" or value == () or value == []:
+            return []
+        return [str(item) for item in (value if isinstance(value, (list, tuple)) else [value])]
+
+    def current_patch_request() -> tuple | None:
+        data = get_data()
+        if data is None:
+            return None
+        return (
+            tuple(sorted(selected(input.patch_condition_filter(), data.metadata["condition"]))),
+            str(input.patch_population_column() or ""),
+            str(input.patch_receiver_population() or ""),
+            str(input.patch_target_population() or ""),
+            tuple(sorted(set(patch_input_values(input.patch_target_markers())))),
+            tuple(sorted(set(patch_input_values(input.patch_receiver_markers())))),
+        )
+
+    def active_patch_receiver_metadata() -> pd.DataFrame:
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return pd.DataFrame()
+        _, population_col, receiver, *_ = retrieval.request
+        return retrieval.metadata[
+            retrieval.metadata[population_col].astype(str) == str(receiver)
+        ]
+
+    @reactive.effect
+    @reactive.event(input.prepare_patch_data)
+    def _start_patch_retrieval():
+        data = get_data()
+        request = current_patch_request()
+        if data is None or request is None:
+            ui.notification_show("Load H5AD data before preparing Patch Analysis.", type="warning")
+            return
+        patch_retrieval_task.invoke(data, request)
+
+    @output
+    @render.ui
+    def patch_retrieval_status():
+        data = get_data()
+        retrieval = get_patch_retrieval()
+        if data is None:
+            return ui.div("Load H5AD data first.", class_="alert alert-warning mt-2 py-2")
+        if retrieval is None:
+            return ui.div(
+                "Choose the populations and markers, then prepare patch data.",
+                class_="alert alert-warning mt-2 py-2",
+            )
+        if retrieval.request != current_patch_request():
+            return ui.div(
+                "Unapplied changes. Results still use the active patch scope.",
+                class_="alert alert-warning mt-2 py-2",
+            )
+        return ui.div("Active patch scope is current.", class_="alert alert-success mt-2 py-2")
+
+    @output
+    @render.ui
+    def patch_retrieval_summary():
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return ui.p(
+                "No patch data have been prepared.",
+                class_="text-muted m-3 mb-0",
+            )
+        _, population_col, receiver, target, target_markers, _ = retrieval.request
+        populations = retrieval.metadata[population_col].astype(str)
+        stale = retrieval.request != current_patch_request()
+        return ui.div(
+            ui.div(
+                "Pending changes are not applied; results still use this active scope."
+                if stale
+                else "Candidate and stored-result views use this active scope.",
+                class_=f"alert {'alert-warning' if stale else 'alert-info'} py-2",
+            ),
+            metric_boxes([
+                ("Receiver Cells", f"{int((populations == receiver).sum()):,}"),
+                ("Target Cells", f"{int((populations == target).sum()):,}"),
+                ("Analysis Groups", f"{retrieval.metadata['condition'].nunique():,}"),
+                ("Target Markers", f"{len(target_markers):,}"),
+            ]),
+            ui.p(
+                f"Prepared {retrieval.prepared_at} · {population_col}: {receiver} → {target}.",
+                class_="text-muted small mb-0",
+            ),
+            class_="m-3 mb-0",
+        )
+
+    def patch_metadata_scope(*, receiver_only: bool = False) -> pd.DataFrame:
+        data = get_data()
+        if data is None:
+            return pd.DataFrame()
+        rows = data.metadata.copy()
+        conditions = selected(input.patch_condition_filter(), rows["condition"])
+        rows = rows[rows["condition"].astype(str).isin(conditions)]
+        population_col = input.patch_population_column()
+        receiver = input.patch_receiver_population()
+        if receiver_only and population_col in rows and receiver:
+            rows = rows[rows[population_col].astype(str) == str(receiver)]
+        return rows
+
+    @reactive.effect
+    def _refresh_patch_populations():
+        data = get_data()
+        population_col = input.patch_population_column()
+        if data is None or not population_col or population_col not in data.metadata:
+            return
+        populations = sorted(
+            data.metadata[population_col].dropna().astype(str).unique()
+        )
+        plan = patch_table("run_plan")
+
+        def planned_population(names: tuple[str, ...]) -> str | None:
+            if plan.empty:
+                return None
+            value = next((plan.iloc[0][name] for name in names if name in plan), None)
+            return str(value) if pd.notna(value) and str(value) in populations else None
+
+        receiver = planned_population(("receiver_population", "receiver"))
+        target = planned_population(("target_population", "target"))
+        current_receiver = str(input.patch_receiver_population() or "")
+        current_target = str(input.patch_target_population() or "")
+        receiver = receiver or (current_receiver if current_receiver in populations else None)
+        target = target or (current_target if current_target in populations else None)
+        ui.update_select(
+            "patch_receiver_population",
+            choices={"": "Choose receiver…", **{value: value for value in populations}},
+            selected=receiver or "",
+        )
+        ui.update_select(
+            "patch_target_population",
+            choices={"": "Choose target…", **{value: value for value in populations}},
+            selected=target or "",
+        )
+
+    @reactive.calc
+    def patch_marker_profile() -> pd.DataFrame:
+        data = get_data()
+        population_col = input.patch_population_column()
+        receiver = input.patch_receiver_population()
+        target = input.patch_target_population()
+        if (
+            data is None
+            or not population_col
+            or population_col not in data.metadata
+            or not receiver
+            or not target
+            or receiver == target
+        ):
+            return pd.DataFrame()
+        return patch_marker_profiles(
+            data.abundance,
+            patch_metadata_scope(),
+            population_col=str(population_col),
+            receiver_population=str(receiver),
+            target_population=str(target),
+            min_fraction=max(0, float(input.patch_min_marker_fraction() or 0)),
+            min_enrichment=max(1, float(input.patch_min_marker_enrichment() or 1)),
+        )
+
+    def update_patch_marker_suggestions() -> None:
+        rows = patch_marker_profile()
+        target_markers = rows.loc[
+            rows.get("marker_class", pd.Series(dtype=str)) == "Target marker", "marker"
+        ].astype(str).tolist()
+        receiver_markers = rows.loc[
+            rows.get("marker_class", pd.Series(dtype=str)) == "Receiver marker", "marker"
+        ].astype(str).tolist()
+        ui.update_selectize(
+            "patch_target_markers", selected=target_markers, server=True
+        )
+        ui.update_selectize(
+            "patch_receiver_markers", selected=receiver_markers, server=True
+        )
+
+    @reactive.effect
+    @reactive.event(
+        input.patch_population_column,
+        input.patch_receiver_population,
+        input.patch_target_population,
+        input.patch_condition_filter,
+    )
+    def _initialize_patch_marker_suggestions():
+        update_patch_marker_suggestions()
+
+    @reactive.effect
+    @reactive.event(input.patch_use_suggested_markers)
+    def _use_patch_marker_suggestions():
+        update_patch_marker_suggestions()
+
+    @output
+    @render.ui
+    def patch_marker_notice():
+        rows = patch_marker_profile()
+        if rows.empty:
+            return ui.div(
+                "Choose two different populations with marker counts.",
+                class_="alert alert-warning",
+            )
+        target_markers = patch_input_values(input.patch_target_markers())
+        selected_rows = rows[rows["marker"].astype(str).isin(target_markers)]
+        target_fraction = selected_rows["target_freq"].sum()
+        receiver_fraction = selected_rows["receiver_freq"].sum()
+        message = (
+            "Draft preview. Suggestions use raw population marker frequencies, not PixelatorR abundance "
+            f"unmixing. Selected target markers represent {target_fraction:.1%} of target "
+            f"counts and {receiver_fraction:.1%} of receiver counts."
+        )
+        if target_fraction < 0.2:
+            message += " Pixelgen recommends aiming for at least 20–30% target coverage."
+        return ui.div(
+            message,
+            class_=f"alert {'alert-info' if target_fraction >= 0.2 else 'alert-warning'} py-2",
+        )
+
     @output
     @render.ui
     def patch_metric_row():
-        plan = patch_table("run_plan")
-        if plan.empty:
-            return metric_boxes([("Patch Detection", "Unavailable"), ("Cells Selected", "—"), ("Patch Markers", "—"), ("Receiver Markers", "—")])
-        row = plan.iloc[0]
-        cells = row.get("n_cart_cells_selected", row.get("n_cd8t_cells_selected", 0))
         return metric_boxes([
-            ("Patch Detection", "Run" if bool(row.get("run_patch_detection", False)) else "Skipped"),
-            ("Cells Selected", f"{int(cells):,}"), ("Patch Markers", f"{int(row.get('n_patch_markers', 0)):,}"),
-            ("Receiver Markers", f"{int(row.get('n_receiver_markers', 0)):,}"),
+            ("Receiver", str(input.patch_receiver_population() or "—")),
+            ("Target", str(input.patch_target_population() or "—")),
+            ("Target Markers", f"{len(patch_input_values(input.patch_target_markers())):,}"),
+            ("Receiver Markers", f"{len(patch_input_values(input.patch_receiver_markers())):,}"),
         ])
 
-    def filtered_marker_unmixing() -> pd.DataFrame:
-        rows = patch_table("marker_unmixing")
-        if rows.empty:
-            return rows
-        labels = selected(input.patch_label_filter(), rows["label"]) if "label" in rows else []
-        return rows[rows["label"].astype(str).isin(labels)] if labels else rows
-
     def fig_patch_marker():
-        rows = filtered_marker_unmixing()
-        if rows.empty or not {"receiver_freq", "target_freq"}.issubset(rows):
-            return empty_figure('Patch tables are not stored in this H5AD under uns["proxiome"]["patch"].')
-        figure = px.scatter(rows, x="receiver_freq", y="target_freq", color="label" if "label" in rows else None, hover_name="marker" if "marker" in rows else None)
+        rows = patch_marker_profile()
+        if rows.empty:
+            return empty_figure("Choose two populations to screen patch markers.")
+        selected_markers = set(
+            patch_input_values(input.patch_target_markers())
+            + patch_input_values(input.patch_receiver_markers())
+        )
+        rows = rows.copy()
+        rows["selection"] = np.where(
+            rows["marker"].astype(str).isin(selected_markers), "Selected", "Not selected"
+        )
+        figure = px.scatter(
+            rows,
+            x="receiver_freq",
+            y="target_freq",
+            color="marker_class",
+            symbol="selection",
+            hover_name="marker",
+            hover_data={"target_enrichment": ":.2f", "receiver_enrichment": ":.2f"},
+            labels={
+                "receiver_freq": "Receiver marker fraction",
+                "target_freq": "Target marker fraction",
+                "marker_class": "Suggested class",
+            },
+            color_discrete_map={
+                "Target marker": CORAL,
+                "Receiver marker": TEAL,
+                "Shared / low signal": "#9aa4a4",
+            },
+        )
         maximum = max(rows["receiver_freq"].max(), rows["target_freq"].max())
-        figure.add_shape(type="line", x0=0, y0=0, x1=maximum, y1=maximum, line={"dash": "dash", "color": "#7b8588"})
+        figure.add_shape(
+            type="line",
+            x0=0,
+            y0=0,
+            x1=maximum,
+            y1=maximum,
+            line={"dash": "dash", "color": "#7b8588"},
+        )
+        figure.update_layout(
+            title=f"Marker specificity: {input.patch_receiver_population()} vs {input.patch_target_population()}"
+        )
         return style_figure(figure)
 
     @output
@@ -3129,34 +3526,275 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.data_frame
     def patch_marker_table():
-        return grid(filtered_marker_unmixing())
+        return grid(patch_marker_profile())
 
-    def fig_patch_raji():
-        rows = patch_table("raji_marker_proximity")
-        if rows.empty or not {"raji_marker_count", "log2_ratio"}.issubset(rows):
-            return empty_figure("No Raji joint-proximity table is stored in this H5AD.")
-        color = "celltype_condition" if "celltype_condition" in rows else None
-        figure = px.scatter(rows, x="raji_marker_count", y="log2_ratio", color=color, hover_data=[column for column in ("component", "join_count") if column in rows], opacity=0.65)
-        figure.add_hline(y=0, line_color="#7b8588")
+    @reactive.calc
+    def patch_candidate_data() -> pd.DataFrame:
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return pd.DataFrame()
+        rows = retrieval.candidate_data.copy()
+        if not {"target_marker_count", "log2_ratio"}.issubset(rows):
+            return pd.DataFrame()
+        for column in ("target_marker_count", "join_count", "join_count_expected_mean", "log2_ratio"):
+            if column in rows:
+                rows[column] = pd.to_numeric(rows[column], errors="coerce").fillna(0)
+        minimum_count = max(0, float(input.patch_candidate_min_count() or 0))
+        minimum_score = float(input.patch_candidate_min_score() or 0)
+        rows["candidate_status"] = np.where(
+            (rows["target_marker_count"] >= minimum_count)
+            & (rows["log2_ratio"] >= minimum_score),
+            "Candidate",
+            "Below threshold",
+        )
+        return rows
+
+    @output
+    @render.ui
+    def patch_candidate_notice():
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return ui.div("Prepare patch data to enable this view.", class_="alert alert-warning")
+        rows = patch_candidate_data()
+        if rows.empty:
+            return ui.div(
+                "No live PXL signal or stored target-marker proximity table is available.",
+                class_="alert alert-warning",
+            )
+        return ui.div(
+            f"{rows['source'].iloc[0]}. Thresholds identify candidates for review; they do not call connected patches.",
+            class_="alert alert-info py-2",
+        )
+
+    @output
+    @render.ui
+    def patch_candidate_metrics():
+        retrieval = get_patch_retrieval()
+        rows = patch_candidate_data()
+        candidates = int((rows.get("candidate_status", pd.Series(dtype=str)) == "Candidate").sum())
+        groups = rows["condition"].nunique() if "condition" in rows else 0
+        return metric_boxes([
+            ("Receiver Cells", f"{len(rows):,}" if not rows.empty else "—"),
+            ("Candidate Cells", f"{candidates:,}" if not rows.empty else "—"),
+            ("Target Markers", f"{len(retrieval.target_markers):,}" if retrieval else "—"),
+            ("Analysis Groups", f"{groups:,}" if not rows.empty else "—"),
+        ])
+
+    def fig_patch_candidate():
+        rows = patch_candidate_data()
+        if rows.empty:
+            return empty_figure("No target-marker candidate signal is available.")
+        rows = rows.copy()
+        rows["target_marker_count_plot"] = rows["target_marker_count"].clip(lower=1)
+        facet = "condition" if "condition" in rows and rows["condition"].nunique() > 1 else None
+        figure = px.scatter(
+            rows,
+            x="target_marker_count_plot",
+            y="log2_ratio",
+            color="candidate_status",
+            facet_col=facet,
+            facet_col_wrap=3 if facet else None,
+            hover_data=[column for column in ("component", "sample_alias", "target_marker_count", "join_count") if column in rows],
+            opacity=0.68,
+            color_discrete_map={"Candidate": CORAL, "Below threshold": "#8c9998"},
+            labels={
+                "target_marker_count_plot": "Target-marker UMI count",
+                "log2_ratio": "Joint target-marker log2 ratio",
+            },
+        )
+        figure.add_hline(y=float(input.patch_candidate_min_score() or 0), line_dash="dash", line_color="#7b8588")
+        figure.add_vline(x=max(1, float(input.patch_candidate_min_count() or 0)), line_dash="dash", line_color="#7b8588")
         figure.update_xaxes(type="log")
+        return style_figure(figure, height=max(560, 320 * math.ceil(max(1, rows["condition"].nunique() if facet else 1) / 3)))
+
+    @output
+    @render_plotly
+    def patch_candidate_plot():
+        return fig_patch_candidate()
+
+    register_downloads("patch_candidate_plot", fig_patch_candidate)
+
+    @output
+    @render.data_frame
+    def patch_candidate_table():
+        return grid(patch_candidate_data())
+
+    def patch_burden_data() -> pd.DataFrame:
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return pd.DataFrame()
+        rows = patch_table("patch_burden")
+        if rows.empty:
+            sizes = patch_table("patch_sizes")
+            if sizes.empty or not {"component", "patch"}.issubset(sizes):
+                return rows
+            patch_ids = pd.to_numeric(sizes["patch"], errors="coerce")
+            patches = sizes[patch_ids.fillna(-1) != 0].copy()
+            if patches.empty:
+                return pd.DataFrame()
+            aggregations = {"n_patches": ("patch", "nunique")}
+            if "count" in patches:
+                aggregations["patch_nodes"] = ("count", "sum")
+            if "p" in patches:
+                aggregations["patch_fraction"] = ("p", "sum")
+            rows = patches.groupby("component", observed=True).agg(**aggregations).reset_index()
+        if "component" in rows:
+            metadata = active_patch_receiver_metadata()
+            population_col = retrieval.request[1]
+            columns = ["component", *list(dict.fromkeys(
+                column
+                for column in ("sample_alias", "condition", "celltype_manual", population_col)
+                if column in metadata and column not in rows
+            ))]
+            rows = rows.copy()
+            rows["component"] = rows["component"].astype(str)
+            rows = rows.merge(
+                metadata[columns].drop_duplicates("component"),
+                on="component",
+                how="inner",
+            )
+        return rows
+
+    @reactive.effect
+    def _refresh_patch_result_controls():
+        rows = patch_burden_data()
+        if rows.empty:
+            ui.update_select("patch_burden_metric", choices=[])
+            ui.update_select("patch_result_group", choices=[])
+            return
+        numeric = [column for column in rows if pd.api.types.is_numeric_dtype(rows[column])]
+        groups = [
+            column
+            for column in rows
+            if column not in numeric and column != "component" and rows[column].nunique(dropna=True) <= 50
+        ]
+        preferred_metric = next(
+            (column for column in ("patch_fraction", "patch_node_fraction", "p_patches", "n_patches") if column in numeric),
+            numeric[0] if numeric else None,
+        )
+        preferred_group = next(
+            (column for column in ("condition", "celltype_manual", "type") if column in groups),
+            groups[0] if groups else None,
+        )
+        ui.update_select("patch_burden_metric", choices=numeric, selected=preferred_metric)
+        ui.update_select("patch_result_group", choices=groups, selected=preferred_group)
+
+    @output
+    @render.ui
+    def patch_results_notice():
+        data = get_data()
+        if data is None:
+            return ui.div("Load a processed H5AD first.", class_="alert alert-warning")
+        if get_patch_retrieval() is None:
+            return ui.div("Prepare patch data to enable this view.", class_="alert alert-warning")
+        available = [
+            name
+            for name in ("patch_sizes", "patch_burden", "patch_composition")
+            if data.patch.get(name) is not None and not data.patch[name].empty
+        ]
+        if not available:
+            return ui.div(
+                'No detected patches are stored under uns["proxiome"]["patch"]. Run patch detection upstream in bounded cell batches, then store patch_sizes, patch_burden, and optionally patch_composition.',
+                class_="alert alert-warning",
+            )
+        plan = patch_table("run_plan")
+        detection = None if plan.empty else bool(plan.iloc[0].get("run_patch_detection", False))
+        status = "Patch detection was run. " if detection else "Patch detection status is unavailable or skipped. "
+        return ui.div(
+            status + "Stored tables: " + ", ".join(sorted(available)) + ".",
+            class_="alert alert-info py-2",
+        )
+
+    def fig_patch_burden():
+        rows = patch_burden_data()
+        metric = input.patch_burden_metric()
+        group = input.patch_result_group()
+        if rows.empty or not metric or metric not in rows:
+            return empty_figure("No per-cell patch burden table is stored in this H5AD.")
+        if group and group in rows:
+            figure = px.violin(rows, x=group, y=metric, color=group, box=True, points="all", hover_data=[column for column in ("component", "sample_alias") if column in rows])
+        else:
+            figure = px.histogram(rows, x=metric, nbins=30)
+        if "fraction" in str(metric).lower() or str(metric).startswith("p_"):
+            figure.update_yaxes(tickformat=".0%")
         return style_figure(figure)
 
     @output
     @render_plotly
-    def patch_raji_plot():
-        return fig_patch_raji()
+    def patch_burden_plot():
+        return fig_patch_burden()
 
-    register_downloads("patch_raji_plot", fig_patch_raji)
-
-    @output
-    @render.data_frame
-    def patch_raji_table():
-        return grid(patch_table("raji_marker_abundance"))
+    register_downloads("patch_burden_plot", fig_patch_burden)
 
     @output
     @render.data_frame
     def patch_burden_table():
-        return grid(patch_table("patch_burden"))
+        return grid(patch_burden_data())
+
+    @reactive.calc
+    def patch_composition_data() -> pd.DataFrame:
+        retrieval = get_patch_retrieval()
+        if retrieval is None:
+            return pd.DataFrame()
+        rows = patch_table("patch_composition")
+        if rows.empty:
+            return rows
+        if "component" in rows:
+            components = set(active_patch_receiver_metadata()["component"].astype(str))
+            rows = rows[rows["component"].astype(str).isin(components)].copy()
+            if rows.empty:
+                return rows
+        value_col = next(
+            (column for column in ("count", "abundance", "frequency", "fraction") if column in rows),
+            None,
+        )
+        if "marker" not in rows or value_col is None:
+            data = get_data()
+            marker_columns = [column for column in (data.marker_options if data is not None else ()) if column in rows]
+            if not marker_columns:
+                return pd.DataFrame()
+            id_columns = [column for column in rows if column not in marker_columns]
+            rows = rows.melt(id_vars=id_columns, value_vars=marker_columns, var_name="marker", value_name="count")
+            value_col = "count"
+        rows = rows.copy()
+        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce").fillna(0)
+        if "source" not in rows:
+            if "patch" in rows:
+                rows["source"] = np.where(rows["patch"].astype(str) == "0", "Receiver", "Patch")
+            else:
+                rows["source"] = "Segment"
+        segment_columns = [column for column in ("component", "patch", "source") if column in rows]
+        rows["fraction"] = rows[value_col] / rows.groupby(segment_columns, observed=True)[value_col].transform("sum").replace(0, np.nan)
+        markers = set(retrieval.target_markers + retrieval.receiver_markers)
+        if markers:
+            rows = rows[rows["marker"].astype(str).isin(markers)]
+        return rows
+
+    def fig_patch_composition():
+        rows = patch_composition_data()
+        if rows.empty:
+            return empty_figure("No patch-composition table is stored in this H5AD.")
+        summary = rows.groupby(["source", "marker"], observed=True)["fraction"].mean().reset_index()
+        matrix = summary.pivot(index="source", columns="marker", values="fraction").fillna(0)
+        figure = px.imshow(
+            matrix,
+            aspect="auto",
+            color_continuous_scale=["#edf7f4", "#78aeb2", "#f0b45b", CORAL],
+            labels={"color": "Mean marker fraction"},
+        )
+        return style_figure(figure, height=max(480, 70 * len(matrix)))
+
+    @output
+    @render_plotly
+    def patch_composition_plot():
+        return fig_patch_composition()
+
+    register_downloads("patch_composition_plot", fig_patch_composition)
+
+    @output
+    @render.data_frame
+    def patch_composition_table():
+        return grid(patch_composition_data())
 
 
 app = App(app_ui, server, static_assets=APP_DIR / "www")
