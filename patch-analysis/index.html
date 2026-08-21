@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Patch analysis - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Patch analysis";
+        var mkdocs_page_input_path = "patch-analysis.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Introduction</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../user-guide/">User guide and parameter reference</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../data-input/">Data input</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">App guide</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../qc/">QC</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../abundance/">Abundance</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../spatial-metrics/">Spatial metrics</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Patch analysis</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#prepare-patch-data">Prepare Patch Data</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#marker-selection">Marker Selection</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#candidate-signal">Candidate Signal</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#detected-patches">Detected Patches</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../downloads/">Downloads and plot options</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Help</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../troubleshooting/">Troubleshooting</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">App guide</li>
+      <li class="breadcrumb-item active">Patch analysis</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/main/docs/patch-analysis.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="patch-analysis">Patch Analysis</h1>
+<p>Patch Analysis follows Pixelgen's receiver/target workflow without assuming a
+particular experiment or cell type. A patch represents a connected subgraph on
+a receiver cell enriched for markers from exactly one target population.</p>
+<h2 id="prepare-patch-data">Prepare Patch Data</h2>
+<p>Population, analysis-group, and marker controls are a draft until you click
+<strong>Prepare Patch Data</strong>. Preparation freezes the selected scope, runs the
+filtered candidate PXL query, and records the preparation time. The active
+scope summary reports receiver cells, target cells, analysis groups, and target
+markers. If a retrieval control changes, existing candidate and stored-result
+views remain pinned to the active scope and show an unapplied-changes warning.
+Candidate count and score thresholds are display controls and do not require
+preparing the data again.</p>
+<h2 id="marker-selection">Marker Selection</h2>
+<p>Choose a categorical H5AD metadata field, one receiver population, and one
+target population. The app calculates each marker's raw fraction of total
+counts in both populations and suggests markers using configurable minimum
+fraction and fold-enrichment thresholds. Suggested target and receiver markers
+remain editable. The selected analysis groups scope marker selection, candidate
+screening, and component-level stored results consistently.</p>
+<p>This raw-frequency screen is not the abundance-unmixing method implemented by
+PixelatorR. The UI reports the combined target-marker fraction because the
+Pixelgen tutorial recommends that selected markers represent at least 20–30%
+of the target population's signal.</p>
+<h2 id="candidate-signal">Candidate Signal</h2>
+<p>For receiver cells in the selected analysis groups, the app queries PXL for the
+joint target-marker proximity score and combines it with target-marker UMI
+counts from H5AD. Adjustable count and log2-ratio reference lines identify
+candidate cells for review. They do not perform connected-subgraph patch
+detection.</p>
+<h2 id="detected-patches">Detected Patches</h2>
+<p>Patch detection is an experimental, graph-intensive PixelatorR workflow. The
+Python app does not silently approximate it from proximity scores. Run patch
+detection upstream in bounded batches and store its results under
+<code>uns["proxiome"]["patch"]</code>.</p>
+<p>The preferred generic tables are:</p>
+<ul>
+<li><code>run_plan</code>: detection status, receiver/target definitions, marker counts, and
+  algorithm settings.</li>
+<li><code>patch_sizes</code>: one row per component and patch, including <code>patch</code>, <code>count</code>,
+  and optionally graph fraction <code>p</code> and patch size <code>type</code>.</li>
+<li><code>patch_burden</code>: one row per receiver component with numeric patch count or
+  coverage metrics.</li>
+<li><code>patch_composition</code>: long-form <code>component</code>, <code>patch</code>, <code>marker</code>, and <code>count</code>
+  rows, optionally with a <code>source</code> column. A wide marker-count table is also
+  accepted.</li>
+<li><code>marker_unmixing</code>: optional upstream marker-selection provenance.</li>
+<li><code>target_marker_abundance</code> and <code>target_marker_proximity</code>: optional upstream
+  candidate-screen tables used when live PXL querying is unavailable.</li>
+</ul>
+<p>Legacy <code>raji_marker_abundance</code> and <code>raji_marker_proximity</code> tables are mapped to
+their generic target-marker names when loaded.</p>
+<p>Include <code>component</code> identifiers in candidate, burden, and composition tables so
+the app can join them to H5AD metadata and apply the active receiver and analysis
+group scope. When <code>run_plan</code> includes <code>receiver_population</code> and
+<code>target_population</code>, those values initialize the population selectors.</p>
+<p>Design reference: <a href="https://software.pixelgen.com/pna-analysis/R/tutorials/patch_analysis/">Pixelgen Patch analysis tutorial</a>.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../spatial-metrics/" class="btn btn-neutral float-left" title="Spatial metrics"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../downloads/" class="btn btn-neutral float-right" title="Downloads and plot options">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../spatial-metrics/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../downloads/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

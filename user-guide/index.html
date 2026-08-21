@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>User guide and parameter reference - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "User guide and parameter reference";
+        var mkdocs_page_input_path = "user-guide.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Introduction</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">User guide and parameter reference</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#before-you-begin">Before You Begin</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#quick-start">Quick Start</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#understand-when-controls-take-effect">Understand When Controls Take Effect</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#data-and-analysis-grouping">Data and Analysis Grouping</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#data-controls">Data controls</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#analysis-grouping">Analysis grouping</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#qc">QC</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#abundance">Abundance</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#observed">Observed</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#marker-distributions-and-cell-annotation">Marker Distributions and Cell Annotation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#abundance-differential">Abundance Differential</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#spatial-metrics">Spatial Metrics</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#retrieve-data">Retrieve Data</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#interpret-proximity-scores">Interpret Proximity Scores</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#proximity-profile-applied-analysis-settings">Proximity Profile: Applied Analysis Settings</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#proximity-profile-live-display-controls">Proximity Profile: Live Display Controls</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#clustering">Clustering</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#colocalization-differential">Colocalization Differential</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#3d-layout">3D Layout</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#patch-analysis">Patch Analysis</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#prepared-patch-scope">Prepared Patch Scope</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#candidate-and-stored-result-controls">Candidate and Stored-Result Controls</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#tables-downloads-and-reproducibility">Tables, Downloads, and Reproducibility</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#activity-log-and-diagnostics">Activity Log and Diagnostics</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#interpretation-checklist">Interpretation Checklist</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../data-input/">Data input</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">App guide</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../qc/">QC</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../abundance/">Abundance</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../spatial-metrics/">Spatial metrics</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../patch-analysis/">Patch analysis</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../downloads/">Downloads and plot options</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Help</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../troubleshooting/">Troubleshooting</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Introduction</li>
+      <li class="breadcrumb-item active">User guide and parameter reference</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/main/docs/user-guide.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="user-guide-and-parameter-reference">User Guide and Parameter Reference</h1>
+<p>This guide applies to ProxiomeVis Python 0.1.0. It explains the intended
+workflow, when controls take effect, and how to interpret each analysis. The
+app is exploratory: confirm important findings with the study design, upstream
+Pixelgen outputs, and an appropriate statistical analysis.</p>
+<h2 id="before-you-begin">Before You Begin</h2>
+<p>ProxiomeVis combines two data sources:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Processed H5AD</td>
+<td>Cell metadata, raw marker counts, normalized abundance, embeddings, optional QC history, annotations, and optional stored patch results</td>
+</tr>
+<tr>
+<td>Matching PXL file(s)</td>
+<td>Precomputed proximity rows, patch candidate signal, and precomputed 3D component layouts</td>
+</tr>
+</tbody>
+</table>
+<p>The H5AD and PXL files must describe the same experiment and share component
+identifiers. The app ignores any proximity table embedded in H5AD and queries
+the assigned PXL files instead. All changes are session-local; the source files
+are never modified.</p>
+<h2 id="quick-start">Quick Start</h2>
+<ol>
+<li>Open <strong>Data</strong> in the top navigation.</li>
+<li>Enter one server-visible processed <code>.h5ad</code> path and the matching <code>.pxl</code>
+   path, directory, or glob.</li>
+<li>Click <strong>Inspect</strong> to validate the H5AD path, then click <strong>Load Data</strong>.</li>
+<li>Confirm the loaded cell, marker, and PXL counts in the data-source summary.</li>
+<li>Review <strong>QC</strong>, then verify annotations and normalized signal in
+   <strong>Abundance</strong>.</li>
+<li>In <strong>Spatial Metrics &gt; Retrieve Data</strong>, choose the population and marker
+   scope and click <strong>Retrieve Spatial Data</strong>.</li>
+<li>Continue in order through <strong>Proximity Profile</strong>, <strong>Clustering</strong>,
+   <strong>Colocalization</strong>, and <strong>3D Layout</strong>.</li>
+<li>For patch screening, select the receiver, target, groups, and markers in
+   <strong>Patch Analysis</strong>, then click <strong>Prepare Patch Data</strong>.</li>
+<li>Use <strong>Activity Log</strong> to monitor long operations. Download diagnostics if an
+   error displays a reference ID.</li>
+</ol>
+<h2 id="understand-when-controls-take-effect">Understand When Controls Take Effect</h2>
+<p>The app uses three control behaviors. Check the status message whenever a plot
+does not reflect a recent change.</p>
+<table>
+<thead>
+<tr>
+<th>Control behavior</th>
+<th>Examples</th>
+<th>When results change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Live display or filter</td>
+<td>QC reference lines, plot facets, group display, legend limits, differential thresholds</td>
+<td>Immediately</td>
+</tr>
+<tr>
+<td>Applied analysis settings</td>
+<td>Proximity population, mean calculation, marker filters, heatmap marker set</td>
+<td>After <strong>Apply analysis settings</strong></td>
+</tr>
+<tr>
+<td>Prepared retrieval scope</td>
+<td>Spatial population and markers; patch receiver, target, groups, and markers</td>
+<td>After <strong>Retrieve Spatial Data</strong> or <strong>Prepare Patch Data</strong></td>
+</tr>
+</tbody>
+</table>
+<p>An <strong>Unapplied changes</strong> warning means the visible results still use the last
+applied or prepared settings. Changing a loaded dataset or analysis grouping
+clears prepared spatial and patch scopes.</p>
+<h2 id="data-and-analysis-grouping">Data and Analysis Grouping</h2>
+<h3 id="data-controls">Data controls</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Meaning</th>
+<th>Recommended use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Processed .h5ad path</strong></td>
+<td>Full path visible to the Shiny server</td>
+<td>Use one processed AnnData file; browser uploads are not supported</td>
+</tr>
+<tr>
+<td><strong>PXL path(s) for proximity and cellgraph data</strong></td>
+<td>One PXL file, directory, glob, or comma/newline-separated list</td>
+<td>Assign the PXL files produced for the same samples as the H5AD</td>
+</tr>
+<tr>
+<td><strong>Inspect</strong></td>
+<td>Checks that the H5AD path is readable and reports file size</td>
+<td>Use before loading a new dataset</td>
+</tr>
+<tr>
+<td><strong>Load Data</strong></td>
+<td>Reads H5AD and resolves PXL files</td>
+<td>Required after changing either path</td>
+</tr>
+</tbody>
+</table>
+<h3 id="analysis-grouping">Analysis grouping</h3>
+<p><strong>Analysis grouping</strong> defines the <code>condition</code> used throughout plots and
+contrasts. <strong>Use metadata column</strong> is appropriate when a metadata value is
+constant within each sample. <strong>Edit sample groups</strong> allows an explicit group
+for every sample. <strong>Reset to condition</strong> restores the original H5AD condition.</p>
+<p>Use biologically meaningful sample-level groups. Do not encode individual
+cells as independent treatment groups. Grouping changes do not modify the
+H5AD, but they reset active spatial and patch preparations.</p>
+<h2 id="qc">QC</h2>
+<p>QC describes the cells already present in the processed H5AD. It does not
+rerun filtering or cell calling.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sample</strong></td>
+<td>All samples</td>
+<td>Restricts QC plots and tables to selected samples</td>
+</tr>
+<tr>
+<td><strong>n_umi reference line</strong></td>
+<td>10,000</td>
+<td>Visual guide on molecule-rank and QC plots; it does not remove cells</td>
+</tr>
+<tr>
+<td><strong>Isotype fraction reference line</strong></td>
+<td>0.001</td>
+<td>Visual guide for isotype fraction; it does not remove cells</td>
+</tr>
+<tr>
+<td><strong>Filter count y-axis</strong></td>
+<td>Number of cells</td>
+<td>Switches stored QC history between cell counts and fraction of loaded cells</td>
+</tr>
+<tr>
+<td><strong>Distribution metric</strong></td>
+<td>First available QC field</td>
+<td>Selects the H5AD observation field summarized across samples</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Filtering</strong> displays <code>uns["qc_cell_counts_by_step"]</code> when available. If the
+upstream history is missing, the app reports <strong>QC history unavailable</strong> and
+does not reconstruct an apparently real history from retained cells.</p>
+<p><strong>Cell Calling</strong> shows ranked <code>n_umi</code> values. <strong>Distributions</strong> helps identify
+sample-specific shifts in QC fields. <strong>Metadata</strong> exposes processed H5AD
+observation rows for label and annotation checks.</p>
+<h2 id="abundance">Abundance</h2>
+<p>The app uses normalized abundance from <code>layers["clr"]</code> when present; otherwise,
+it uses the available H5AD expression matrix. Raw counts remain available for
+count-based marker filters and patch screening.</p>
+<h3 id="observed">Observed</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Embedding</strong></td>
+<td>First available embedding</td>
+<td>Selects a stored two-dimensional UMAP, PCA, Harmony, or t-SNE representation</td>
+</tr>
+<tr>
+<td><strong>Color UMAP by</strong></td>
+<td>Marker abundance</td>
+<td>Colors cells by normalized marker abundance, cell type, analysis group, or sample</td>
+</tr>
+<tr>
+<td><strong>Marker</strong></td>
+<td>First marker</td>
+<td>Marker used when coloring by abundance</td>
+</tr>
+<tr>
+<td><strong>Split UMAP by</strong></td>
+<td>None</td>
+<td>Facets the same embedding by analysis group or sample</td>
+</tr>
+<tr>
+<td><strong>Split columns</strong></td>
+<td>2</td>
+<td>Controls facet layout only</td>
+</tr>
+<tr>
+<td><strong>Dot size</strong></td>
+<td>3</td>
+<td>Changes point rendering only</td>
+</tr>
+<tr>
+<td><strong>Analysis group</strong></td>
+<td>All groups</td>
+<td>Live cell filter</td>
+</tr>
+<tr>
+<td><strong>Cell type</strong></td>
+<td>All cell types</td>
+<td>Live cell filter</td>
+</tr>
+</tbody>
+</table>
+<h3 id="marker-distributions-and-cell-annotation">Marker Distributions and Cell Annotation</h3>
+<p><strong>Marker Distributions</strong> shows one marker by cell type, colored by analysis
+group and faceted by sample. <strong>Facet columns</strong> defaults to 3; <strong>Show jitter
+dots</strong> defaults to on. Jittered dots are cells, not biological replicates.</p>
+<p><strong>Cell Annotation</strong> reports cell-type fractions within each analysis group and
+the median normalized abundance of every marker within each cell type. Large
+differences in cell counts can affect pooled summaries.</p>
+<h3 id="abundance-differential">Abundance Differential</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Group A</strong></td>
+<td>Data-dependent</td>
+<td>Numerator group in the reported effect</td>
+</tr>
+<tr>
+<td><strong>Group B (reference)</strong></td>
+<td><code>NC</code> when available</td>
+<td>Reference group; effect is median A minus median B</td>
+</tr>
+<tr>
+<td><strong>Cell type</strong></td>
+<td>One cell type initially</td>
+<td>Cells included in the comparison</td>
+</tr>
+<tr>
+<td><strong>Stratify by cell type</strong></td>
+<td>Off</td>
+<td>Off pools selected cell types; on runs a separate test for each cell type</td>
+</tr>
+<tr>
+<td><strong>FDR threshold</strong></td>
+<td>0.05</td>
+<td>Classifies volcano hits using Benjamini-Hochberg adjusted p-values</td>
+</tr>
+<tr>
+<td><strong>Minimum effect</strong></td>
+<td>0.25</td>
+<td>Requires the absolute median normalized-abundance difference to reach this value</td>
+</tr>
+<tr>
+<td><strong>Minimum observations per group</strong></td>
+<td>3</td>
+<td>Minimum cells required in each group for a Mann-Whitney U test</td>
+</tr>
+<tr>
+<td><strong>Detail marker</strong></td>
+<td>Data-dependent</td>
+<td>Marker shown in the companion violin plot; clicking a volcano point also selects it</td>
+</tr>
+</tbody>
+</table>
+<p>Abundance differential uses cells as observations. It does not model sample
+pairing or repeated measures. Treat its p-values as exploratory when the study
+contains biological replicates, and confirm findings with a sample-aware
+method appropriate to the design.</p>
+<h2 id="spatial-metrics">Spatial Metrics</h2>
+<p>Follow this sequence:</p>
+<p><strong>Retrieve Data → Proximity Profile → Clustering → Colocalization → 3D Layout</strong></p>
+<p>All downstream tabs are bounded by one active retrieval. Downstream controls
+can narrow that scope but cannot add cells or markers that were not retrieved.</p>
+<h3 id="retrieve-data">Retrieve Data</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Analysis group</strong></td>
+<td>All groups</td>
+<td>Groups included in the active spatial scope</td>
+</tr>
+<tr>
+<td><strong>Sample</strong></td>
+<td>All samples</td>
+<td>Samples included in the active spatial scope</td>
+</tr>
+<tr>
+<td><strong>Cell type</strong></td>
+<td>First cell type</td>
+<td>Cell populations included; start with one population for interpretable summaries</td>
+</tr>
+<tr>
+<td><strong>Number of markers: All markers</strong></td>
+<td>Selected</td>
+<td>Makes every H5AD marker available downstream</td>
+</tr>
+<tr>
+<td><strong>Top abundance markers</strong></td>
+<td>40</td>
+<td>Retrieves markers ranked by sample-weighted mean normalized abundance</td>
+</tr>
+<tr>
+<td><strong>Selected markers</strong></td>
+<td>None</td>
+<td>Retrieves only the explicit marker set</td>
+</tr>
+</tbody>
+</table>
+<p>Click <strong>Retrieve Spatial Data</strong> after any retrieval change. The active summary
+reports the frozen population and marker scope. The server extracts every PXL
+proximity row matching those cells and markers into the active retrieval. Plots
+receive summarized results rather than the full table in browser memory. For
+large panels, reduce the cell or marker scope if retrieval time or server memory
+is constrained.</p>
+<h3 id="interpret-proximity-scores">Interpret Proximity Scores</h3>
+<p>PXL proximity is represented as a log2 observed-to-expected ratio:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Greater than 0</td>
+<td>Markers are closer than expected by the PXL null model</td>
+</tr>
+<tr>
+<td>Near 0</td>
+<td>Approximately expected spatial organization</td>
+</tr>
+<tr>
+<td>Less than 0</td>
+<td>Markers are spatially segregated relative to expectation</td>
+</tr>
+</tbody>
+</table>
+<p>The magnitude is model-relative and should not be interpreted as physical
+distance. A missing marker pair can mean it was not detected or did not pass
+eligibility filters; it is not automatically evidence of segregation.</p>
+<h3 id="proximity-profile-applied-analysis-settings">Proximity Profile: Applied Analysis Settings</h3>
+<p>The following controls remain drafts until <strong>Apply analysis settings</strong> is
+clicked.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cell population</strong></td>
+<td>First population in retrieval</td>
+<td>Exactly one cell type used for proximity summaries and downstream colocalization</td>
+</tr>
+<tr>
+<td><strong>Mean calculation: Population mean</strong></td>
+<td>Selected</td>
+<td>Sum of detected log2 ratios divided by all cells in the group; undetected pairs contribute zero</td>
+</tr>
+<tr>
+<td><strong>Detected-cell mean</strong></td>
+<td>Not selected</td>
+<td>Mean among cells with a proximity row; emphasizes score strength conditional on detection</td>
+</tr>
+<tr>
+<td><strong>Apply Pixelator marker filters</strong></td>
+<td>On</td>
+<td>Requires both markers to meet per-cell count and fraction thresholds</td>
+</tr>
+<tr>
+<td><strong>Minimum marker fraction</strong></td>
+<td>0.001</td>
+<td>Minimum raw count fraction for each marker within a cell</td>
+</tr>
+<tr>
+<td><strong>Minimum marker count</strong></td>
+<td>0</td>
+<td>Minimum raw count for each marker within a cell</td>
+</tr>
+<tr>
+<td><strong>Summarize by</strong></td>
+<td>Analysis group</td>
+<td>Aggregates the heatmap by analysis group or by sample</td>
+</tr>
+<tr>
+<td><strong>Marker set: PixelatorES proximity profile</strong></td>
+<td>Selected</td>
+<td>Takes markers from the 60 strongest absolute-mean pairs detected in more than 50% of cells</td>
+</tr>
+<tr>
+<td><strong>Strongest proximity pairs</strong></td>
+<td>60</td>
+<td>Number of qualifying pairs used to construct the profile marker set</td>
+</tr>
+<tr>
+<td><strong>Top abundance markers</strong></td>
+<td>40</td>
+<td>Alternative sample-weighted abundance display set</td>
+</tr>
+<tr>
+<td><strong>Selected markers</strong></td>
+<td>None</td>
+<td>Explicit marker set; at least two markers are required</td>
+</tr>
+<tr>
+<td><strong>Minimum detected cells per summarized group</strong></td>
+<td>1</td>
+<td>Entries below this support are shown as zero</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Load PixelatorES defaults</strong> resets these values but does not apply them.
+Click <strong>Apply analysis settings</strong> afterward. Apply filters and summarizes the
+active retrieval in memory; it does not query the PXL files again.</p>
+<p>For top abundance markers, the app first calculates each marker's mean
+normalized abundance within each sample and then averages those sample means.
+Each sample therefore has equal weight in marker ranking. This top-marker rule
+is a display filter only; it does not determine whether a PXL proximity score
+was calculated.</p>
+<h3 id="proximity-profile-live-display-controls">Proximity Profile: Live Display Controls</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Group display</strong></td>
+<td>Focused group</td>
+<td>Shows one summarized group or compares multiple groups</td>
+</tr>
+<tr>
+<td><strong>Displayed group / Groups to compare</strong></td>
+<td>Data-dependent</td>
+<td>Chooses visible panels without changing applied analysis</td>
+</tr>
+<tr>
+<td><strong>Clustering reference group</strong></td>
+<td><code>NC</code> when available</td>
+<td>Defines the group used to calculate one shared marker order for all panels</td>
+</tr>
+<tr>
+<td><strong>Marker ordering</strong></td>
+<td>Ward</td>
+<td>Hierarchical-linkage method used only for row and column ordering</td>
+</tr>
+<tr>
+<td><strong>Legend minimum / maximum</strong></td>
+<td>-1 / 1</td>
+<td>Color scale limits; values outside the range are clipped visually, not filtered</td>
+</tr>
+<tr>
+<td><strong>Pair detail</strong></td>
+<td>First available pair</td>
+<td>Selects the sample-level detail plot; clicking a heatmap dot also selects the pair</td>
+</tr>
+</tbody>
+</table>
+<p>The same reference-derived order is used when <strong>Displayed group</strong> changes,
+which makes panels comparable. The heatmap column direction is reversed to
+match PixelatorES. Dot color encodes mean log2 ratio and dot size encodes the
+fraction of cells with the pair.</p>
+<p>Use <strong>Settings JSON</strong> to preserve the active retrieval, applied analysis, and
+display configuration with exported results.</p>
+<h3 id="clustering">Clustering</h3>
+<p>Clustering is marker self-proximity (<code>marker_1 = marker_2</code>), not unsupervised
+cell clustering.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Marker</strong></td>
+<td>Marker whose self-proximity is shown in the violin plot</td>
+</tr>
+<tr>
+<td><strong>Analysis group / Cell type</strong></td>
+<td>Live filters within the active retrieval</td>
+</tr>
+<tr>
+<td><strong>Protein set</strong></td>
+<td>Uses the top variable proteins by default or an explicit custom list from the active spatial retrieval</td>
+</tr>
+<tr>
+<td><strong>Top proteins</strong></td>
+<td>Number ranked by variation in mean self-proximity; default 20, maximum 40</td>
+</tr>
+<tr>
+<td><strong>Proteins</strong></td>
+<td>Ordered custom list used when <strong>Custom proteins</strong> is selected</td>
+</tr>
+<tr>
+<td><strong>Differential contrast</strong></td>
+<td>Median self-proximity in group A minus group B</td>
+</tr>
+</tbody>
+</table>
+<p>Clustering differential uses a two-sided Mann-Whitney U test on detected
+cell-level self-proximity rows with Benjamini-Hochberg correction. Its default
+FDR, minimum effect, and minimum observations are 0.05, 0.25, and 3. Missing
+self-proximity rows are not inserted as zeros. As with abundance differential,
+these are cell-level exploratory statistics rather than sample-aware tests.</p>
+<h3 id="colocalization-differential">Colocalization Differential</h3>
+<p>Colocalization reuses the cell population, mean type, and marker-filter
+settings last applied in <strong>Proximity Profile</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Group A</strong></td>
+<td>Non-reference group when available</td>
+<td>Numerator group</td>
+</tr>
+<tr>
+<td><strong>Group B (reference)</strong></td>
+<td><code>NC</code> when available</td>
+<td>Reference group</td>
+</tr>
+<tr>
+<td><strong>Minimum samples per group</strong></td>
+<td>2</td>
+<td>Minimum biological samples required in each group for p-values and FDR</td>
+</tr>
+<tr>
+<td><strong>Pairs shown</strong></td>
+<td>All marker pairs</td>
+<td>Tests all retrieved pairs or only pairs containing one anchor marker</td>
+</tr>
+<tr>
+<td><strong>Marker</strong></td>
+<td>Data-dependent</td>
+<td>Anchor marker when the restricted pair scope is selected</td>
+</tr>
+<tr>
+<td><strong>Detail pair</strong></td>
+<td>First available pair</td>
+<td>Pair shown in the sample-level box plot; clicking a volcano point selects it</td>
+</tr>
+<tr>
+<td><strong>FDR threshold</strong></td>
+<td>0.05</td>
+<td>Volcano hit threshold after Benjamini-Hochberg correction</td>
+</tr>
+<tr>
+<td><strong>Minimum median-sample difference</strong></td>
+<td>0.25</td>
+<td>Required absolute difference between group medians of sample-level means</td>
+</tr>
+</tbody>
+</table>
+<p>This is the sample-aware spatial comparison: one summarized value per sample
+and marker pair is the observation. The effect is median sample value in group
+A minus group B. If either group has too few samples, descriptive effects may
+remain available, but p-values and FDR are not reported.</p>
+<h3 id="3d-layout">3D Layout</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sample</strong></td>
+<td>First available sample</td>
+<td>Chooses the matching assigned PXL file</td>
+</tr>
+<tr>
+<td><strong>Cell type</strong></td>
+<td>One cell type</td>
+<td>Narrows component choices within the active retrieval</td>
+</tr>
+<tr>
+<td><strong>Cell/component</strong></td>
+<td>First available component</td>
+<td>Cell graph rendered from the stored precomputed layout</td>
+</tr>
+<tr>
+<td><strong>Max background nodes</strong></td>
+<td>7,000</td>
+<td>Caps non-highlighted nodes for browser performance; highlighted nodes remain visible</td>
+</tr>
+<tr>
+<td><strong>Highlighted markers</strong></td>
+<td>Data-dependent</td>
+<td>Draws selected marker nodes larger and in color</td>
+</tr>
+</tbody>
+</table>
+<p>The 3D view is descriptive. Node positions are the stored PXL layout, not
+microscopy coordinates or measured physical distances.</p>
+<h2 id="patch-analysis">Patch Analysis</h2>
+<p>Patch Analysis is an experimental receiver/target workflow. A candidate signal
+is not a detected patch. Connected-subgraph patch detection must be run
+upstream and stored in the H5AD for <strong>Detected Patches</strong> and <strong>Composition</strong>.</p>
+<h3 id="prepared-patch-scope">Prepared Patch Scope</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Population metadata</strong></td>
+<td>Preferred annotation field</td>
+<td>Categorical H5AD field defining receiver and target populations</td>
+</tr>
+<tr>
+<td><strong>Receiver population</strong></td>
+<td>Choose a population</td>
+<td>Cells on which candidate or detected patches are evaluated</td>
+</tr>
+<tr>
+<td><strong>Target population</strong></td>
+<td>Choose a different population</td>
+<td>Population whose markers define the putative patch signal</td>
+</tr>
+<tr>
+<td><strong>Analysis groups</strong></td>
+<td>All groups</td>
+<td>Groups included in marker screening, PXL candidates, and stored results</td>
+</tr>
+<tr>
+<td><strong>Minimum population fraction</strong></td>
+<td>0.01</td>
+<td>Raw marker fraction required before a marker can be suggested</td>
+</tr>
+<tr>
+<td><strong>Minimum fold enrichment</strong></td>
+<td>3</td>
+<td>Target-to-receiver or receiver-to-target enrichment required for suggestion</td>
+</tr>
+<tr>
+<td><strong>Target/patch markers</strong></td>
+<td>Suggested, editable</td>
+<td>Markers expected from the target population; at least two are required</td>
+</tr>
+<tr>
+<td><strong>Receiver/blocking markers</strong></td>
+<td>Suggested, editable</td>
+<td>Receiver-specific markers retained as provenance for the analysis scope</td>
+</tr>
+</tbody>
+</table>
+<p>Marker suggestions use pooled raw count fractions, not PixelatorR abundance
+unmixing. Aim for selected target markers that collectively cover at least
+20–30% of target-population counts. Click <strong>Use suggested markers</strong> to restore
+the current suggestions, then click <strong>Prepare Patch Data</strong> to freeze the scope
+and query receiver-cell candidate signal.</p>
+<h3 id="candidate-and-stored-result-controls">Candidate and Stored-Result Controls</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Minimum target-marker count</strong></td>
+<td>100</td>
+<td>Display threshold for summed target-marker raw counts in a receiver cell</td>
+</tr>
+<tr>
+<td><strong>Minimum joint log2 ratio</strong></td>
+<td>0.3</td>
+<td>Display threshold for joint target-marker proximity</td>
+</tr>
+<tr>
+<td><strong>Patch metric</strong></td>
+<td>Preferred stored numeric field</td>
+<td>Metric plotted from stored patch burden or derived patch-size summaries</td>
+</tr>
+<tr>
+<td><strong>Group results by</strong></td>
+<td>Preferred stored categorical field</td>
+<td>Category used for the burden comparison</td>
+</tr>
+</tbody>
+</table>
+<p>Candidate thresholds update live and do not require preparation again. A cell
+must meet both thresholds to be labeled <strong>Candidate</strong>. This label is a review
+screen only and does not call a connected graph patch.</p>
+<p>Stored patch results are restricted to the active receiver and analysis-group
+scope. If no patch tables are stored under <code>uns["proxiome"]["patch"]</code>, the app
+reports them as unavailable instead of estimating patches from proximity.</p>
+<h2 id="tables-downloads-and-reproducibility">Tables, Downloads, and Reproducibility</h2>
+<ul>
+<li>Plot <strong>SVG</strong> exports are vector images suitable for reports, slides, and
+  downstream editing.</li>
+<li>Every table provides <strong>CSV</strong> and <strong>Excel</strong> downloads for its complete
+  underlying result. Browser grids remain capped at 2,000 rows for performance.</li>
+<li>Interactive tables can be sorted and filtered without changing the analysis.</li>
+<li>Record the H5AD name, PXL names, analysis grouping, active retrieval summary,
+  applied proximity settings, contrasts, and app commit with every report.</li>
+<li>Use <strong>Settings JSON</strong> for proximity-profile provenance.</li>
+</ul>
+<h2 id="activity-log-and-diagnostics">Activity Log and Diagnostics</h2>
+<p><strong>Activity Log</strong> reports session-local operations with timestamp, severity,
+status, elapsed time, app version, and Git commit. It is the first place to
+check when a PXL query appears slow.</p>
+<p>If the app reports a reference ID, click <strong>Download diagnostics</strong> and provide
+the ZIP to the application administrator. It contains sanitized runtime
+metadata, structured activity, and tracebacks for the current browser session.
+It does not include H5AD/PXL contents or full server paths.</p>
+<h2 id="interpretation-checklist">Interpretation Checklist</h2>
+<p>Before reporting a result, confirm all of the following:</p>
+<ul>
+<li>The H5AD and PXL files are from the same processed experiment.</li>
+<li>Sample labels, analysis grouping, and cell annotations are correct.</li>
+<li>The visible spatial result uses the intended active retrieval and applied
+  proximity settings; no unapplied-changes warning is present.</li>
+<li>The chosen mean type is stated: population mean or detected-cell mean.</li>
+<li>Marker filters, marker-selection method, and clustering reference are stated.</li>
+<li>Sample-level inference is used when biological samples are the replicates.</li>
+<li>Candidate patch signal is not described as detected patches.</li>
+<li>Figures are accompanied by their underlying table or settings record.</li>
+</ul>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../getting-started/" class="btn btn-neutral float-left" title="Getting started"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../data-input/" class="btn btn-neutral float-right" title="Data input">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../getting-started/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../data-input/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

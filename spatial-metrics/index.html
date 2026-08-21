@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Spatial metrics - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Spatial metrics";
+        var mkdocs_page_input_path = "spatial-metrics.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Introduction</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../user-guide/">User guide and parameter reference</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../data-input/">Data input</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">App guide</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../qc/">QC</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../abundance/">Abundance</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Spatial metrics</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#retrieve-data">Retrieve Data</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#proximity-profile">Proximity Profile</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#clustering">Clustering</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#colocalization">Colocalization</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../patch-analysis/">Patch analysis</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../downloads/">Downloads and plot options</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Help</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../troubleshooting/">Troubleshooting</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">App guide</li>
+      <li class="breadcrumb-item active">Spatial metrics</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/main/docs/spatial-metrics.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="spatial-metrics">Spatial Metrics</h1>
+<p>Spatial Metrics contains a shared retrieval step and four downstream views:</p>
+<ul>
+<li><strong>Retrieve Data</strong>: defines the cell population and marker scope.</li>
+<li><strong>Proximity Profile</strong>: profiles marker-pair proximity scores and pair details.</li>
+<li><strong>Clustering</strong>: marker self-proximity within each cell graph.</li>
+<li><strong>Colocalization</strong>: differential marker-pair tests.</li>
+<li><strong>3D Layout</strong>: interactive views of individual Pixelator cell graphs.</li>
+</ul>
+<p>These readouts query the precomputed <code>proximity</code> table in the assigned PXL
+files. The app uses H5AD component IDs to push the active cell and marker
+filters into PXL and does not recalculate proximity from graph edges. An
+embedded H5AD proximity table is ignored.</p>
+<h2 id="retrieve-data">Retrieve Data</h2>
+<p>Choose the analysis groups, samples, cell types, and number of markers, then
+click <strong>Retrieve Spatial Data</strong>. Marker selection defaults to <strong>All markers</strong>;
+you can instead retrieve the top abundance-ranked markers or a manual set.</p>
+<p>The completed retrieval becomes the active spatial scope. Clustering,
+colocalization, differential analyses, pair details, and 3D component choices
+are all restricted to its cells and markers. Controls inside those views can
+only narrow the active scope. If you edit retrieval settings, the existing
+visualizations continue to use the prior retrieval until you click <strong>Retrieve
+Spatial Data</strong> again. Loading another H5AD or changing analysis grouping clears
+the active retrieval.</p>
+<p>The app freezes component IDs and marker choices and extracts all matching
+per-cell proximity rows, including the marker-count fields required by the
+Pixelator filters, during retrieval. Clustering, proximity heatmaps, pair
+details, and differential colocalization reuse that frozen table without
+querying PXL again. Retrieval queries PXL directly with DuckDB, derives the
+marker-count fields from the matching H5AD count matrix, and reuses a local
+Parquet cache when the same source files and scope are requested again.</p>
+<h2 id="proximity-profile">Proximity Profile</h2>
+<p>Use <strong>Proximity Profile</strong> immediately after retrieval to view marker-pair
+proximity heatmaps. The heatmap can summarize by analysis group or sample and
+can focus on one group or compare groups.</p>
+<p>Click <strong>Apply analysis settings</strong> to prepare the heatmap data. Its background
+task only filters and summarizes the snapshot extracted by <strong>Retrieve Spatial
+Data</strong>. Opening a plot or table does not start another PXL query. Display-only
+controls reuse the prepared result.</p>
+<p>The default retrieval includes all markers, while the default heatmap uses the
+PixelatorES proximity profile for readability and query performance. A manual
+heatmap marker set must be a subset of the retrieved markers. The applied
+population and proximity definition are reused by differential colocalization.</p>
+<h2 id="clustering">Clustering</h2>
+<p>Use <strong>Clustering &gt; Per Marker</strong> to compare one marker across conditions or cell
+types.</p>
+<p>Use <strong>Clustering &gt; Summary Heatmap</strong> for a marker-level heatmap across selected
+conditions and cell types. Keep <strong>Protein set</strong> at <strong>Top variable proteins</strong> to
+rank proteins by variation in mean self-proximity, or choose <strong>Custom proteins</strong>
+to display an explicit ordered list from the active spatial retrieval.</p>
+<p>Use <strong>Clustering &gt; Differential</strong> to compare marker self-proximity between two
+groups.</p>
+<p>Clustering controls update their plots reactively inside the active retrieval;
+there is no separate run button.</p>
+<h2 id="colocalization">Colocalization</h2>
+<p>Use <strong>Colocalization</strong> to compare marker-pair proximity between
+two groups within one cell population. The analysis first calculates the
+selected population or detected-cell mean for every sample, then compares the
+median sample values between groups. Samples—not cells—are the statistical
+replicates. If either group has fewer than the requested number of samples, the
+app reports descriptive effects but leaves p-values and FDR unavailable.</p>
+<p>The volcano shows every marker pair by default. Use <strong>Pairs shown</strong> to focus on
+pairs containing one marker, and click a volcano point to update the sample-level
+detail plot. Missing pairs are included as zero only for the population mean.</p>
+<p>Use <strong>3D Layout</strong> to inspect one selected Pixelator cell graph
+in 3D. Assign one or more <code>.layout.pxl</code> paths in <strong>Data</strong>. The app reads that
+component's stored layout on demand and renders an interactive Plotly scatter
+plot. The same assigned PXL files provide the spatial analysis tables.</p>
+<p>Controls for the 3D layout:</p>
+<ul>
+<li><strong>Sample</strong>: chooses the <code>.layout.pxl</code> file.</li>
+<li><strong>Cell type</strong>: filters available cell/component choices.</li>
+<li><strong>Cell/component</strong>: chooses the graph component to render.</li>
+<li><strong>Max background nodes</strong>: caps non-highlighted nodes for browser performance.</li>
+<li><strong>Highlighted markers</strong>: markers drawn larger and in color.</li>
+<li><strong>Options</strong>: plot canvas width and height.</li>
+</ul>
+<p>If the plot is slow, reduce <strong>Max background nodes</strong> or select a smaller
+component.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../abundance/" class="btn btn-neutral float-left" title="Abundance"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../patch-analysis/" class="btn btn-neutral float-right" title="Patch analysis">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../abundance/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../patch-analysis/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
