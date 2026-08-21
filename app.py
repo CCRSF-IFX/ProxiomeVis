@@ -43,19 +43,15 @@ from proxiome import (
     dataframe_export_bytes,
     filter_pixelator_proximity,
     load_h5ad_data,
-    load_pxl_proximity,
     mapping_for_column,
     new_analysis_grouping_config,
     patch_marker_profiles,
+    prepare_colocalization_heatmap,
     read_component_layout,
     resolve_h5ad_path,
-    sample_pxl_colocalization,
+    sample_colocalization,
     select_clustering_heatmap_markers,
-    select_colocalization_heatmap_markers,
-    select_proximity_profile_markers,
     summarize_numeric,
-    summarize_sample_colocalization,
-    summarize_spatial,
     update_analysis_grouping_config,
 )
 
@@ -407,6 +403,10 @@ def spatial_retrieval_ui():
                     "input.spatial_retrieval_marker_mode === 'manual'",
                     selectize("spatial_retrieval_markers", "Markers", multiple=True),
                 ),
+                ui.help_text(
+                    "Retrieval stores every proximity pair for this scope. "
+                    "Reduce cells or markers when server memory is limited."
+                ),
             ),
             open=["Population", "Markers"],
         ),
@@ -543,7 +543,7 @@ def proximity_profile_ui():
                     "Load PixelatorES defaults",
                     class_="btn-outline-secondary w-100 mb-2",
                 ),
-                ui.input_action_button(
+                ui.input_task_button(
                     "coloc_apply_analysis",
                     "Apply analysis settings",
                     class_="btn-primary w-100",
@@ -1070,6 +1070,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     spatial_retrieval_state: reactive.Value[SpatialRetrieval | None] = reactive.Value(None)
     patch_retrieval_state: reactive.Value[PatchRetrieval | None] = reactive.Value(None)
     coloc_analysis_state: reactive.Value[dict | None] = reactive.Value(None)
+    coloc_heatmap_state: reactive.Value[
+        tuple[pd.DataFrame, str, list[str]] | None
+    ] = reactive.Value(None)
     inspect_message = reactive.Value("No data loaded.")
     activity_queue: SimpleQueue[dict] = SimpleQueue()
     activity_state: reactive.Value[tuple[dict, ...]] = reactive.Value(())
@@ -1245,7 +1248,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         log_activity(
             "Spatial retrieval",
             "Started",
-            f"Retrieving self-proximity for {len(celltypes):,} cell type(s) and "
+            f"Retrieving all proximity scores for {len(celltypes):,} cell type(s) and "
             f"{'all' if marker_mode == 'all' else marker_count if marker_mode == 'top' else len(markers)} markers.",
         )
         try:
@@ -1267,7 +1270,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         log_activity(
             "Spatial retrieval",
             "Completed",
-            f"{len(retrieval.metadata):,} cells, {len(retrieval.markers):,} markers, and "
+            f"{len(retrieval.metadata):,} cells, {len(retrieval.markers):,} markers, "
+            f"{len(retrieval.proximity):,} proximity rows, and "
             f"{len(retrieval.self_proximity):,} self-proximity rows.",
             perf_counter() - started,
         )
@@ -1301,6 +1305,36 @@ def server(input: Inputs, output: Outputs, session: Session):
             perf_counter() - started,
         )
         return id(data), retrieval
+
+    @ui.bind_task_button(button_id="coloc_apply_analysis")
+    @reactive.extended_task
+    async def colocalization_task(
+        data: AppData,
+        retrieval: SpatialRetrieval,
+        settings: dict,
+    ) -> tuple[int, int, dict, tuple[pd.DataFrame, str, list[str]]]:
+        started = perf_counter()
+        description = describe_coloc_settings(settings)
+        log_activity("Colocalization preparation", "Started", description)
+        try:
+            prepared = await asyncio.to_thread(
+                prepare_colocalization_heatmap,
+                data,
+                retrieval,
+                settings,
+            )
+        except Exception as error:
+            message = report_error(
+                "Colocalization preparation", error, perf_counter() - started
+            )
+            raise RuntimeError(message) from None
+        log_activity(
+            "Colocalization preparation",
+            "Completed",
+            f"Prepared {len(prepared[0]):,} heatmap rows.",
+            perf_counter() - started,
+        )
+        return id(data), id(retrieval), settings, prepared
 
     @reactive.effect
     @reactive.event(input.inspect_h5ad)
@@ -1357,6 +1391,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         spatial_retrieval_state.set(None)
         patch_retrieval_state.set(None)
         coloc_analysis_state.set(None)
+        coloc_heatmap_state.set(None)
         inspect_message.set(
             f"Loaded {loaded.source['n_cells']:,} cells and {len(loaded.marker_options):,} markers; "
             f"{len(loaded.pxl_files):,} PXL file(s) assigned."
@@ -1372,9 +1407,11 @@ def server(input: Inputs, output: Outputs, session: Session):
             return
         spatial_retrieval_state.set(retrieval)
         coloc_analysis_state.set(None)
+        coloc_heatmap_state.set(None)
         ui.notification_show(
             f"Spatial retrieval ready: {len(retrieval.metadata):,} cells, "
-            f"{len(retrieval.markers):,} markers, and "
+            f"{len(retrieval.markers):,} markers, "
+            f"{len(retrieval.proximity):,} proximity rows, and "
             f"{len(retrieval.self_proximity):,} self-proximity rows.",
             type="message",
         )
@@ -1390,6 +1427,30 @@ def server(input: Inputs, output: Outputs, session: Session):
         ui.notification_show(
             f"Patch data ready: {len(retrieval.metadata):,} scoped cells and "
             f"{len(retrieval.candidate_data):,} receiver candidates.",
+            type="message",
+        )
+
+    @reactive.effect
+    def _activate_colocalization_analysis():
+        source_id, retrieval_id, settings, prepared = colocalization_task.result()
+        current_data = data_state.get()
+        current_retrieval = spatial_retrieval_state.get()
+        if (
+            current_data is None
+            or current_retrieval is None
+            or id(current_data) != source_id
+            or id(current_retrieval) != retrieval_id
+        ):
+            log_activity(
+                "Colocalization preparation",
+                "Discarded",
+                "The active spatial retrieval changed before preparation completed.",
+            )
+            return
+        coloc_analysis_state.set(settings)
+        coloc_heatmap_state.set(prepared)
+        ui.notification_show(
+            f"Colocalization ready: {len(prepared[0]):,} heatmap rows.",
             type="message",
         )
 
@@ -1460,6 +1521,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             "active_retrieval": {
                 "cells": len(retrieval.metadata),
                 "markers": len(retrieval.markers),
+                "proximity_rows": len(retrieval.proximity),
                 "self_proximity_rows": len(retrieval.self_proximity),
                 "retrieved_at": retrieval.retrieved_at,
             } if retrieval is not None else None,
@@ -1499,6 +1561,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 ("Samples", f"{metadata['sample_alias'].nunique():,}"),
                 ("Cell types", f"{metadata['celltype_manual'].nunique():,}"),
                 ("Markers", f"{len(retrieval.markers):,}"),
+                ("Proximity rows", f"{len(retrieval.proximity):,}"),
                 ("Self-proximity rows", f"{len(retrieval.self_proximity):,}"),
             ]),
             ui.p(
@@ -1533,7 +1596,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             f"{len(retrieval.metadata):,} cells, "
             f"{retrieval.metadata['sample_alias'].nunique():,} samples, and "
             f"{len(retrieval.markers):,} markers with "
-            f"{len(retrieval.self_proximity):,} retrieved self-proximity rows"
+            f"{len(retrieval.proximity):,} retrieved proximity rows"
         )
         if retrieval.request != current_spatial_request():
             return ui.div(
@@ -1725,7 +1788,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
         ui.update_selectize("coloc_diff_pair", choices=pairs, selected=pairs[0] if pairs else None, server=True)
         ui.update_selectize("coloc_3d_sample", choices=samples, selected=samples[0] if samples else None, server=True)
-        coloc_analysis_state.set(defaults)
 
     @reactive.effect
     def _refresh_colocalization_groups():
@@ -1869,6 +1931,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             spatial_retrieval_state.set(None)
             patch_retrieval_state.set(None)
             coloc_analysis_state.set(None)
+            coloc_heatmap_state.set(None)
             grouping_state.set(config)
             ui.modal_remove()
             ui.notification_show(analysis_grouping_summary(config), type="message")
@@ -1889,6 +1952,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         spatial_retrieval_state.set(None)
         patch_retrieval_state.set(None)
         coloc_analysis_state.set(None)
+        coloc_heatmap_state.set(None)
         grouping_state.set(config)
         ui.modal_remove()
         ui.notification_show(analysis_grouping_summary(config), type="message")
@@ -1902,45 +1966,6 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     def get_patch_retrieval() -> PatchRetrieval | None:
         return patch_retrieval_state.get()
-
-    def tracked_pxl_proximity(operation: str, data: AppData, metadata: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        started = perf_counter()
-        markers = kwargs.get("markers")
-        marker_count = len(markers) if markers is not None else len(data.marker_options)
-        log_activity(operation, "Started", f"Querying {len(metadata):,} cells and {marker_count:,} markers from PXL.")
-        try:
-            rows = load_pxl_proximity(data, metadata, **kwargs)
-        except Exception as error:
-            message = report_error(operation, error, perf_counter() - started)
-            raise RuntimeError(message) from None
-        log_activity(operation, "Completed", f"Returned {len(rows):,} rows.", perf_counter() - started)
-        return rows
-
-    def tracked_sample_colocalization(
-        data: AppData,
-        metadata: pd.DataFrame,
-        *,
-        operation: str = "Differential colocalization",
-        **kwargs,
-    ) -> pd.DataFrame:
-        started = perf_counter()
-        log_activity(
-            operation,
-            "Started",
-            f"Aggregating {len(metadata):,} cells inside PXL DuckDB.",
-        )
-        try:
-            rows = sample_pxl_colocalization(data, metadata, **kwargs)
-        except Exception as error:
-            message = report_error(operation, error, perf_counter() - started)
-            raise RuntimeError(message) from None
-        log_activity(
-            operation,
-            "Completed",
-            f"Returned {len(rows):,} sample-pair rows.",
-            perf_counter() - started,
-        )
-        return rows
 
     def tracked_component_layout(data: AppData, sample: str, component: str) -> pd.DataFrame:
         started = perf_counter()
@@ -2648,19 +2673,21 @@ def server(input: Inputs, output: Outputs, session: Session):
                 duration=None,
             )
             return
-        coloc_analysis_state.set(settings)
-        description = describe_coloc_settings(settings)
-        log_activity("Colocalization settings", "Applied", description)
-        ui.notification_show("Colocalization settings applied.", type="message")
+        colocalization_task.invoke(data_state.get(), retrieval, settings)
 
     @output
     @render.ui
     def coloc_analysis_status():
         retrieval = get_spatial_retrieval()
         settings = coloc_analysis_state.get()
-        if retrieval is None or settings is None:
+        if retrieval is None:
             return ui.div(
                 "Retrieve spatial data to configure colocalization.",
+                class_="alert alert-warning py-2 mt-2",
+            )
+        if settings is None:
+            return ui.div(
+                "Apply analysis settings to prepare colocalization.",
                 class_="alert alert-warning py-2 mt-2",
             )
         try:
@@ -2707,24 +2734,6 @@ def server(input: Inputs, output: Outputs, session: Session):
                 return pd.DataFrame()
         return scores
 
-    def heatmap_markers(metadata: pd.DataFrame, settings: dict) -> list[str]:
-        data = get_data()
-        retrieval = get_spatial_retrieval()
-        if data is None or retrieval is None or metadata.empty:
-            return []
-        manual = (
-            list(settings["manual_markers"])
-            if settings["marker_mode"] == "manual"
-            else None
-        )
-        return select_colocalization_heatmap_markers(
-            data.abundance,
-            metadata,
-            retrieval.markers,
-            n_markers=settings["top_markers"],
-            plot_markers=manual,
-        )
-
     def ordered_coloc_markers(summary: pd.DataFrame, markers: list[str], group_col: str) -> list[str]:
         if len(markers) < 3 or summary.empty:
             return markers
@@ -2756,79 +2765,10 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def colocalization_heatmap_base() -> tuple[pd.DataFrame, str, list[str]]:
-        data = get_data()
-        retrieval = get_spatial_retrieval()
-        settings = coloc_analysis_state.get()
-        metadata = colocalization_metadata(settings)
-        if data is None or retrieval is None or settings is None or metadata.empty:
+        prepared = coloc_heatmap_state.get()
+        if prepared is None:
             return pd.DataFrame(), "condition", []
-        scope = settings["scope"]
-        group_col = "sample_alias" if scope == "sample_alias" else "condition"
-        mode = settings["marker_mode"]
-        if mode == "profile":
-            available_markers = list(retrieval.markers)
-            samples = tracked_sample_colocalization(
-                data,
-                metadata,
-                operation="Colocalization heatmap",
-                markers=available_markers,
-                mean_type="population",
-                pair_type="all",
-                min_marker_fraction=(
-                    settings["min_fraction"] if settings["pixelator_filter"] else 0
-                ),
-                min_marker_count=(
-                    settings["min_count"] if settings["pixelator_filter"] else 0
-                ),
-            )
-            summary = summarize_sample_colocalization(
-                samples,
-                group_col=group_col,
-                markers=available_markers,
-                mean_type=settings["mean_type"],
-            )
-            if settings["min_cells"] > 1 and not summary.empty:
-                below_minimum = summary["n_detected"] < settings["min_cells"]
-                summary.loc[
-                    below_minimum,
-                    ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
-                ] = 0
-            markers = select_proximity_profile_markers(
-                summary,
-                n_pairs=settings["top_pairs"],
-            )
-            summary = summary[
-                summary["marker_1"].isin(markers) & summary["marker_2"].isin(markers)
-            ].copy()
-        else:
-            markers = heatmap_markers(metadata, settings)
-            scores = tracked_pxl_proximity(
-                "Colocalization heatmap",
-                data,
-                metadata,
-                markers=markers,
-                pair_type="all",
-                add_marker_counts=settings["pixelator_filter"],
-            )
-            scores = apply_colocalization_filters(scores, settings)
-            if scores.empty:
-                return pd.DataFrame(), group_col, markers
-            summary = summarize_spatial(
-                scores,
-                metadata,
-                group_col=group_col,
-                markers=markers,
-                mean_type=settings["mean_type"],
-            )
-            if settings["min_cells"] > 1 and not summary.empty:
-                below_minimum = summary["n_detected"] < settings["min_cells"]
-                summary.loc[
-                    below_minimum,
-                    ["sum_log2_ratio", "detected_mean", "mean_log2_ratio", "n_detected", "pct_detected"],
-                ] = 0
-        if summary.empty:
-            return summary, group_col, markers
-        return summary, group_col, markers
+        return prepared
 
     @reactive.calc
     def colocalization_heatmap_data() -> tuple[pd.DataFrame, str, list[str]]:
@@ -2870,6 +2810,11 @@ def server(input: Inputs, output: Outputs, session: Session):
         settings = coloc_analysis_state.get()
         if data is not None and retrieval is None:
             return ui.div("Retrieve data in Spatial Metrics > Retrieve Data first.", class_="alert alert-warning")
+        if retrieval is not None and settings is None:
+            return ui.div(
+                "Apply analysis settings to prepare colocalization.",
+                class_="alert alert-warning",
+            )
         summary, group_col, markers = colocalization_heatmap_data()
         if summary.empty:
             return ui.div("No spatial metric rows match the selected settings.", class_="alert alert-warning")
@@ -3013,6 +2958,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 "cells": len(retrieval.metadata),
                 "samples": int(retrieval.metadata["sample_alias"].nunique()),
                 "markers": len(retrieval.markers),
+                "proximity_rows": len(retrieval.proximity),
                 "self_proximity_rows": len(retrieval.self_proximity),
             }
             if retrieval is not None
@@ -3044,14 +2990,12 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def pair_detail_data() -> pd.DataFrame:
-        data = get_data()
         retrieval = get_spatial_retrieval()
         settings = coloc_analysis_state.get()
         metadata = colocalization_metadata(settings)
         pair = pair_markers(input.coloc_detail_pair())
         if (
-            data is None
-            or retrieval is None
+            retrieval is None
             or settings is None
             or metadata.empty
             or pair is None
@@ -3059,21 +3003,19 @@ def server(input: Inputs, output: Outputs, session: Session):
         ):
             return pd.DataFrame()
         marker_1, marker_2 = pair
-        scores = tracked_pxl_proximity(
-            "Colocalization pair",
-            data,
-            metadata,
-            markers=[marker_1, marker_2],
-            pair_type="self" if marker_1 == marker_2 else "nonself",
-            add_marker_counts=settings["pixelator_filter"],
-        )
-        scores = apply_colocalization_filters(scores, settings)
-        rows = scores[
-            ((scores["marker_1"].astype(str) == marker_1) & (scores["marker_2"].astype(str) == marker_2))
-            | ((scores["marker_1"].astype(str) == marker_2) & (scores["marker_2"].astype(str) == marker_1))
+        components = set(metadata["component"].astype(str))
+        first = retrieval.proximity["marker_1"].astype(str)
+        second = retrieval.proximity["marker_2"].astype(str)
+        scores = retrieval.proximity[
+            retrieval.proximity["component"].astype(str).isin(components)
+            & (
+                (first.eq(marker_1) & second.eq(marker_2))
+                | (first.eq(marker_2) & second.eq(marker_1))
+            )
         ].copy()
+        scores = apply_colocalization_filters(scores, settings)
         totals = metadata.groupby(["sample_alias", "condition", "celltype_manual"], observed=True)["component"].nunique().rename("n_total").reset_index()
-        detected = rows.groupby(["sample_alias", "condition", "celltype_manual"], observed=True).agg(
+        detected = scores.groupby(["sample_alias", "condition", "celltype_manual"], observed=True).agg(
             sum_log2_ratio=("log2_ratio", "sum"), detected_mean=("log2_ratio", "mean"), n_detected=("component", "nunique")
         ).reset_index()
         detail = totals.merge(detected, on=["sample_alias", "condition", "celltype_manual"], how="left")
@@ -3130,10 +3072,9 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
     def coloc_sample_data() -> pd.DataFrame:
-        data = get_data()
         retrieval = get_spatial_retrieval()
         settings = coloc_analysis_state.get()
-        if data is None or retrieval is None or settings is None:
+        if retrieval is None or settings is None:
             return pd.DataFrame()
         groups = [input.coloc_diff_group_a(), input.coloc_diff_group_b()]
         metadata = colocalization_metadata(settings)
@@ -3143,21 +3084,35 @@ def server(input: Inputs, output: Outputs, session: Session):
             if input.coloc_diff_pair_scope() == "anchor" and input.coloc_diff_anchor()
             else None
         )
-        summary = tracked_sample_colocalization(
-            data,
+        components = set(metadata["component"].astype(str))
+        first = retrieval.proximity["marker_1"].astype(str)
+        second = retrieval.proximity["marker_2"].astype(str)
+        scores = retrieval.proximity[
+            retrieval.proximity["component"].astype(str).isin(components)
+            & first.ne(second)
+        ].copy()
+        if anchor:
+            scores = scores[
+                scores["marker_1"].astype(str).eq(anchor)
+                | scores["marker_2"].astype(str).eq(anchor)
+            ]
+        scores = apply_colocalization_filters(scores, settings)
+        summary = sample_colocalization(
+            scores,
             metadata,
             markers=retrieval.markers,
             mean_type=settings["mean_type"],
-            anchor=anchor,
-            min_marker_fraction=(
-                settings["min_fraction"] if settings["pixelator_filter"] else 0
-            ),
-            min_marker_count=(
-                settings["min_count"] if settings["pixelator_filter"] else 0
-            ),
         )
         if summary.empty:
             return summary
+        summary = summary[
+            summary["marker_1"].astype(str) < summary["marker_2"].astype(str)
+        ].copy()
+        if anchor:
+            summary = summary[
+                summary["marker_1"].astype(str).eq(anchor)
+                | summary["marker_2"].astype(str).eq(anchor)
+            ]
         summary["celltype_manual"] = "Pooled cell types"
         summary["sample_value"] = summary["mean_log2_ratio"]
         return summary

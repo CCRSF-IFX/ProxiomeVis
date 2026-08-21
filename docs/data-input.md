@@ -48,12 +48,20 @@ with an unavailable-data message.
 ## PXL paths
 
 In **Data**, assign a `.layout.pxl` file, directory, glob, or comma/newline-
-separated paths. Clustering and colocalization query the PXL proximity table by
-the H5AD component IDs and selected markers. Differential colocalization is
-aggregated inside the PXL DuckDB database before results are returned. The 3D
-view reads the selected component's stored layout on demand. Patch candidate
-screening also queries PXL after **Prepare Patch Data**. PXL is not used for
-QC, abundance, or annotations.
+separated paths. **Retrieve Spatial Data** extracts the PXL proximity rows for
+the selected H5AD component IDs and markers. Clustering and colocalization reuse
+that active snapshot. The 3D view reads the selected component's stored layout
+on demand. Patch candidate screening also queries PXL during **Prepare Patch
+Data**. PXL is not used for QC, abundance, or annotations.
+
+Spatial retrieval reads the PXL proximity table directly with DuckDB and joins
+marker counts and fractions from the matching H5AD `X` matrix. Completed query
+results are cached under `$PROXIOMEVIS_HOME/cache/proximity` (default:
+`$HOME/.ProxiomeVis/cache/proximity`). The cache key includes the source-file
+size and modification time plus the selected components, markers, and pair
+scope, so replacing an H5AD/PXL file or changing retrieval scope creates a new
+entry instead of reusing stale results. Cache files contain derived proximity
+data and should receive the same access controls as their source dataset.
 
 ## Analysis grouping
 

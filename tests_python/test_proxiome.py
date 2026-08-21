@@ -26,6 +26,7 @@ from proxiome import (
     new_analysis_grouping_config,
     read_component_layout,
     patch_marker_profiles,
+    prepare_colocalization_heatmap,
     resolve_pxl_paths,
     resolve_h5ad_path,
     sample_pxl_colocalization,
@@ -101,6 +102,32 @@ def make_data() -> AppData:
         abundance=pd.DataFrame(),
         qc_filter_counts=qc_counts,
     )
+
+
+def make_retrieved_proximity() -> pd.DataFrame:
+    rows = []
+    for index, component in enumerate(("c1", "c2", "c3", "c4")):
+        for marker_1, marker_2, offset in (
+            ("A", "A", 0.1),
+            ("A", "B", 0.2),
+            ("B", "B", 0.3),
+        ):
+            rows.append(
+                {
+                    "component": component,
+                    "marker_1": marker_1,
+                    "marker_2": marker_2,
+                    "log2_ratio": offset + index / 10,
+                    "marker_1_freq": 0.5,
+                    "marker_2_freq": 0.5,
+                    "min_count": 5,
+                    "condition": "A" if index < 2 else "B",
+                    "celltype_manual": "T",
+                    "sample_alias": "s1" if index < 2 else "s2",
+                    "sample": "s1" if index < 2 else "s2",
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypatch):
@@ -194,36 +221,52 @@ def test_h5ad_analysis_payload_and_optional_pxl_layout(tmp_path: Path, monkeypat
 
 
 def test_proximity_is_queried_from_pxl_and_joined_to_h5ad_metadata(tmp_path: Path, monkeypatch):
+    import duckdb
+
     pxl_path = tmp_path / "sample.layout.pxl"
     pxl_path.write_bytes(b"")
-    data = replace(make_data(), pxl_files=(str(pxl_path),))
+    abundance = pd.DataFrame(
+        {
+            "component": ["c1", "c1", "c2", "c2"],
+            "marker": ["A", "B", "A", "B"],
+            "count": [4, 6, 3, 7],
+        }
+    )
+    data = replace(make_data(), abundance=abundance, pxl_files=(str(pxl_path),))
     proximity = pd.DataFrame(
         {
             "component": ["c1", "c1"],
             "marker_1": ["A", "A"],
             "marker_2": ["A", "B"],
-            "log2_ratio": [0.4, -0.2],
-            "marker_1_freq": [0.2, 0.2],
-            "marker_2_freq": [0.2, 0.3],
-            "min_count": [4, 4],
+            "join_count": [8, 2],
+            "join_count_expected_mean": [4.0, 4.0],
         }
     )
 
-    class FakeDataset:
-        def components(self):
-            return {"c1", "c2"}
-
-        def filter(self, *, components, markers):
-            assert components == ["c1", "c2"]
-            assert markers == ["A", "B"]
+    class FakeSession:
+        def __enter__(self):
+            self.connection = duckdb.connect()
+            self.connection.register("proximity", proximity)
             return self
 
-        def proximity(self, *, add_marker_counts, add_logratio, calculate_from_edgelist):
-            assert add_marker_counts and add_logratio and not calculate_from_edgelist
-            return SimpleNamespace(to_df=lambda: proximity)
+        def __exit__(self, *_args):
+            self.connection.close()
+            return False
+
+        def get_connection(self):
+            return self.connection
+
+    fake_dataset = SimpleNamespace(
+        components=lambda: {"c1", "c2"},
+        view=SimpleNamespace(open=FakeSession),
+    )
 
     clear_pxl_cache()
-    monkeypatch.setitem(__import__("sys").modules, "pixelator", SimpleNamespace(read_pna=lambda _: FakeDataset()))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pixelator",
+        SimpleNamespace(read_pna=lambda _: fake_dataset),
+    )
     rows = load_pxl_proximity(
         data,
         data.metadata.iloc[:2],
@@ -232,8 +275,97 @@ def test_proximity_is_queried_from_pxl_and_joined_to_h5ad_metadata(tmp_path: Pat
         add_marker_counts=True,
     )
     assert rows[["marker_1", "marker_2"]].values.tolist() == [["A", "B"]]
+    assert rows.iloc[0]["log2_ratio"] == -1
+    assert rows.iloc[0]["marker_1_count"] == 4
+    assert rows.iloc[0]["marker_2_count"] == 6
+    assert rows.iloc[0]["marker_1_freq"] == pytest.approx(0.4)
+    assert rows.iloc[0]["marker_2_freq"] == pytest.approx(0.6)
+    assert rows.iloc[0]["min_count"] == 4
     assert rows.iloc[0]["condition"] == "A"
     assert rows.iloc[0]["sample_alias"] == "s1"
+    clear_pxl_cache()
+
+
+def test_proximity_cache_reuses_materialized_result(tmp_path: Path, monkeypatch):
+    import duckdb
+
+    pxl_path = tmp_path / "sample.layout.pxl"
+    h5ad_path = tmp_path / "processed.h5ad"
+    pxl_path.write_bytes(b"pxl")
+    h5ad_path.write_bytes(b"h5ad")
+    abundance = pd.DataFrame(
+        {"component": ["c1", "c1"], "marker": ["A", "B"], "count": [4, 6]}
+    )
+    data = replace(
+        make_data(),
+        source={"h5ad_path": str(h5ad_path)},
+        abundance=abundance,
+        pxl_files=(str(pxl_path),),
+    )
+    proximity = pd.DataFrame(
+        {
+            "component": ["c1"],
+            "marker_1": ["A"],
+            "marker_2": ["B"],
+            "join_count": [8],
+            "join_count_expected_mean": [4.0],
+        }
+    )
+    opened = 0
+
+    class FakeSession:
+        def __enter__(self):
+            nonlocal opened
+            opened += 1
+            self.connection = duckdb.connect()
+            self.connection.register("proximity", proximity)
+            return self
+
+        def __exit__(self, *_args):
+            self.connection.close()
+            return False
+
+        def get_connection(self):
+            return self.connection
+
+    fake_dataset = SimpleNamespace(
+        components=lambda: {"c1"},
+        view=SimpleNamespace(open=FakeSession),
+    )
+    monkeypatch.setenv("PROXIOMEVIS_HOME", str(tmp_path / "home"))
+    clear_pxl_cache()
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pixelator",
+        SimpleNamespace(read_pna=lambda _: fake_dataset),
+    )
+
+    first = load_pxl_proximity(
+        data,
+        data.metadata.iloc[:1],
+        markers=["A", "B"],
+        add_marker_counts=True,
+    )
+    second = load_pxl_proximity(
+        data,
+        data.metadata.iloc[:1],
+        markers=["A", "B"],
+        add_marker_counts=True,
+    )
+
+    assert opened == 1
+    pd.testing.assert_frame_equal(first, second)
+    assert len(list((tmp_path / "home" / "cache" / "proximity").glob("*.parquet"))) == 1
+
+    pxl_path.write_bytes(b"changed")
+    load_pxl_proximity(
+        data,
+        data.metadata.iloc[:1],
+        markers=["A", "B"],
+        add_marker_counts=True,
+    )
+    assert opened == 2
+    assert len(list((tmp_path / "home" / "cache" / "proximity").glob("*.parquet"))) == 2
     clear_pxl_cache()
 
 
@@ -423,22 +555,16 @@ def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkey
     )
     captured = {}
 
-    def fake_self_proximity(_data, metadata, *, markers, pair_type):
-        captured.update(markers=markers, pair_type=pair_type)
-        return pd.DataFrame(
-            {
-                "component": metadata["component"],
-                "marker_1": ["A", "B"],
-                "marker_2": ["A", "B"],
-                "log2_ratio": [0.5, 1.0],
-                "condition": metadata["condition"],
-                "celltype_manual": metadata["celltype_manual"],
-                "sample_alias": metadata["sample_alias"],
-                "sample": metadata["sample"],
-            }
+    def fake_proximity(_data, metadata, *, markers, pair_type, add_marker_counts):
+        captured.update(
+            markers=markers,
+            pair_type=pair_type,
+            add_marker_counts=add_marker_counts,
         )
+        rows = make_retrieved_proximity()
+        return rows[rows["component"].isin(metadata["component"])]
 
-    monkeypatch.setattr("proxiome.load_pxl_proximity", fake_self_proximity)
+    monkeypatch.setattr("proxiome.load_pxl_proximity", fake_proximity)
     request = (("A",), ("s1",), ("T",), "all", None, ())
     retrieval = build_spatial_retrieval(
         data,
@@ -452,10 +578,91 @@ def test_spatial_retrieval_freezes_population_and_defaults_to_all_markers(monkey
     assert retrieval.request == request
     assert retrieval.metadata["component"].tolist() == ["c1", "c2"]
     assert retrieval.markers == ("A", "B")
-    assert captured == {"markers": ["A", "B"], "pair_type": "self"}
-    assert retrieval.self_proximity["marker"].astype(str).tolist() == ["A", "B"]
+    assert captured == {
+        "markers": ["A", "B"],
+        "pair_type": "all",
+        "add_marker_counts": True,
+    }
+    assert len(retrieval.proximity) == 6
+    assert retrieval.self_proximity["marker"].astype(str).tolist() == ["A", "B", "A", "B"]
     data.metadata.loc[data.metadata["component"] == "c1", "condition"] = "changed"
     assert retrieval.metadata["condition"].tolist() == ["A", "A"]
+
+
+def test_colocalization_heatmap_is_prepared_once_for_applied_settings(monkeypatch):
+    data = make_data()
+    retrieval = SimpleNamespace(
+        metadata=data.metadata,
+        markers=("A", "B"),
+        proximity=make_retrieved_proximity(),
+    )
+    monkeypatch.setattr(
+        "proxiome.sample_pxl_colocalization",
+        lambda *_args, **_kwargs: pytest.fail("Apply must not query PXL"),
+    )
+    monkeypatch.setattr(
+        "proxiome.load_pxl_proximity",
+        lambda *_args, **_kwargs: pytest.fail("Apply must not query PXL"),
+    )
+    settings = {
+        "celltype": "T",
+        "scope": "condition",
+        "marker_mode": "profile",
+        "manual_markers": (),
+        "top_pairs": 60,
+        "top_markers": 40,
+        "mean_type": "population",
+        "pixelator_filter": True,
+        "min_fraction": 0.001,
+        "min_count": 0.0,
+        "min_cells": 1,
+    }
+
+    summary, group_col, markers = prepare_colocalization_heatmap(
+        data, retrieval, settings
+    )
+
+    assert group_col == "condition"
+    assert set(markers) == {"A", "B"}
+    assert not summary.empty
+
+
+def test_manual_colocalization_heatmap_is_prepared_from_selected_markers(monkeypatch):
+    data = make_data()
+    retrieval = SimpleNamespace(
+        metadata=data.metadata,
+        markers=("A", "B"),
+        proximity=make_retrieved_proximity(),
+    )
+    monkeypatch.setattr(
+        "proxiome.load_pxl_proximity",
+        lambda *_args, **_kwargs: pytest.fail("Apply must not query PXL"),
+    )
+    monkeypatch.setattr(
+        "proxiome.sample_pxl_colocalization",
+        lambda *_args, **_kwargs: pytest.fail("Apply must not query PXL"),
+    )
+    settings = {
+        "celltype": "T",
+        "scope": "condition",
+        "marker_mode": "manual",
+        "manual_markers": ("A", "B"),
+        "top_pairs": 60,
+        "top_markers": 40,
+        "mean_type": "population",
+        "pixelator_filter": False,
+        "min_fraction": 0.001,
+        "min_count": 0.0,
+        "min_cells": 1,
+    }
+
+    summary, group_col, markers = prepare_colocalization_heatmap(
+        data, retrieval, settings
+    )
+
+    assert group_col == "condition"
+    assert markers == ["A", "B"]
+    assert not summary.empty
 
 
 def test_sample_colocalization_query_is_restricted_to_retrieved_markers(monkeypatch):
@@ -747,6 +954,10 @@ def test_python_app_exposes_h5ad_and_pxl_spatial_modules():
     assert 'id="custom_grouping"' not in html
     assert 'id="apply_coloc"' not in html
     assert 'id="coloc_apply_analysis"' in html
+    assert '@ui.bind_task_button(button_id="coloc_apply_analysis")' in source
+    assert "prepared = coloc_heatmap_state.get()" in source
+    assert "tracked_pxl_proximity" not in source
+    assert "tracked_sample_colocalization" not in source
     assert 'id="proximity_profile_retrieval_notice"' in html
     assert 'id="layout_3d_retrieval_notice"' in html
     assert "Pending retrieval changes." in source

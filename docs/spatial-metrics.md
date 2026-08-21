@@ -27,17 +27,24 @@ visualizations continue to use the prior retrieval until you click **Retrieve
 Spatial Data** again. Loading another H5AD or changing analysis grouping clears
 the active retrieval.
 
-The app freezes component IDs and marker choices and extracts their per-cell
-self-proximity rows during retrieval. Every Clustering view reuses that frozen
-table without querying PXL again. Marker-pair views continue to push smaller,
-focused queries into the PXL-backed DuckDB view rather than materializing every
-possible pair.
+The app freezes component IDs and marker choices and extracts all matching
+per-cell proximity rows, including the marker-count fields required by the
+Pixelator filters, during retrieval. Clustering, proximity heatmaps, pair
+details, and differential colocalization reuse that frozen table without
+querying PXL again. Retrieval queries PXL directly with DuckDB, derives the
+marker-count fields from the matching H5AD count matrix, and reuses a local
+Parquet cache when the same source files and scope are requested again.
 
 ## Proximity Profile
 
 Use **Proximity Profile** immediately after retrieval to view marker-pair
 proximity heatmaps. The heatmap can summarize by analysis group or sample and
 can focus on one group or compare groups.
+
+Click **Apply analysis settings** to prepare the heatmap data. Its background
+task only filters and summarizes the snapshot extracted by **Retrieve Spatial
+Data**. Opening a plot or table does not start another PXL query. Display-only
+controls reuse the prepared result.
 
 The default retrieval includes all markers, while the default heatmap uses the
 PixelatorES proximity profile for readability and query performance. A manual

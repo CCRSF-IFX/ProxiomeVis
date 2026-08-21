@@ -163,9 +163,11 @@ can narrow that scope but cannot add cells or markers that were not retrieved.
 | **Selected markers** | None | Retrieves only the explicit marker set |
 
 Click **Retrieve Spatial Data** after any retrieval change. The active summary
-reports the frozen population and marker scope. The app stores identifiers and
-pushes filtered queries into the PXL-backed database; it does not load every
-proximity row into browser memory.
+reports the frozen population and marker scope. The server extracts every PXL
+proximity row matching those cells and markers into the active retrieval. Plots
+receive summarized results rather than the full table in browser memory. For
+large panels, reduce the cell or marker scope if retrieval time or server memory
+is constrained.
 
 ### Interpret Proximity Scores
 
@@ -202,7 +204,8 @@ clicked.
 | **Minimum detected cells per summarized group** | 1 | Entries below this support are shown as zero |
 
 **Load PixelatorES defaults** resets these values but does not apply them.
-Click **Apply analysis settings** afterward.
+Click **Apply analysis settings** afterward. Apply filters and summarizes the
+active retrieval in memory; it does not query the PXL files again.
 
 For top abundance markers, the app first calculates each marker's mean
 normalized abundance within each sample and then averages those sample means.

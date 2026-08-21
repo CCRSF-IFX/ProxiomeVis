@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import glob
+import hashlib
+import json
 import os
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -10,7 +12,9 @@ from io import BytesIO
 from itertools import combinations, combinations_with_replacement
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
+from uuid import uuid4
 
+import duckdb
 import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
@@ -36,6 +40,7 @@ PATCH_TABLES = (
     "patch_burden",
     "patch_composition",
 )
+PROXIMITY_CACHE_VERSION = 1
 
 
 def empty_patch() -> dict[str, pd.DataFrame | None]:
@@ -62,6 +67,7 @@ class SpatialRetrieval:
     metadata: pd.DataFrame
     markers: tuple[str, ...]
     marker_mode: str
+    proximity: pd.DataFrame
     self_proximity: pd.DataFrame
 
 
@@ -225,6 +231,69 @@ def filter_pxl_metadata(data: AppData, metadata: pd.DataFrame | None = None) -> 
     return metadata[metadata["component"].astype(str).isin(components)].copy()
 
 
+def _proximity_cache_path(
+    data: AppData,
+    *,
+    components: Sequence[str],
+    markers: Sequence[str] | None,
+    pair_type: str,
+    anchor: str | None,
+    add_marker_counts: bool,
+) -> Path | None:
+    """Return an invalidating local cache path, or None when caching is unavailable."""
+    try:
+        files = []
+        for raw_path in data.pxl_files:
+            path = Path(raw_path).resolve()
+            stat = path.stat()
+            files.append((str(path), stat.st_size, stat.st_mtime_ns))
+        h5ad = None
+        if add_marker_counts:
+            raw_h5ad = data.source.get("h5ad_path")
+            if not raw_h5ad:
+                return None
+            h5ad_path = Path(str(raw_h5ad)).resolve()
+            stat = h5ad_path.stat()
+            h5ad = (str(h5ad_path), stat.st_size, stat.st_mtime_ns)
+        payload = {
+            "version": PROXIMITY_CACHE_VERSION,
+            "pxl": files,
+            "h5ad": h5ad,
+            "components": sorted(map(str, components)),
+            "markers": None if markers is None else sorted(map(str, markers)),
+            "pair_type": pair_type,
+            "anchor": anchor,
+            "add_marker_counts": add_marker_counts,
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        root = os.getenv("PROXIOMEVIS_HOME", "").strip()
+        cache_root = Path(root).expanduser() if root else Path.home() / ".ProxiomeVis"
+        cache_dir = cache_root / "cache" / "proximity"
+        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(cache_dir, 0o700)
+        return cache_dir / f"{digest}.parquet"
+    except OSError:
+        return None
+
+
+def _read_cached_proximity(path: Path | None) -> pd.DataFrame | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        with duckdb.connect() as connection:
+            return connection.execute(
+                "SELECT * FROM read_parquet(?)", [str(path)]
+            ).fetchdf()
+    except (duckdb.Error, OSError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
 def build_spatial_retrieval(
     data: AppData,
     *,
@@ -266,17 +335,38 @@ def build_spatial_retrieval(
         )
     if not markers:
         raise ValueError("Select at least one marker for spatial retrieval.")
-    self_proximity = load_pxl_proximity(
+    proximity = load_pxl_proximity(
         data,
         metadata,
         markers=markers,
-        pair_type="self",
+        pair_type="all",
+        add_marker_counts=True,
     )
-    if self_proximity.empty:
-        raise ValueError("No PXL self-proximity rows match the selected retrieval scope.")
+    if proximity.empty:
+        raise ValueError("No PXL proximity rows match the selected retrieval scope.")
+    self_proximity = proximity[
+        proximity["marker_1"].astype(str) == proximity["marker_2"].astype(str)
+    ].copy()
     self_proximity["marker"] = self_proximity["marker_1"].astype(str)
     self_proximity = self_proximity.drop(columns=["marker_1", "marker_2"])
-    for column in ("marker", "condition", "celltype_manual", "sample_alias", "sample"):
+    for column in (
+        "component",
+        "marker_1",
+        "marker_2",
+        "condition",
+        "celltype_manual",
+        "sample_alias",
+        "sample",
+    ):
+        proximity[column] = proximity[column].astype("category")
+    for column in (
+        "component",
+        "marker",
+        "condition",
+        "celltype_manual",
+        "sample_alias",
+        "sample",
+    ):
         self_proximity[column] = self_proximity[column].astype("category")
     return SpatialRetrieval(
         retrieved_at=retrieved_at,
@@ -284,6 +374,7 @@ def build_spatial_retrieval(
         metadata=metadata,
         markers=tuple(markers),
         marker_mode=marker_mode,
+        proximity=proximity,
         self_proximity=self_proximity,
     )
 
@@ -297,7 +388,7 @@ def load_pxl_proximity(
     anchor: str | None = None,
     add_marker_counts: bool = False,
 ) -> pd.DataFrame:
-    """Query selected proximity rows from assigned PXL files."""
+    """Query selected PXL rows directly and add H5AD marker counts when requested."""
     if pair_type not in {"all", "self", "nonself"}:
         raise ValueError("pair_type must be 'all', 'self', or 'nonself'.")
     if not data.pxl_files:
@@ -311,24 +402,17 @@ def load_pxl_proximity(
     if selected_markers == []:
         return pd.DataFrame()
 
-    dataset = _read_pxl_dataset(data.pxl_files)
-    if add_marker_counts:
-        filtered = dataset.filter(components=components, markers=selected_markers)
-        proximity = filtered.proximity(
-            add_marker_counts=True,
-            add_logratio=True,
-            calculate_from_edgelist=False,
-        ).to_df()
-        if pair_type == "self":
-            proximity = proximity[proximity["marker_1"] == proximity["marker_2"]]
-        elif pair_type == "nonself":
-            proximity = proximity[proximity["marker_1"] != proximity["marker_2"]]
-        if anchor:
-            proximity = proximity[
-                proximity["marker_1"].eq(str(anchor)) | proximity["marker_2"].eq(str(anchor))
-            ]
-    else:
-        conditions = ["component IN $components"]
+    cache_path = _proximity_cache_path(
+        data,
+        components=components,
+        markers=selected_markers,
+        pair_type=pair_type,
+        anchor=anchor,
+        add_marker_counts=add_marker_counts,
+    )
+    proximity = _read_cached_proximity(cache_path)
+    if proximity is None:
+        conditions = ["proximity.component IN $components"]
         parameters: dict[str, object] = {"components": components}
         if selected_markers is not None:
             conditions.append("marker_1 IN $markers AND marker_2 IN $markers")
@@ -340,17 +424,99 @@ def load_pxl_proximity(
         if anchor:
             conditions.append("(marker_1 = $anchor OR marker_2 = $anchor)")
             parameters["anchor"] = str(anchor)
+
+        marker_columns = ""
+        marker_joins = ""
+        marker_counts = None
+        if add_marker_counts:
+            required = {"component", "marker", "count"}
+            if missing := required.difference(data.abundance.columns):
+                raise ValueError(
+                    "H5AD abundance table is missing: " + ", ".join(sorted(missing))
+                )
+            marker_counts = data.abundance[["component", "marker", "count"]].copy()
+            marker_counts["component"] = marker_counts["component"].astype(str)
+            marker_counts["marker"] = marker_counts["marker"].astype(str)
+            marker_counts["count"] = pd.to_numeric(
+                marker_counts["count"], errors="coerce"
+            ).fillna(0)
+            marker_counts = marker_counts[
+                marker_counts["component"].isin(components)
+            ]
+            if selected_markers is not None:
+                marker_counts = marker_counts[
+                    marker_counts["marker"].isin(selected_markers)
+                ]
+            marker_counts = marker_counts.groupby(
+                ["component", "marker"], observed=True, as_index=False
+            )["count"].sum()
+            marker_columns = """,
+                   marker_1_counts.marker_count AS marker_1_count,
+                   marker_2_counts.marker_count AS marker_2_count,
+                   marker_1_counts.marker_freq AS marker_1_freq,
+                   marker_2_counts.marker_freq AS marker_2_freq,
+                   least(marker_1_counts.marker_count, marker_2_counts.marker_count)
+                       AS min_count"""
+            marker_joins = """
+                LEFT JOIN counts AS marker_1_counts
+                  ON proximity.component = marker_1_counts.count_component
+                 AND proximity.marker_1 = marker_1_counts.count_marker
+                LEFT JOIN counts AS marker_2_counts
+                  ON proximity.component = marker_2_counts.count_component
+                 AND proximity.marker_2 = marker_2_counts.count_marker
+            """
+
+        counts_cte = ""
+        if add_marker_counts:
+            counts_cte = """
+                WITH counts AS (
+                    SELECT component AS count_component,
+                           marker AS count_marker,
+                           CAST(count AS UINTEGER) AS marker_count,
+                           count / nullif(sum(count) OVER (PARTITION BY component), 0)
+                               AS marker_freq
+                    FROM h5ad_marker_counts
+                )
+            """
         query = f"""
-            SELECT component, marker_1, marker_2,
+            {counts_cte}
+            SELECT proximity.component, marker_1, marker_2,
                    log2(
                        greatest(CAST(join_count AS DOUBLE), 1) /
                        greatest(join_count_expected_mean, 1)
                    ) AS log2_ratio
+                   {marker_columns}
             FROM proximity
+            {marker_joins}
             WHERE {' AND '.join(conditions)}
         """
+        dataset = _read_pxl_dataset(data.pxl_files)
         with dataset.view.open() as session:
-            proximity = session.get_connection().execute(query, parameters).fetchdf()
+            connection = session.get_connection()
+            if marker_counts is not None:
+                connection.register("h5ad_marker_counts", marker_counts)
+            table_name = f"proxiome_retrieval_{uuid4().hex}"
+            connection.execute(
+                f"CREATE TEMP TABLE {table_name} AS {query}", parameters
+            )
+            if cache_path is not None:
+                temporary_cache = cache_path.with_name(
+                    f".{cache_path.name}.{uuid4().hex}.tmp"
+                )
+                try:
+                    escaped_path = str(temporary_cache).replace("'", "''")
+                    connection.execute(
+                        f"COPY {table_name} TO '{escaped_path}' "
+                        "(FORMAT PARQUET, COMPRESSION ZSTD)"
+                    )
+                    os.replace(temporary_cache, cache_path)
+                    os.chmod(cache_path, 0o600)
+                except (duckdb.Error, OSError):
+                    try:
+                        temporary_cache.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            proximity = connection.execute(f"SELECT * FROM {table_name}").fetchdf()
 
     required = {"component", "marker_1", "marker_2", "log2_ratio"}
     if missing := required.difference(proximity.columns):
@@ -1238,10 +1404,108 @@ def complete_spatial(
     return result
 
 
+def prepare_colocalization_heatmap(
+    data: AppData,
+    retrieval: SpatialRetrieval,
+    settings: Mapping[str, object],
+) -> tuple[pd.DataFrame, str, list[str]]:
+    """Prepare a colocalization heatmap from the frozen spatial retrieval."""
+    metadata = retrieval.metadata[
+        retrieval.metadata["celltype_manual"].astype(str)
+        == str(settings["celltype"])
+    ].copy()
+    group_col = "sample_alias" if settings["scope"] == "sample_alias" else "condition"
+    if metadata.empty:
+        return pd.DataFrame(), group_col, []
+
+    components = set(metadata["component"].astype(str))
+    mode = str(settings["marker_mode"])
+    if mode == "profile":
+        available_markers = list(retrieval.markers)
+        scores = retrieval.proximity[
+            retrieval.proximity["component"].astype(str).isin(components)
+            & retrieval.proximity["marker_1"].astype(str).isin(available_markers)
+            & retrieval.proximity["marker_2"].astype(str).isin(available_markers)
+        ].copy()
+        if settings["pixelator_filter"]:
+            scores = filter_pixelator_proximity(
+                scores,
+                min_marker_fraction=float(settings["min_fraction"]),
+                min_marker_count=float(settings["min_count"]),
+                min_cells=1,
+            )
+        samples = sample_colocalization(
+            scores,
+            metadata,
+            markers=available_markers,
+            mean_type="population",
+        )
+        summary = summarize_sample_colocalization(
+            samples,
+            group_col=group_col,
+            markers=available_markers,
+            mean_type=str(settings["mean_type"]),
+        )
+        if summary.empty:
+            return summary, group_col, []
+        markers = select_proximity_profile_markers(
+            summary,
+            n_pairs=int(settings["top_pairs"]),
+        )
+        summary = summary[
+            summary["marker_1"].isin(markers) & summary["marker_2"].isin(markers)
+        ].copy()
+    else:
+        manual = list(settings["manual_markers"]) if mode == "manual" else None
+        markers = select_colocalization_heatmap_markers(
+            data.abundance,
+            metadata,
+            retrieval.markers,
+            n_markers=int(settings["top_markers"]),
+            plot_markers=manual,
+        )
+        scores = retrieval.proximity[
+            retrieval.proximity["component"].astype(str).isin(components)
+            & retrieval.proximity["marker_1"].astype(str).isin(markers)
+            & retrieval.proximity["marker_2"].astype(str).isin(markers)
+        ].copy()
+        if settings["pixelator_filter"]:
+            scores = filter_pixelator_proximity(
+                scores,
+                min_marker_fraction=float(settings["min_fraction"]),
+                min_marker_count=float(settings["min_count"]),
+                min_cells=1,
+            )
+        if scores.empty:
+            return pd.DataFrame(), group_col, markers
+        summary = summarize_spatial(
+            scores,
+            metadata,
+            group_col=group_col,
+            markers=markers,
+            mean_type=str(settings["mean_type"]),
+        )
+
+    if int(settings["min_cells"]) > 1 and not summary.empty:
+        below_minimum = summary["n_detected"] < int(settings["min_cells"])
+        summary.loc[
+            below_minimum,
+            [
+                "sum_log2_ratio",
+                "detected_mean",
+                "mean_log2_ratio",
+                "n_detected",
+                "pct_detected",
+            ],
+        ] = 0
+    return summary, group_col, markers
+
+
 def sample_colocalization(
     scores: pd.DataFrame,
     metadata: pd.DataFrame,
     *,
+    markers: Sequence[str] | None = None,
     celltypes: Sequence[str] | None = None,
     mean_type: str = "population",
 ) -> pd.DataFrame:
@@ -1251,7 +1515,11 @@ def sample_colocalization(
         scores,
         metadata,
         group_col="sample_alias",
-        markers=sorted(set(scores["marker_1"]).union(scores["marker_2"])),
+        markers=(
+            list(map(str, markers))
+            if markers is not None
+            else sorted(set(scores["marker_1"]).union(scores["marker_2"]))
+        ),
         celltypes=celltypes,
         mean_type=mean_type,
     )
