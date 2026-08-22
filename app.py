@@ -2541,7 +2541,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 return empty_figure("Select at least one custom protein.")
             return empty_figure("No PXL clustering summary matches the selected filters.")
         rows["population"] = rows["condition"].astype(str) + " · " + rows["celltype_manual"].astype(str)
-        matrix = rows.pivot(index="population", columns="marker", values="mean_log2_ratio")
+        matrix = rows.pivot(index="population", columns="marker", values="mean_log2_ratio").fillna(0)
         figure = px.imshow(matrix, color_continuous_scale="RdBu_r", color_continuous_midpoint=0, aspect="auto", labels={"color": "Mean log2 ratio"})
         return style_figure(figure, height=max(520, 26 * len(matrix)))
 
