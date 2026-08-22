@@ -3448,10 +3448,10 @@ def server(input: Inputs, output: Outputs, session: Session):
     def update_patch_marker_suggestions() -> None:
         target_markers, receiver_markers = suggested_patch_markers(patch_marker_profile())
         ui.update_selectize(
-            "patch_target_markers", selected=target_markers, server=True
+            "patch_target_markers", selected=target_markers
         )
         ui.update_selectize(
-            "patch_receiver_markers", selected=receiver_markers, server=True
+            "patch_receiver_markers", selected=receiver_markers
         )
 
     @reactive.effect
