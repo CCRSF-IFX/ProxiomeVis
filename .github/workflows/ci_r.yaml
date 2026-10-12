@@ -49,5 +49,13 @@ jobs:
           "callr", "promises", "later", "digest", "arrow", "dplyr", "DBI", "duckdb"),
           repos = c(CRAN = Sys.getenv("RSPM", "https://cloud.r-project.org")))'
 
+      - name: Install pixelatorR
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev
+          Rscript --vanilla -e 'options(repos = c(CRAN = Sys.getenv("RSPM", "https://cloud.r-project.org"))); install.packages("remotes"); remotes::install_github("PixelgenTechnologies/pixelatorR", dependencies = NA, upgrade = "never"); loadNamespace("pixelatorR")'
+
       - name: Run unit tests
         run: Rscript --vanilla tests/testthat.R
