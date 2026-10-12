@@ -98,7 +98,34 @@ try {
     await select('report_readout', readout);
     await select('report_donor', 'd1');
     await select('report_celltype', 'CD4 T');
-    await waitFor("document.querySelector('#report-report_volcano_plot img')?.complete");
+    await waitFor("document.getElementById('report-report_volcano_plot')?.data?.some(t => t.mode === 'markers' && t.x.length)");
+    assert.equal(await evaluate("document.getElementById('report-report_volcano_plot')._context.scrollZoom"), true);
+    assert.equal(await evaluate("[...document.querySelectorAll('#report-report_volcano_plot .annotation-text')].some(x => x.textContent === '-log10(adjusted P)')"), true);
+    await evaluate(`(() => {
+      const plot = document.getElementById('report-report_volcano_plot');
+      const curveNumber = plot.data.findIndex(t => t.mode === 'markers' && t.x.length);
+      Plotly.Fx.hover(plot, [{curveNumber, pointNumber: 0}]);
+    })()`);
+    await waitFor("document.querySelector('#report-report_volcano_plot .hoverlayer')?.textContent.includes('Adjusted P value:')");
+    assert.match(await evaluate("document.querySelector('#report-report_volcano_plot .hoverlayer').textContent"), /Marker/);
+    if (readout === 'self_proximity') {
+      await mkdir('output', { recursive: true });
+      const screenshot = await call('Page.captureScreenshot', { format: 'png' });
+      await writeFile('output/volcano-interactive.png', Buffer.from(screenshot.data, 'base64'));
+    }
+    const before = await evaluate("document.getElementById('report-report_volcano_plot').layout.xaxis.range");
+    const box = await evaluate(`(() => {
+      const r = document.querySelector('#report-report_volcano_plot .nsewdrag').getBoundingClientRect();
+      return {x: r.x + r.width * .25, y: r.y + r.height * .25, width: r.width * .5, height: r.height * .5};
+    })()`);
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.width, y: box.y + box.height, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x + box.width, y: box.y + box.height, button: 'left', clickCount: 1 });
+    await waitFor(`(() => { const r = document.getElementById('report-report_volcano_plot').layout.xaxis.range; return r[1] - r[0] < ${before[1] - before[0]}; })()`);
+    await evaluate("document.querySelector('#report-report_volcano_plot [data-title=\"Reset axes\"]').click()");
+    await waitFor(`Math.abs(document.getElementById('report-report_volcano_plot').layout.xaxis.range[0] - ${before[0]}) < 1e-6`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: box.x, y: box.y, deltaX: 0, deltaY: -100 });
+    await waitFor(`(() => { const r = document.getElementById('report-report_volcano_plot').layout.xaxis.range; return r[1] - r[0] < ${before[1] - before[0]}; })()`);
     await download('download_report_volcano_svg', /<svg/);
     await download('download_report_volcano_csv', /exploratory_component_level/);
     if (readout === 'abundance') await download('download_report_abundance_heatmap_svg', /<svg/);
@@ -106,7 +133,7 @@ try {
   await select('report_celltype', 'Platelet-rich');
   await waitFor("document.body.innerText.includes('No stored rows match this display scope.')");
   await download('download_report_volcano_svg', /<svg/);
-  console.log('PASS: report volcanoes, frozen abundance heatmap, report exports');
+  console.log('PASS: interactive volcano hover, box zoom/reset, frozen abundance heatmap, report exports');
 
   await tab('Spatial report');
   await select('spatial_celltype', 'CD4 T');

@@ -133,6 +133,46 @@ test_that("report volcanoes use frozen rows and preserve stored probabilities", 
   )
 })
 
+test_that("interactive volcanoes expose every point without changing report exports", {
+  contract <- report_plot_fixture()
+  for (readout in c("abundance", "self_proximity", "colocalization")) {
+    plot <- plot_report_volcano(contract, readout, "D1", "B", "TRT vs NC")
+    original_data <- ggplot2::ggplot_build(plot)$data
+    original_layers <- plot$layers
+    expect_warning(widget <- report_volcano_plotly(plot), NA)
+    built <- plotly::plotly_build(widget)
+    points <- Filter(function(trace) identical(trace$mode, "markers"), built$x$data)
+    hover <- unlist(lapply(points, function(trace) trace$text))
+    expect_true(any(grepl("Marker.*A", hover)))
+    expect_true(any(grepl("Marker.*B", hover)))
+    expect_true(all(grepl("Adjusted P value:", hover, fixed = TRUE)))
+    expect_true(all(grepl("Target: TRT", hover, fixed = TRUE)))
+    expect_true(built$x$config$scrollZoom)
+    expect_true(built$x$config$displayModeBar)
+    expect_identical(built$x$layout$dragmode, "zoom")
+    labels <- vapply(built$x$layout$annotations, function(annotation) annotation$text, character(1))
+    expect_true("-log10(adjusted P)" %in% labels)
+    expect_identical(built$x$config$doubleClick, "reset")
+    expect_identical(plot$layers, original_layers)
+    expect_equal(ggplot2::ggplot_build(plot)$data, original_data)
+    expect_false(any(vapply(plot$layers, function(layer) "text" %in% names(layer$mapping), logical(1))))
+    empty <- plot_report_volcano(contract, readout, "D1", "T", "TRT vs NC")
+    expect_warning(expect_s3_class(report_volcano_plotly(empty), "plotly"), NA)
+  }
+})
+
+test_that("volcano hover escapes labels and shows stored zero P values", {
+  contract <- report_plot_fixture()
+  contract$report$source_results$D1$abundance$marker[1L] <- "A<B"
+  contract$report$source_results$D1$abundance$p_adj[1L] <- 0
+  plot <- plot_report_volcano(contract, "abundance", "D1", "B", "TRT vs NC")
+  widget <- plotly::plotly_build(report_volcano_plotly(plot))
+  points <- Filter(function(trace) identical(trace$mode, "markers"), widget$x$data)
+  hover <- unlist(lapply(points, function(trace) trace$text))
+  expect_true(any(grepl("Marker: A&lt;B", hover, fixed = TRUE)))
+  expect_true(any(grepl("Adjusted P value: 0$", hover)))
+})
+
 test_that("unsupported source scopes keep their not-tested facet", {
   contract <- report_plot_fixture()
   plot <- plot_report_volcano(contract, "abundance", "D1", "T", "TRT vs NC")

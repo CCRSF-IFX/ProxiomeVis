@@ -10,7 +10,7 @@ run tests on selected cells, or require the original PXL files at runtime.
 ## Requirements
 
 - R with `SeuratObject`, `Matrix`, `pixelatorR`, `shiny`, `bslib`, `ggplot2`,
-  `plotly`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
+  `plotly`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
   `pheatmap`, and `yaml`
 - a prepared RDS following the [precomputed-results contract](docs/precomputed-results.md)
 
@@ -80,6 +80,12 @@ descriptive and have no p-values. Donor-specific report volcanoes retain the
 tertiary analysis's stored component-level p-values and adjusted p-values; they
 are labeled exploratory and are not population-level donor inference. The app
 never treats cells as independent biological replicates.
+
+The **Report volcano** view supports marker hover, scroll-wheel zoom, and
+drag-to-box zoom for all three readouts. Double-click to reset, or use the
+Plotly toolbar to pan/reset. Hover replaces repelled labels on screen; the
+Volcano SVG download retains the original labeled report plot. Spatial report
+and abundance heatmaps remain static.
 
 ## Data handling
 

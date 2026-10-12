@@ -1,3 +1,37 @@
+report_volcano_plotly <- function(plot) {
+  # R plotmath labels do not reliably translate to Plotly axis titles.
+  if (is.expression(plot$labels$y)) plot <- plot + ggplot2::labs(y = "-log10(adjusted P)")
+  # Plotly cannot translate repel labels; point hover replaces them on screen.
+  plot$layers <- Filter(function(layer) !inherits(layer$geom, "GeomTextRepel"), plot$layers)
+  plot$layers <- lapply(plot$layers, function(layer) {
+    if (!inherits(layer$geom, "GeomPoint")) return(layer)
+    rows <- if (is.data.frame(layer$data)) layer$data else plot$data
+    if (!is.data.frame(rows) || !nrow(rows)) return(layer)
+    rows <- as.data.frame(rows)
+    fields <- c(
+      marker = "Marker", marker_1 = "Marker 1", marker_2 = "Marker 2",
+      target = "Target", reference = "Reference", celltype = "Cell type",
+      difference = "Abundance difference", diff_median = "Median difference",
+      p = "P value", p_adj = "Adjusted P value"
+    )
+    fields <- fields[names(fields) %in% names(rows)]
+    rows$.volcano_hover <- Reduce(function(a, b) paste(a, b, sep = "<br>"),
+      lapply(names(fields), function(name) {
+        value <- rows[[name]]
+        if (is.numeric(value)) value <- signif(value, 5)
+        paste0(fields[[name]], ": ", htmltools::htmlEscape(as.character(value)))
+      }))
+    mapping <- layer$mapping
+    mapping$text <- ggplot2::aes(text = .volcano_hover)$text
+    # Clone the layer so the original ggplot and its SVG export stay untouched.
+    ggplot2::ggproto(NULL, layer, data = rows, mapping = mapping)
+  })
+  plotly::ggplotly(plot, tooltip = "text") |>
+    plotly::layout(dragmode = "zoom", hovermode = "closest") |>
+    plotly::config(scrollZoom = TRUE, displayModeBar = TRUE,
+                   displaylogo = FALSE, doubleClick = "reset")
+}
+
 report_plot_error <- function(...) {
   stop(paste0(...), call. = FALSE)
 }

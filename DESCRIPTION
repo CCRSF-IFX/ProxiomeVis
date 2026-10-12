@@ -11,6 +11,7 @@ Imports:
     bslib (>= 0.8.0),
     ggplot2,
     plotly,
+    htmltools,
     DT,
     SeuratObject (>= 5.0.0),
     Matrix,

@@ -1040,7 +1040,9 @@ precomputed_ui <- function(id) {
               shiny::downloadButton(ns("download_report_volcano_svg"), "Volcano SVG", class = "btn-sm btn-outline-primary"),
               shiny::downloadButton(ns("download_report_volcano_csv"), "Stored rows CSV", class = "btn-sm btn-outline-primary")
             ),
-            shiny::plotOutput(ns("report_volcano_plot"), height = "720px")
+            shiny::tags$p(class = "small text-muted",
+              "Hover for marker details. Scroll or drag a box to zoom; double-click to reset. SVG downloads retain the original report labels."),
+            plotly::plotlyOutput(ns("report_volcano_plot"), height = "720px")
           )
         ),
         bslib::card(
@@ -1454,7 +1456,9 @@ precomputed_server <- function(id, data) {
         title = "Original report volcano"
       )
     })
-    output$report_volcano_plot <- shiny::renderPlot(report_volcano_ggplot(), res = 110)
+    output$report_volcano_plot <- plotly::renderPlotly({
+      report_volcano_plotly(report_volcano_ggplot())
+    })
 
     report_volcano_display <- shiny::reactive({
       rows <- report_scope()$rows
