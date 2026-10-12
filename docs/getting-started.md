@@ -2,6 +2,9 @@
 
 Run commands from the `ProxiomeVis` directory.
 
+The Cell 3D renderer uses the CRAN `threejs` package (>= 0.3.4):
+`install.packages("threejs")`. Plotly remains in use for the other interactive plots.
+
 ## 1. Prepare the demo RDS
 
 The repository expects the demo source at `../pixelgen_demo_data`. Build the

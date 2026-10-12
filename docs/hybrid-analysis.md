@@ -165,11 +165,17 @@ reuse checksum validation for the unchanged file. That initial disk scan is
 different from loading all sample nodes into R. The viewer rejects cells above
 200,000 nodes instead of silently truncating them.
 
-**Cell 3D** supports rotation, zoom, hover, one highlight marker, and
+**Cell 3D** uses CRAN `threejs` for rotation, zoom, hover, one highlight marker, and
 node/provenance downloads. It has no edge display. Highlights represent marker
 identities, not signal counts; shared-node highlights do not constitute a
 statistical colocalization test. Coordinates are abstract graph-layout positions,
 not physical microscopy positions or measured distances.
+
+The viewer keeps all nodes and uses one common coordinate scale, not separate
+axis stretching. **Reset view** restores the camera; **Save PNG** captures the
+canvas. Switching the highlight for the same cell preserves the camera, while
+changing cells resets it. Old WebGL resources are released on each Display.
+Plotly remains the renderer for embeddings and precomputed results.
 
 Choose donor, cell type, condition, and two ranking markers (the same marker
 twice for a self-pair). Reversed pair orders are equivalent. Ranking uses finite
@@ -196,6 +202,8 @@ schema versions within one graph directory.
 
 ## Dependencies and preparation
 
+Install the CRAN renderer with `install.packages("threejs")` (version >= 0.3.4).
+
 The plain-bundle viewer uses the packages in `DESCRIPTION`'s `Imports`; it
 does not require Seurat/PNA class definitions merely to load data. Legacy
 Seurat RDS inputs still require SeuratObject, and PNA inputs require pixelatorR.
@@ -206,6 +214,61 @@ plain bundle. Offline graph preparation requires the source Seurat/PNA object,
 pixelatorR, Arrow, and dplyr; PXL-to-Parquet preparation also uses DBI and DuckDB.
 Neither the analysis worker nor the 3D viewer needs PXL mounts or permission to
 access the original files.
+
+### Renderer comparison (2026-10-12)
+
+The saved measurements are in
+[`docs/benchmarks/2026-10-12-cell-renderers/`](benchmarks/2026-10-12-cell-renderers/):
+[R timings and sizes (CSV)](benchmarks/2026-10-12-cell-renderers/r-results.csv),
+[browser measurements (JSON)](benchmarks/2026-10-12-cell-renderers/browser-results.json),
+and [test cases and package versions (JSON)](benchmarks/2026-10-12-cell-renderers/cases.json).
+These are unchanged copies of the measured results, including the optional
+OrbitControls comparison. The `file` fields name generated HTML snapshots in
+`output/renderer-benchmark`, not files included in this small results archive.
+
+Compared CRAN `threejs` 0.3.4 with the existing Plotly 4.12.1 renderer from commit
+`bb341b2`, using three real demo cells, all nodes, the same CD44 highlight, marker
+hover labels, preserved aspect ratios, and 1000 × 700 widgets. The cells are the
+smallest, median, and largest among those within the unchanged 200,000-node limit.
+
+| Nodes | Plotly browser ready | threejs browser ready | Plotly / threejs HTML payload |
+| ---: | ---: | ---: | ---: |
+| 10,021 | 1,165 ms | 159 ms | 1.65 / 0.88 MB |
+| 41,111 | 1,636 ms | 347 ms | 6.66 / 3.48 MB |
+| 197,680 | 5,439 ms | 713 ms | 32.29 / 16.92 MB |
+
+These are observations from one controlled browser pass, not end-to-end Shiny
+latency or hardware-GPU guarantees. Browser-ready time is navigation to two
+animation frames after the htmlwidget render hook. Each case ran in a fresh
+Chrome 149.0.7827.55 process, after warming dependencies on the smallest cell,
+with back/forward caching disabled. The server has no available hardware WebGL:
+the test used SwiftShader with four workers, CPU affinity 0–3, single-threaded
+V8, and device scale 1. Shared-library download sizes are excluded from the HTML
+payload; MB here means decimal megabytes.
+
+During a two-second mouse drag, animation-frame callback rates were approximately
+5.8 / 60.0, 2.0 / 27.8, and 0.5 / 7.8 Hz (Plotly / threejs). This measures browser
+responsiveness, not an independent GPU frame counter. The post-GC JavaScript heap
+was 10.8 / 4.2, 17.4 / 9.0, and 51.7 / 33.7 MiB; it excludes native/GPU memory.
+The alternative threejs OrbitControls were also tested; the app retains the
+default TrackballControls for unrestricted rotation. The app disables residual
+camera inertia so Reset stays at the initial view, and wakes rendering for idle
+zoom events; these small interaction fixes are not part of the renderer benchmark.
+
+R construction is not uniformly faster: medians of three warmed builds were
+146 / 134, 560 / 592, and 2,687 / 3,097 ms. The largest threejs R widget was also
+larger (15.85 versus 14.31 MB). The switch therefore targets browser responsiveness
+and the roughly 47% smaller serialized plot payload, not R-side memory savings.
+No downsampling, sidecar schema change, or node-limit increase was used.
+
+To reproduce, run `Rscript scripts/benchmark_cell_renderers.R` from the repository
+root with the demo sidecars and CRAN threejs installed. Serve
+`output/renderer-benchmark` locally on port 3840, then run
+`PROXIOME_CHROME=/path/to/chromium PROXIOME_BENCH_CPUS=0-3 node tests/browser_renderer_benchmark.mjs`.
+Omit the CPU-affinity variable outside Linux or choose valid CPUs for the host.
+The scripts save raw R and browser measurements under `output/renderer-benchmark`.
+The benchmark needs the baseline commit in local Git history and Node.js with
+built-in `fetch` and `WebSocket`. The app does not run these benchmarks.
 
 After preparing the legacy frozen-results RDS, run from the repository:
 

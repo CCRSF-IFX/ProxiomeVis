@@ -156,17 +156,17 @@ try {
 
   await tab('Cell 3D');
   await waitFor("!!document.getElementById('report-graph-markers').selectize.options.CD45");
-  assert.equal(await evaluate("!!document.getElementById('report-graph-plot')?.data?.length"), false);
+  assert.equal(await evaluate("!!document.querySelector('#report-graph-plot canvas')"), false);
   await select('report-graph-markers', 'CD45');
   await select('report-graph-cell', 'd1_PHA_004e4ae004879a14');
   assert.equal(await evaluate("document.getElementById('report-graph-markers').selectize.settings.maxItems"), 1);
-  assert.equal(await evaluate("!!document.getElementById('report-graph-plot')?.data?.length"), false);
+  assert.equal(await evaluate("!!document.querySelector('#report-graph-plot canvas')"), false);
   await evaluate("document.getElementById('report-graph-display').click()");
-  await waitFor("document.getElementById('report-graph-plot')?.data?.some(t => t.type === 'scatter3d' && t.x.length)");
+  await waitFor("HTMLWidgets.getInstance(document.getElementById('report-graph-plot'))?.widget?.pointgroup?.children.length > 0");
   await waitFor("document.querySelector('#report-graph-plot canvas') !== null");
-  await waitFor("document.getElementById('report-graph-plot').data.some(t => t.name === 'CD45')");
+  await waitFor("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children.some(t => t.geometry.labels.some(x => x.includes('CD45')))");
   const graph = JSON.parse(await download('report-graph-provenance_json'));
-  assert.equal(graph.schema_version, 2);
+  assert.equal(graph.schema_version, 3);
   assert.equal(graph.highlight_marker, 'CD45');
   await select('report-graph-markers', 'CD4');
   assert.deepEqual(JSON.parse(await download('report-graph-provenance_json')), graph);
@@ -186,24 +186,25 @@ try {
   const nodeCsv = (await download('report-graph-nodes_csv')).trim().split('\n');
   assert.equal(nodeCsv[0], '"cell_id","x","y","z","markers"');
   const nodes = nodeCsv.length - 1;
-  assert.equal(await evaluate("document.getElementById('report-graph-plot').data.filter(t => t.mode === 'markers').reduce((n,t) => n + t.x.length,0)"), nodes);
-  assert.equal(await evaluate("document.getElementById('report-graph-plot').data.every(t => t.mode === 'markers')"), true);
+  assert.equal(await evaluate("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children.reduce((n,t) => n + t.geometry.attributes.position.count,0)"), nodes);
+  assert.equal(await evaluate("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children.every(t => t.type === 'Points')"), true);
   await checkControlContrast();
   await evaluate("document.getElementById('report-graph-plot').closest('.card').querySelector('.bslib-full-screen-enter').click()");
   await waitFor("document.getElementById('report-graph-plot').closest('.card').dataset.fullScreen === 'true'");
   await settled();
-  // Shiny can be idle before Plotly finishes resizing its WebGL interaction area.
+  // Wait for the widget and its trackball controls to adopt the fullscreen size.
   await waitFor(`(() => {
     const plot = document.getElementById('report-graph-plot');
     const canvas = plot.querySelector('canvas');
-    if (!canvas || Math.abs(plot._fullLayout.width - plot.clientWidth) > 1 ||
-        Math.abs(plot._fullLayout.height - plot.clientHeight) > 1) return false;
+    const graph = HTMLWidgets.getInstance(plot).widget;
+    if (!canvas || Math.abs(graph.controls.screen.width - plot.clientWidth) > 1 ||
+        Math.abs(graph.controls.screen.height - plot.clientHeight) > 1) return false;
     const r = canvas.getBoundingClientRect();
     return r.width > 0 && r.height > 0 &&
       document.elementFromPoint(r.x + r.width * .45, r.y + r.height * .5) === canvas;
   })()`);
   await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-  const cameraBefore = await evaluate("JSON.stringify(document.getElementById('report-graph-plot')._fullLayout.scene.camera)");
+  const cameraBefore = await evaluate("JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position)");
   const graphBox = await evaluate(`(() => {
     const r=document.querySelector('#report-graph-plot canvas').getBoundingClientRect();
     return {x:r.x+r.width*.45,y:r.y+r.height*.5};
@@ -216,12 +217,53 @@ try {
     await delay(75);
   }
   await call('Input.dispatchMouseEvent', {type:'mouseReleased',x:graphBox.x+90,y:graphBox.y+35,button:'left',clickCount:1});
-  await waitFor(`JSON.stringify(document.getElementById('report-graph-plot')._fullLayout.scene.camera) !== ${JSON.stringify(cameraBefore)}`);
-  const rotatedCamera = await evaluate("JSON.stringify(document.getElementById('report-graph-plot')._fullLayout.scene.camera)");
+  await waitFor(`JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position) !== ${JSON.stringify(cameraBefore)}`);
+  await delay(1000);
+  const rotatedCamera = await evaluate("JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position)");
   await call('Input.dispatchMouseEvent', {type:'mouseWheel',...graphBox,deltaX:0,deltaY:-120});
-  await waitFor(`JSON.stringify(document.getElementById('report-graph-plot')._fullLayout.scene.camera) !== ${JSON.stringify(rotatedCamera)}`);
+  await waitFor(`JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position) !== ${JSON.stringify(rotatedCamera)}`);
+  await evaluate("document.getElementById('report-graph-plot_reset').click()");
+  await waitFor(`JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position) === ${JSON.stringify(cameraBefore)}`);
   await screenshot('hybrid-cell-3d');
   await evaluate("document.querySelector('.bslib-full-screen-exit').click()");
+  await select('report-graph-pair_1', '');
+  await select('report-graph-pair_2', '');
+  await select('report-graph-cell', 'd1_PHA_004e4ae004879a14');
+  await select('report-graph-markers', 'CD45');
+  for (let repeat = 0; repeat < 3; repeat++) {
+    const savedCamera = await evaluate(`(()=>{
+      const g=HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget;
+      g.camera.position.multiplyScalar(1.1);g.controls.update();g.animate();
+      return JSON.stringify(g.camera.position);
+    })()`);
+    await evaluate("window.previousGraphRenderer=HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.renderer");
+    await evaluate("document.getElementById('report-graph-display').click()");
+    await waitFor("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.renderer !== window.previousGraphRenderer");
+    await waitFor("window.previousGraphRenderer.getContext().isContextLost()");
+    assert.equal(await evaluate("JSON.stringify(HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.camera.position)"), savedCamera);
+    assert.equal(await evaluate("document.querySelectorAll('#report-graph-plot canvas').length"), 1);
+  }
+  await evaluate("document.getElementById('report-graph-plot').scrollIntoView({block:'center'})");
+  const hoverPoint = await evaluate(`(()=>{
+    const el=document.getElementById('report-graph-plot'),g=HTMLWidgets.getInstance(el).widget;
+    const p=g.pointgroup.children[0].geometry.attributes.position;
+    const v=new THREE.Vector3().fromBufferAttribute(p,Math.floor(p.count/2)).project(g.camera);
+    const r=el.getBoundingClientRect();return {x:r.left+(v.x+1)*r.width/2,y:r.top+(1-v.y)*r.height/2};
+  })()`);
+  await call('Input.dispatchMouseEvent', {type:'mouseMoved',...hoverPoint});
+  await waitFor("document.querySelector('#report-graph-plot .infobox').textContent.includes('Markers:')");
+  const pngHasPoints = await evaluate(`(async()=>{
+    let url;const click=HTMLAnchorElement.prototype.click;
+    try {HTMLAnchorElement.prototype.click=function(){url=this.href;};document.getElementById('report-graph-plot_png').click();}
+    finally {HTMLAnchorElement.prototype.click=click;}
+    const bitmap=await createImageBitmap(await (await fetch(url)).blob());
+    const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+    const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+    return pixels.some((v,i)=>i%4===3&&v>0&&pixels[i-1]<240);
+  })()`);
+  assert.equal(pngHasPoints, true);
+  console.log('PASS: repeated Display releases old WebGL contexts; marker hover and nonblank PNG work');
   console.log('PASS: prepared 3D graph, all nodes, coloring, exports, full-screen, mouse rotation and zoom');
 
   await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

@@ -126,28 +126,37 @@ testthat::test_that("coordinates and lossless marker identity lists are validate
   testthat::expect_error(validate_cell_graph_asset(asset), "invalid coordinates")
 })
 
-testthat::test_that("node-only Plotly preserves every node, combinations, identities and escaped hover", {
+testthat::test_that("threejs preserves every node, combinations, geometry and escaped hover", {
   asset <- graph_asset_fixture()
   original <- serialize(asset, NULL)
   for (markers in list(character(), "CD81", c("CD81", "CD82"))) {
-    plot <- plotly::plotly_build(plot_cell_graph_asset(asset, markers))
-    testthat::expect_true(isTRUE(plot$x$config$scrollZoom))
-    testthat::expect_equal(sum(vapply(plot$x$data, function(trace) length(trace$x), integer(1))), 4L)
-    text <- unlist(lapply(plot$x$data, `[[`, "text"))
+    plot <- plot_cell_graph_asset(asset, markers)
+    testthat::expect_s3_class(plot, "scatterplotThree")
+    testthat::expect_length(plot$x$vertices[[1]], 12L)
+    coordinates <- matrix(plot$x$vertices[[1]], ncol = 3, byrow = TRUE)
+    testthat::expect_equal(as.numeric(dist(coordinates)),
+      as.numeric(dist(asset$nodes[c("x", "y", "z")])) * 2 / 3, tolerance = 1e-7)
+    text <- plot$x$labels
     testthat::expect_true(any(grepl("Markers: CD81<br>CD82", text, fixed = TRUE)))
     testthat::expect_false(any(grepl("CD81: 1", text, fixed = TRUE)))
     testthat::expect_false(any(grepl("Node:", text, fixed = TRUE)))
-    testthat::expect_true(all(vapply(plot$x$data, function(trace) trace$mode == "markers", logical(1))))
+    testthat::expect_false(plot$x$axis)
+    testthat::expect_null(plot$x$from)
   }
-  both <- plotly::plotly_build(plot_cell_graph_asset(asset, c("CD81", "CD82")))
-  testthat::expect_setequal(vapply(both$x$data, `[[`, character(1), "name"),
-                           c("Other nodes", "CD81", "CD82", "CD81 + CD82"))
+  both <- plot_cell_graph_asset(asset, c("CD81", "CD82"))
+  testthat::expect_equal(toupper(both$x$color[[1]]), c("#DEDEDE", "#D73027", "#2166AC", "#984EA3"))
+  testthat::expect_equal(both$x$alpha[[1]], rep(217 / 255, 4))
   testthat::expect_identical(serialize(asset, NULL), original)
   testthat::expect_error(plot_cell_graph_asset(asset, "unknown"), "up to three")
   testthat::expect_error(plot_cell_graph_asset(asset, rep("CD81", 4)), "up to three")
   asset$nodes$markers[[1]] <- "<marker>"
-  text <- unlist(lapply(plotly::plotly_build(plot_cell_graph_asset(asset, "<marker>"))$x$data, `[[`, "text"))
+  text <- plot_cell_graph_asset(asset, "<marker>")$x$labels
   testthat::expect_true(any(grepl("&lt;marker&gt;", text, fixed = TRUE)))
+  asset$nodes <- asset$nodes[1, , drop = FALSE]
+  testthat::expect_true(all(is.finite(plot_cell_graph_asset(asset)$x$vertices[[1]])))
+  asset <- graph_asset_fixture()
+  asset$nodes$z <- 0
+  testthat::expect_true(all(is.finite(plot_cell_graph_asset(asset)$x$vertices[[1]])))
 })
 
 testthat::test_that("preparation extends samples atomically, resumes and respects frozen source fingerprints", {

@@ -13,7 +13,7 @@ never replace the frozen report results.
 ## Requirements
 
 - Viewer: R with `Matrix`, `shiny`, `bslib`, `ggplot2`,
-  `plotly`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
+  `plotly`, `threejs` (>= 0.3.4, from CRAN), `htmlwidgets`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
   `pheatmap`, `yaml`, `callr`, `promises`, `later`, and `digest`
 - Analysis worker: additionally `SeuratObject`, `Seurat`, `pixelatorR`, `arrow`,
   and `dplyr`; preparation also needs `DBI` and `duckdb`

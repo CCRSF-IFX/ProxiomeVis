@@ -21,6 +21,7 @@ cell_graph_ui <- function(id) {
       shiny::tags$div(class = "alert alert-info small",
         "These are abstract graph-layout coordinates, not measured physical positions or distances. Shared-node marker highlights are not a statistical colocalization test.")
     ),
+    shiny::singleton(shiny::tags$script(src = "cell-graph.js")),
     shiny::uiOutput(ns("coverage")),
     shiny::textOutput(ns("ranking_status")),
     shiny::downloadButton(ns("ranking_csv"), "Current ranking CSV"),
@@ -29,9 +30,13 @@ cell_graph_ui <- function(id) {
       bslib::card_body(fill = FALSE, shiny::textOutput(ns("summary")),
         precomputed_download_group(
           shiny::downloadButton(ns("nodes_csv"), "Node layout and markers CSV"),
-          shiny::downloadButton(ns("provenance_json"), "Graph provenance JSON")
+          shiny::downloadButton(ns("provenance_json"), "Graph provenance JSON"),
+          shiny::tags$button(id = ns("plot_reset"), type = "button", class = "btn btn-outline-primary", "Reset view"),
+          shiny::tags$button(id = ns("plot_png"), type = "button", class = "btn btn-outline-primary", "Save PNG")
         )),
-      bslib::card_body(plotly::plotlyOutput(ns("plot"), height = "700px"))
+      bslib::card_body(
+        shiny::tags$p(class = "small text-muted", "Red: highlighted marker. Grey: other nodes. Drag to rotate; scroll to zoom; hover for marker identities."),
+        threejs::scatterplotThreeOutput(ns("plot"), height = "700px"))
     )
   )
 }
@@ -257,8 +262,9 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         if (!is.null(displayed()$ranking)) paste0(" | Rank ", displayed()$ranking$cell$rank,
           " | log2_ratio ", signif(displayed()$ranking$cell$log2_ratio, 5L)) else "")
     })
-    output$plot <- plotly::renderPlotly({
-      tryCatch(plot_cell_graph_asset(asset(), displayed()$marker),
+    output$plot <- threejs::renderScatterplotThree({
+      tryCatch(htmlwidgets::onRender(plot_cell_graph_asset(asset(), displayed()$marker),
+        "function(el, x) { window.proxiomeCellGraph(el, x); }"),
         error = function(error) shiny::validate(shiny::need(FALSE, conditionMessage(error))))
     })
     output$nodes_csv <- shiny::downloadHandler(

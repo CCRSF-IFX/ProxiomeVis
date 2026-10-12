@@ -174,7 +174,7 @@ try {
   await waitFor("Shiny.shinyapp.$inputValues['report-graph-condition'] === ''");
   assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-graph-donor']"), 'd1');
   assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-graph-celltype']"), 'CD4 T');
-  assert.equal(await evaluate("!!document.getElementById('report-graph-plot')?.data?.length"), false);
+  assert.equal(await evaluate("!!document.querySelector('#report-graph-plot canvas')"), false);
   assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-graph-markers']"), '');
   console.log('PASS: 3D handoff waits for condition, highlight and Display');
 

@@ -11,6 +11,8 @@ Imports:
     bslib (>= 0.8.0),
     ggplot2,
     plotly,
+    threejs (>= 0.3.4),
+    htmlwidgets,
     htmltools,
     DT,
     Matrix,

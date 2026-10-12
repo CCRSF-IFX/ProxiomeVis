@@ -141,34 +141,28 @@ plot_cell_graph_asset <- function(asset, markers = character()) {
     cell_graph_error("Choose up to three markers present in the prepared cell.")
   }
   nodes <- asset$nodes
-  labels <- "Other nodes"
   code <- rep(0L, nrow(nodes))
   if (length(markers)) {
     for (i in seq_along(markers)) {
       code <- code + 2^(i - 1L) * vapply(nodes$markers, function(value) markers[i] %in% value, logical(1))
     }
-    labels <- c(labels, vapply(seq_len(2^length(markers) - 1L), function(value) {
-      paste(markers[bitwAnd(value, 2^(seq_along(markers) - 1L)) > 0], collapse = " + ")
-    }, character(1)))
   }
   colors <- c("#DEDEDE", "#D73027", "#2166AC", "#984EA3", "#1B9E77", "#E69F00", "#00BFC4", "#111111")
   node_markers <- vapply(nodes$markers, function(value) {
     if (!length(value)) "None" else paste(htmltools::htmlEscape(value), collapse = "<br>")
   }, character(1))
   hover <- paste0("Markers: ", node_markers)
-  plot <- plotly::plot_ly()
-  for (value in sort(unique(code))) {
-    keep <- code == value
-    plot <- plotly::add_trace(plot, x = nodes$x[keep], y = nodes$y[keep], z = nodes$z[keep],
-                              type = "scatter3d", mode = "markers", name = htmltools::htmlEscape(labels[value + 1L]),
-                              text = hover[keep], hoverinfo = "text",
-                              marker = list(color = colors[value + 1L], size = 2, opacity = 0.85))
-  }
-  axis <- list(title = "", showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)
-  plot <- plotly::layout(plot, title = list(text = htmltools::htmlEscape(asset$cell_id), font = list(size = 14)),
-                         scene = list(xaxis = axis, yaxis = axis, zaxis = axis, aspectmode = "data"),
-                         uirevision = asset$cell_id, margin = list(l = 0, r = 0, b = 0, t = 45))
-  plotly::config(plot, scrollZoom = TRUE, displayModeBar = TRUE, displaylogo = FALSE)
+  coordinates <- as.matrix(nodes[c("x", "y", "z")])
+  ranges <- apply(coordinates, 2, range)
+  span <- max(ranges[2, ] - ranges[1, ])
+  # One common scale preserves geometry and also handles flat/single-node layouts.
+  coordinates <- sweep(coordinates, 2, colMeans(ranges)) / if (span > 0) span else 1
+  plot <- threejs::scatterplot3js(coordinates, color = paste0(colors[code + 1L], "D9"),
+    labels = hover, axis = FALSE, grid = FALSE, size = 0.1, center = TRUE,
+    xlim = c(-0.5, 0.5), ylim = c(-0.5, 0.5), zlim = c(-0.5, 0.5),
+    main = htmltools::htmlEscape(asset$cell_id), font.main = "14px sans-serif")
+  plot$elementId <- NULL
+  plot
 }
 
 prepare_cell_graph_assets <- function(object, pxl_dir, output_dir, cells = colnames(object),
