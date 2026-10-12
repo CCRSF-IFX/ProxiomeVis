@@ -159,11 +159,24 @@ reuse checksum validation for the unchanged file. That initial disk scan is
 different from loading all sample nodes into R. The viewer rejects cells above
 200,000 nodes instead of silently truncating them.
 
-**Cell 3D** supports rotation, zoom, hover, up to three marker highlights, and
+**Cell 3D** supports rotation, zoom, hover, one highlight marker, and
 node/provenance downloads. It has no edge display. Highlights represent marker
 identities, not signal counts; shared-node highlights do not constitute a
 statistical colocalization test. Coordinates are abstract graph-layout positions,
 not physical microscopy positions or measured distances.
+
+Choose donor, cell type, condition, and two ranking markers (the same marker
+twice for a self-pair). Reversed pair orders are equivalent. Ranking uses finite
+observed log2 ratios, descending with cell-ID tie breaking; it does not apply
+abundance/differential-test cutoffs or replace missing scores with zero.
+A progress indicator appears while ranking. Choose top 10, bottom 10, their
+deduplicated union, or all scored cells; download the current ranking as CSV.
+Cells without prepared graphs are identified in the list. Clear both ranking
+markers to browse prepared cells without ranking.
+
+Select one highlight marker and click **Display** to load the selected cell.
+Changing filters, ranking, cell, or highlight does not redraw the last displayed
+graph. Node and provenance downloads refer to that displayed snapshot.
 
 Preparation can target selected cells. A later invocation retains the union of
 previously prepared and newly requested cells, atomically rewrites affected

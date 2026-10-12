@@ -125,8 +125,11 @@ prepare_proximity_store <- function(data, pxl_by_sample, output_dir) {
   invisible(manifest)
 }
 
-read_proximity_subset <- function(data, asset_root, request) {
-  request <- validate_hybrid_request(data, request)
+validated_proximity_partitions <- function(data, asset_root, cells) {
+  if (!is.character(cells) || !length(cells) || anyNA(cells) || anyDuplicated(cells) ||
+      !all(cells %in% data$metadata$component)) {
+    stop("Choose known, unique cells for proximity lookup.", call. = FALSE)
+  }
   asset_root <- normalizePath(asset_root, mustWork = TRUE)
   manifest_path <- file.path(asset_root, "manifest.rds")
   if (!file.exists(manifest_path)) stop("Prepare the proximity sidecar before running spatial tests.", call. = FALSE)
@@ -137,11 +140,6 @@ read_proximity_subset <- function(data, asset_root, request) {
       !identical(manifest$dataset_fingerprint, hybrid_dataset_fingerprint(data))) {
     stop("The proximity sidecar does not match this dataset.", call. = FALSE)
   }
-  cutoff <- manifest$donor_cutoffs[[request$donor]]
-  if (is.null(cutoff) || length(cutoff) != 1L || !is.finite(cutoff) || cutoff < 0 || cutoff > 1) {
-    stop("Missing donor filtering cutoff in proximity manifest.", call. = FALSE)
-  }
-  cells <- c(request$group_a_cells, request$group_b_cells)
   samples <- unique(data$metadata$sample_id[match(cells, data$metadata$component)])
   partitions <- manifest$partitions
   if (!is.data.frame(partitions) || !all(c("sample_id", "file", "md5") %in% names(partitions)) ||
@@ -169,8 +167,19 @@ read_proximity_subset <- function(data, asset_root, request) {
   if (!identical(unname(tools::md5sum(paths)), as.character(partitions$md5))) {
     stop("A proximity partition changed; prepare a matching sidecar again.", call. = FALSE)
   }
+  list(paths = unname(paths), manifest = manifest, manifest_path = manifest_path)
+}
+
+read_proximity_subset <- function(data, asset_root, request) {
+  request <- validate_hybrid_request(data, request)
+  cells <- c(request$group_a_cells, request$group_b_cells)
+  prepared <- validated_proximity_partitions(data, asset_root, cells)
+  cutoff <- prepared$manifest$donor_cutoffs[[request$donor]]
+  if (is.null(cutoff) || length(cutoff) != 1L || !is.finite(cutoff) || cutoff < 0 || cutoff > 1) {
+    stop("Missing donor filtering cutoff in proximity manifest.", call. = FALSE)
+  }
   markers <- request$markers
-  query <- arrow::open_dataset(unname(paths))
+  query <- arrow::open_dataset(prepared$paths)
   query <- dplyr::filter(query, component %in% cells, marker_1 %in% markers, marker_2 %in% markers,
                          min_marker_fraction >= cutoff, is.finite(log2_ratio))
   query <- if (request$readout == "self_proximity") {
@@ -181,8 +190,47 @@ read_proximity_subset <- function(data, asset_root, request) {
   scores <- as.data.frame(dplyr::collect(utils::head(query, HYBRID_LIMITS$rows + 1L)))
   if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; select fewer cells or markers.", call. = FALSE)
   if (anyDuplicated(scores[c("component", "marker_1", "marker_2")])) stop("Duplicate proximity observations.", call. = FALSE)
-  attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(manifest_path)),
+  attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),
     observed_rows = nrow(scores), donor_isotype_fraction_cutoff = cutoff,
     filtering = "Both markers pass a donor-wide pinned isotype threshold; only finite observed log2 ratios are tested.")
   scores
+}
+
+rank_cell_proximity <- function(data, asset_root, donor, celltype, condition, marker_1, marker_2) {
+  if (!requireNamespace("arrow", quietly = TRUE) || !requireNamespace("dplyr", quietly = TRUE)) {
+    stop("Install arrow and dplyr to rank cells from the proximity sidecar.", call. = FALSE)
+  }
+  for (value in list(donor, celltype, condition, marker_1, marker_2)) {
+    if (!is.character(value) || length(value) != 1L || is.na(value) || !nzchar(value)) {
+      stop("Choose one donor, cell type, condition, and one marker in each pair selector.", call. = FALSE)
+    }
+  }
+  pair <- sort(c(marker_1, marker_2), method = "radix")
+  if (!all(pair %in% rownames(data$abundance))) stop("Choose known markers.", call. = FALSE)
+  meta <- data$metadata
+  cells <- meta$component[meta$donor == donor & meta$celltype == celltype & meta$condition == condition]
+  if (!length(cells)) stop("No cells match this donor, cell type, and condition.", call. = FALSE)
+  prepared <- validated_proximity_partitions(data, asset_root, cells)
+  pair_a <- pair[1L]
+  pair_b <- pair[2L]
+  query <- arrow::open_dataset(prepared$paths)
+  # Match both stored orientations; never synthesize a missing score as zero.
+  query <- dplyr::filter(query, .data$component %in% .env$cells, is.finite(.data$log2_ratio),
+    (.data$marker_1 == .env$pair_a & .data$marker_2 == .env$pair_b) |
+      (.data$marker_1 == .env$pair_b & .data$marker_2 == .env$pair_a))
+  scores <- as.data.frame(dplyr::collect(utils::head(query, length(cells) + 1L)))
+  if (nrow(scores) > length(cells) || anyDuplicated(scores$component)) {
+    stop("Duplicate proximity observations for the selected unordered marker pair.", call. = FALSE)
+  }
+  scores <- scores[order(-scores$log2_ratio, scores$component, method = "radix"), , drop = FALSE]
+  result <- data.frame(rank = seq_len(nrow(scores)), component = scores$component,
+    sample_id = meta$sample_id[match(scores$component, meta$component)],
+    donor = rep(donor, nrow(scores)), celltype = rep(celltype, nrow(scores)),
+    condition = rep(condition, nrow(scores)), marker_1 = rep(pair_a, nrow(scores)),
+    marker_2 = rep(pair_b, nrow(scores)), log2_ratio = scores$log2_ratio)
+  attr(result, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),
+    cohort_cells = length(cells), scored_cells = nrow(scores),
+    ranking = "Descending observed log2_ratio; ties ordered by exact cell ID.",
+    filtering = "Finite observed scores only; no imputation, abundance cutoff, or differential-test group-size threshold.")
+  result
 }

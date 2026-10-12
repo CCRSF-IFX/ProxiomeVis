@@ -97,7 +97,10 @@ while the separate R process works or cancel it. Export results and their JSON
 provenance. Report tabs remain unchanged. Missing spatial sidecars disable only
 spatial reanalysis, not the report viewer.
 
-Use **Cell 3D** to load one prepared cell, highlight up to three markers, rotate,
+Use **Cell 3D** to rank cells within donor, cell type, and condition by two markers'
+observed log2 ratio (self-pairs allowed; pair order does not matter).
+Choose a ranked cell and one highlight marker, then click **Display** to load it.
+Changing controls does not update the displayed graph until Display is clicked. Rotate,
 zoom, hover, and export its nodes and provenance. The view is nodes only, and all
 nodes remain visible unless the cell exceeds the 200,000-node limit. Coverage is
 shown explicitly. Initial access may checksum the whole sample file; later cell

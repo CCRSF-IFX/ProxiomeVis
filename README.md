@@ -117,7 +117,11 @@ continued navigation and can be cancelled. Results and JSON provenance record
 the submitted cell groups, feature family, bundle checksum, methods, and software.
 Changing controls does not change the completed result until another run.
 
-**Cell 3D:** choose a prepared cell and up to three marker highlights. All nodes
+**Cell 3D:** choose donor, cell type, and condition, then two ranking markers
+(including self-pairs). Ranking uses observed log2 ratios, regardless of pair order,
+with top 10, bottom 10, their union, or all scored cells available.
+Choose a cell and one highlight marker, then click **Display**.
+Changing controls leaves the last displayed view unchanged until Display is clicked. All nodes
 remain visible. The node-only sidecar stores coordinates and marker identities,
 not edges or marker counts. Rotate, zoom, hover, and export the selected cell's
 nodes and provenance. These are abstract graph-layout coordinates, not measured
