@@ -157,6 +157,7 @@ try {
   await tab('Cell 3D');
   await waitFor("!!document.getElementById('report-graph-markers').selectize.options.CD45");
   assert.equal(await evaluate("!!document.querySelector('#report-graph-plot canvas')"), false);
+  assert.equal(await evaluate("document.getElementById('report-graph-plot_gif').disabled"), true);
   await select('report-graph-markers', 'CD45');
   await select('report-graph-cell', 'd1_PHA_004e4ae004879a14');
   assert.equal(await evaluate("document.getElementById('report-graph-markers').selectize.settings.maxItems"), 1);
@@ -276,6 +277,82 @@ try {
   assert.equal(pngHasPoints, true);
   console.log('PASS: repeated Display releases old WebGL contexts; marker hover and nonblank PNG work');
   console.log('PASS: prepared 3D graph, all nodes, coloring, exports, full-screen, mouse rotation and zoom');
+
+  const gifState = await evaluate(`(() => {
+    const el=document.getElementById('report-graph-plot'), g=HTMLWidgets.getInstance(el).widget;
+    return JSON.stringify({position:g.camera.position,up:g.camera.up,target:g.controls.target,
+      width:g.renderer.domElement.width,height:g.renderer.domElement.height});
+  })()`);
+  assert.deepEqual(await evaluate("['seconds','fps','pixels'].map(x=>Number(document.getElementById('report-graph-plot_gif_'+x).value))"), [6,15,600]);
+  await evaluate("document.getElementById('report-graph-plot_gif_seconds').value=0;document.getElementById('report-graph-plot_gif').click()");
+  await waitFor("document.getElementById('report-graph-plot_gif_status').textContent.includes('Use whole numbers')");
+  await evaluate("document.getElementById('report-graph-plot_gif_seconds').value=20;document.getElementById('report-graph-plot_gif_fps').value=30;document.getElementById('report-graph-plot_gif').click()");
+  await waitFor("document.getElementById('report-graph-plot_gif_status').textContent.includes('Limit: 300 frames')");
+  await evaluate(`(() => {
+    document.getElementById('report-graph-plot_gif_seconds').value=2;
+    document.getElementById('report-graph-plot_gif_fps').value=7;
+    document.getElementById('report-graph-plot_gif_pixels').value=256;
+    const click=HTMLAnchorElement.prototype.click;
+    window.restoreGifClick=()=>{HTMLAnchorElement.prototype.click=click;};
+    const Renderer=THREE.WebGLRenderer;
+    window.restoreGifRenderer=()=>{THREE.WebGLRenderer=Renderer;};
+    THREE.WebGLRenderer=function(...args){const renderer=new Renderer(...args);window.gifRenderer=renderer;return renderer;};
+    HTMLAnchorElement.prototype.click=function(){
+      if(this.download.endsWith('.gif')){
+        window.gifFilename=this.download;
+        fetch(this.href).then(r=>r.arrayBuffer()).then(b=>{window.downloadedGif=b;});
+      } else click.call(this);
+    };
+    document.getElementById('report-graph-plot_gif').click();
+  })()`);
+  assert.equal(await evaluate("document.getElementById('report-graph-display').disabled"), true);
+  await waitFor("!!window.downloadedGif");
+  assert.equal(await evaluate("window.gifRenderer.getContext().isContextLost()"), true);
+  await evaluate("window.restoreGifClick()");
+  const gifCheck = await evaluate(`(async () => {
+    const bytes=new Uint8Array(window.downloadedGif);
+    const decoder=new ImageDecoder({data:bytes,type:'image/gif'});
+    await decoder.tracks.ready;
+    let duration=0, first, changed=false, red=false, dimensions=true;
+    for(let i=0;i<decoder.tracks.selectedTrack.frameCount;i++){
+      const {image}=await decoder.decode({frameIndex:i});
+      dimensions &&= image.displayWidth===256 && image.displayHeight===256;
+      duration+=image.duration;
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+      const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);image.close();
+      const pixels=ctx.getImageData(0,0,256,256).data;
+      if(!first)first=pixels;else changed ||= pixels.some((v,j)=>v!==first[j]);
+      red ||= pixels.some((v,j)=>j%4===0 && v>80 && v>pixels[j+1]*1.5 && v>pixels[j+2]*1.5);
+    }
+    const result={header:String.fromCharCode(...bytes.slice(0,6)),frames:decoder.tracks.selectedTrack.frameCount,
+      duration,dimensions,changed,red,filename:window.gifFilename};
+    decoder.close();return result;
+  })()`);
+  assert.equal(gifCheck.header, 'GIF89a');
+  assert.equal(gifCheck.frames, 14);
+  assert.equal(gifCheck.duration, 2000000);
+  assert.equal(gifCheck.dimensions && gifCheck.changed && gifCheck.red, true);
+  assert.match(gifCheck.filename, /d1_PHA_004e4ae004879a14-rotating.gif$/);
+  await writeFile('output/hybrid-cell-rotating.gif', Buffer.from(await evaluate("Array.from(new Uint8Array(window.downloadedGif))")));
+  await evaluate("document.getElementById('report-graph-plot_gif').click();document.getElementById('report-graph-plot_gif_cancel').click()");
+  await waitFor("document.getElementById('report-graph-plot_gif_status').textContent === 'Export cancelled.'");
+  assert.equal(await evaluate("document.getElementById('report-graph-display').disabled || document.getElementById('report-graph-plot_gif').disabled"), false);
+  assert.equal(await evaluate("window.gifRenderer.getContext().isContextLost()"), true);
+  await evaluate(`(() => {
+    const OriginalWorker=window.Worker;
+    try {window.Worker=class{constructor(){throw new Error('Simulated worker failure');}};
+      document.getElementById('report-graph-plot_gif').click();
+    } finally {window.Worker=OriginalWorker;}
+  })()`);
+  await waitFor("document.getElementById('report-graph-plot_gif_status').textContent.includes('Simulated worker failure')");
+  assert.equal(await evaluate("document.getElementById('report-graph-display').disabled || document.getElementById('report-graph-plot_gif').disabled"), false);
+  assert.equal(await evaluate(`(() => {
+    const el=document.getElementById('report-graph-plot'),g=HTMLWidgets.getInstance(el).widget;
+    return JSON.stringify({position:g.camera.position,up:g.camera.up,target:g.controls.target,
+      width:g.renderer.domElement.width,height:g.renderer.domElement.height});
+  })()`), gifState);
+  await evaluate("window.restoreGifRenderer()");
+  console.log('PASS: GIF settings, decoded frames/duration/dimensions/red highlights, rotation, cancellation, failure recovery, unchanged view');
 
   await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await tab('Custom analysis');

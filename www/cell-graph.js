@@ -5,6 +5,7 @@ window.proxiomeCellGraph = function(el, data) {
     const initialize = graph.init;
     // CRAN threejs 0.3.4 recreates WebGL resources on Display without disposing them.
     graph.init = function(...args) {
+      el.proxiomeGifCancel?.();
       el.proxiomeCamera = {cell: el.proxiomeCell, position: graph.camera.position.clone(),
         up: graph.camera.up.clone(), target: graph.controls.target.clone()};
       el.proxiomeDispose();
@@ -16,6 +17,7 @@ window.proxiomeCellGraph = function(el, data) {
     });
     observer.observe(el);
     $(el).one('shiny:unbound.proxiomeGraph', () => {
+      el.proxiomeGifCancel?.();
       graph.idle = true;
       observer.disconnect();
       el.proxiomeDispose();
@@ -52,6 +54,7 @@ window.proxiomeCellGraph = function(el, data) {
   }
   el.proxiomeCamera = null;
   el.proxiomeCell = data.main;
+  window.proxiomeCellGraphGif(el, graph, data);
   document.getElementById(el.id + '_reset').onclick = () => {
     controls.reset();
     graph.animate();

@@ -21,6 +21,7 @@ cell_graph_ui <- function(id) {
       shiny::tags$div(class = "alert alert-info small",
         "These are abstract graph-layout coordinates, not measured physical positions or distances. Shared-node marker highlights are not a statistical colocalization test.")
     ),
+    shiny::singleton(shiny::tags$script(src = "cell-graph-gif.js")),
     shiny::singleton(shiny::tags$script(src = "cell-graph.js")),
     shiny::uiOutput(ns("coverage")),
     shiny::textOutput(ns("ranking_status")),
@@ -33,7 +34,28 @@ cell_graph_ui <- function(id) {
           shiny::downloadButton(ns("provenance_json"), "Graph provenance JSON"),
           shiny::tags$button(id = ns("plot_reset"), type = "button", class = "btn btn-outline-primary", "Reset view"),
           shiny::tags$button(id = ns("plot_png"), type = "button", class = "btn btn-outline-primary", "Save PNG")
-        )),
+        ),
+        shiny::tags$details(
+          shiny::tags$summary("Rotating GIF settings"),
+          shiny::tags$div(class = "d-flex flex-wrap gap-3 mt-2",
+            shiny::numericInput(ns("plot_gif_seconds"), "Duration (seconds)", 6, min = 1, max = 20, step = 1, width = "160px"),
+            shiny::numericInput(ns("plot_gif_fps"), "Frames / second", 15, min = 1, max = 30, step = 1, width = "160px"),
+            shiny::numericInput(ns("plot_gif_pixels"), "Width = height (pixels)", 600, min = 128, max = 1024, step = 1, width = "180px")
+          ),
+          shiny::tags$p(class = "small text-muted",
+            "Exports the displayed cell and highlight through one full turn. Maximum 300 frames and 120 million total pixels; reduce duration, FPS, or size for large exports.")
+        ),
+        shiny::tags$div(class = "d-flex flex-wrap gap-2 align-items-center",
+          shiny::tags$button(id = ns("plot_gif"), type = "button", disabled = "disabled",
+            class = "btn btn-outline-primary", "Download rotating GIF"),
+          shiny::tags$button(id = ns("plot_gif_cancel"), type = "button", hidden = NA,
+            class = "btn btn-outline-secondary", "Cancel GIF"),
+          shiny::tags$progress(id = ns("plot_gif_progress"), max = 1, value = 0, hidden = NA,
+            `aria-label` = "GIF export progress")
+        ),
+        shiny::tags$p(id = ns("plot_gif_status"), role = "status", `aria-live` = "polite",
+          class = "small text-muted", "Display a cell before exporting.")
+      ),
       bslib::card_body(
         shiny::tags$p(class = "small text-muted", "Red: highlighted marker. Grey: other nodes. Drag to rotate; scroll to zoom; hover for marker identities."),
         threejs::scatterplotThreeOutput(ns("plot"), height = "700px"))

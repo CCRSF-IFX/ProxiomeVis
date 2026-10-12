@@ -177,6 +177,24 @@ canvas. Switching the highlight for the same cell preserves the camera, while
 changing cells resets it. Old WebGL resources are released on each Display.
 Plotly remains the renderer for embeddings and precomputed results.
 
+**Download rotating GIF** exports the displayed cell/highlight through one full
+turn around the current camera's up axis, without changing the visible camera.
+Expand **Rotating GIF settings** for duration (1–20 whole seconds), frame rate
+(1–30 FPS), and square image size (128–1024 pixels per side). Defaults are
+6 seconds, 15 FPS, and 600 × 600 pixels. GIF frame delays have centisecond
+precision; rounding is distributed so the full animation retains its duration.
+The export has a white background and loops continuously. GIF's 256-color
+palette may slightly change the appearance of translucent points.
+
+Encoding runs in a browser worker using locally bundled
+[gifenc 1.0.3](https://github.com/mattdesl/gifenc) (MIT; license in
+`www/vendor/gifenc-LICENSE.txt`), with one captured frame in flight at a time.
+No external CDN, PXL read, server-side analysis, or new R dependency is needed.
+Progress and **Cancel GIF** remain available; Display is disabled until the
+export ends. Replacing/unbinding the graph cancels its export. Limits of
+300 frames, 120 million total pixels, and 64 MiB encoded output bound work and
+memory; reduce duration, FPS, or image size if a limit is reached.
+
 Choose donor, cell type, condition, and two ranking markers (the same marker
 twice for a self-pair). Reversed pair orders are equivalent. Ranking uses finite
 observed log2 ratios, descending with cell-ID tie breaking; it does not apply

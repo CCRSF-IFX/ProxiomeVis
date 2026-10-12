@@ -1,3 +1,14 @@
+testthat::test_that("GIF export controls expose bounded settings and accessible progress", {
+  html <- as.character(cell_graph_ui("graph"))
+  testthat::expect_match(html, 'id="graph-plot_gif_seconds"', fixed = TRUE)
+  testthat::expect_match(html, 'id="graph-plot_gif_fps"', fixed = TRUE)
+  testthat::expect_match(html, 'id="graph-plot_gif_pixels"', fixed = TRUE)
+  testthat::expect_match(html, "Download rotating GIF", fixed = TRUE)
+  testthat::expect_match(html, 'aria-label="GIF export progress"', fixed = TRUE)
+  testthat::expect_match(html, 'aria-live="polite"', fixed = TRUE)
+  testthat::expect_match(html, "cell-graph-gif.js", fixed = TRUE)
+})
+
 cell_graph_module_fixture <- function() {
   skip_if_not_installed("arrow")
   skip_if_not_installed("dplyr")
