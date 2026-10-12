@@ -188,6 +188,17 @@ try {
   const nodes = nodeCsv.length - 1;
   assert.equal(await evaluate("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children.reduce((n,t) => n + t.geometry.attributes.position.count,0)"), nodes);
   assert.equal(await evaluate("HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children.every(t => t.type === 'Points')"), true);
+  assert.equal(await evaluate(`(() => {
+    const points=HTMLWidgets.getInstance(document.getElementById('report-graph-plot')).widget.pointgroup.children[0];
+    const colors=points.geometry.attributes.color.array, texture=points.material.uniforms.texture1.value.image.data;
+    let background=0, highlighted=0;
+    for (let i=0;i<colors.length;i+=4) {
+      if (Math.abs(colors[i+3]-64/255)<1e-6 && Math.abs(colors[i]-211/255)<1e-6) background++;
+      if (colors[i+3]===1 && Math.abs(colors[i]-192/255)<1e-6 && colors[i+1]===0 && colors[i+2]===0) highlighted++;
+    }
+    return background>0 && highlighted>0 && background+highlighted===colors.length/4 &&
+      !texture.some((v,i)=>i%4===3 && v>0 && texture[i-1]===0 && texture[i-2]===0 && texture[i-3]===0);
+  })()`), true, 'Faint grey background, opaque red highlights, and no black dot outlines');
   await checkControlContrast();
   await evaluate("document.getElementById('report-graph-plot').closest('.card').querySelector('.bslib-full-screen-enter').click()");
   await waitFor("document.getElementById('report-graph-plot').closest('.card').dataset.fullScreen === 'true'");

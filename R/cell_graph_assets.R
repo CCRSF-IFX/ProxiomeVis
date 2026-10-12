@@ -147,7 +147,7 @@ plot_cell_graph_asset <- function(asset, markers = character()) {
       code <- code + 2^(i - 1L) * vapply(nodes$markers, function(value) markers[i] %in% value, logical(1))
     }
   }
-  colors <- c("#DEDEDE", "#D73027", "#2166AC", "#984EA3", "#1B9E77", "#E69F00", "#00BFC4", "#111111")
+  colors <- c("#D3D3D3", "#C00000", "#2166AC", "#984EA3", "#1B9E77", "#E69F00", "#00BFC4", "#111111")
   node_markers <- vapply(nodes$markers, function(value) {
     if (!length(value)) "None" else paste(htmltools::htmlEscape(value), collapse = "<br>")
   }, character(1))
@@ -157,7 +157,9 @@ plot_cell_graph_asset <- function(asset, markers = character()) {
   span <- max(ranges[2, ] - ranges[1, ])
   # One common scale preserves geometry and also handles flat/single-node layouts.
   coordinates <- sweep(coordinates, 2, colMeans(ranges)) / if (span > 0) span else 1
-  plot <- threejs::scatterplot3js(coordinates, color = paste0(colors[code + 1L], "D9"),
+  # Suppress black sprite outlines and keep context faint while highlights stay opaque.
+  plot <- threejs::scatterplot3js(coordinates,
+    color = paste0(colors[code + 1L], ifelse(code == 0L, "40", "FF")), strokewidth = 0,
     labels = hover, axis = FALSE, grid = FALSE, size = 0.1, center = TRUE,
     xlim = c(-0.5, 0.5), ylim = c(-0.5, 0.5), zlim = c(-0.5, 0.5),
     main = htmltools::htmlEscape(asset$cell_id), font.main = "14px sans-serif")
