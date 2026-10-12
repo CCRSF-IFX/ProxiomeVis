@@ -1,5 +1,7 @@
 # ProxiomeVis
 
+[Open the demo application](https://01a1327a-475a-181b-4bfa-2118f4c243fb.share.connect.posit.cloud/), hosted on Posit Connect Cloud.
+
 ProxiomeVis is an R Shiny application for Pixelgen proxiome data.
 The application shows precomputed results, calculates custom analyses, and shows 3D cell graphs.
 The source analysis calculates proximity scores before application use.
