@@ -1,19 +1,28 @@
-# NCI Standard Public Repository Security Policy
+# Security policy
 
-## Maintained Versions
+## Supported code
 
-Actively maintained versions of contained software will vary from repository to repository, or may not be relevant at all.  
-The developers of this repository will update this section if any actively maintained versions of the software need to be publicly disclosed. Otherwise, contact the developers directly for any version information.
+Security fixes are applied to the current R implementation on `r_version`.
+The Python implementation is maintained separately on `py_version`.
 
-## Vulnerability Disclosure:
+## Reporting a vulnerability
 
-### Option 1: HHS Vulnerability Disclosure
+Please report suspected vulnerabilities privately through this repository's
+GitHub security-advisory interface. Include the affected revision, a minimal
+reproduction, and the expected impact. Do not publish sensitive paths, data, or
+credentials in a public issue.
 
-Follow the instructions listed in the [HHS vulnerability disclosure policy](https://www.hhs.gov/vulnerability-disclosure-policy/index.html).
+## Deployment boundary
 
-### Option 2: Private Vulnerability Report
+The app is designed to read a prepared RDS selected by the server operator. RDS
+deserialization can instantiate executable R objects, so only load artifacts
+from a trusted analysis pipeline. Do not offer RDS uploads to untrusted users.
 
-1. Click on the **Security and quality** tab of this repository.
-2. Locate the **Report a vulnerability** button. If the button is not on the **Security and quality** landing page, look under the **Advisories** section in the side bar.
-3. Click the **Report a vulnerability** button and submit the form. The developers will receive a notification of your submission.
+`PROXIOME_PRECOMPUTED_RDS` selects the startup artifact. The interactive
+server-path field is disabled unless `PROXIOME_ALLOW_LOCAL_LOAD=true`; that flag
+must remain disabled on a public deployment because it lets a visitor request
+any RDS path readable by the Shiny process.
 
+Bind Shiny to `127.0.0.1` and place it behind the deployment environment's
+authenticated TLS proxy. The precomputed app does not need runtime access to
+the source PXL files.

@@ -1,50 +1,59 @@
-# Getting Started
+# Getting started
 
-## Launch the Python app
+Run commands from the `ProxiomeVis` directory.
 
-From this directory:
+## 1. Prepare the demo RDS
+
+The repository expects the demo source at `../pixelgen_demo_data`. Build the
+runtime file from its CCA object and tertiary results:
 
 ```bash
-uv sync --extra test
-uv run shiny run --reload app.py
+Rscript --vanilla scripts/prepare_precomputed_rds.R \
+  ../pixelgen_demo_data/demo_analysis/cca_analysis/results/demo_cca_clustered.rds \
+  ../pixelgen_demo_data/demo_analysis/tertiary_analysis \
+  output/proxiomevis_demo_v1.rds
 ```
 
-## Load data
+The source tree is read-only. The script creates or replaces only the explicit
+output path after validating the source object and frozen tables.
 
-Open **Data**, enter the full path to one readable processed `.h5ad` file, and
-assign the matching PXL paths before clicking **Load Data**. The reference H5AD
-is prefilled unless `PROXIOME_H5AD` overrides it.
+## 2. Start Shiny
 
-## Navigate the app
+The default input is `output/proxiomevis_demo_v1.rds`:
 
-The Python app contains six top-level tabs:
+```bash
+Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
+```
 
-- **QC** for filtering history, molecule-rank curves, distributions, and metadata
-- **Abundance** for embeddings, marker distributions, annotations, and differential abundance
-- **Spatial Metrics** for PXL-backed self-clustering, colocalization,
-  differential spatial scores, and 3D cellgraphs
-- **Patch Analysis** for receiver/target marker selection, prepared candidate
-  screening, and stored patch burden/composition tables
-- **Documentation** for the complete workflow, parameter defaults, statistical
-  units, interpretation guidance, and reporting checklist
-- **Activity Log** for severity-tagged data-load and spatial-query status and a
-  downloadable, path-sanitized diagnostics bundle
+Open `http://127.0.0.1:3838`. To use another trusted prepared file:
 
-Spatial and patch candidate plots require assigned PXL files with matching H5AD
-component IDs. Detected-patch plots require their optional precomputed H5AD
-payload.
+```bash
+export PROXIOME_PRECOMPUTED_RDS=/absolute/path/to/results.rds
+Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
+```
 
-## Recommended first checks
+`pixelatorR` must be installed when the real demo RDS contains its custom PNA
+classes. No PXL mount is required after the runtime RDS has been built.
 
-1. Open **QC > Filtering** and confirm the expected samples and retained counts.
-2. Open **QC > Cell Calling** and inspect the stored `n_umi` values.
-3. Open **Abundance > Observed** and inspect marker signal on a stored embedding.
-4. Open **Abundance > Cell Annotation** to verify the cell populations.
-5. Open **Spatial Metrics > Retrieve Data**, choose the population, leave
-   **Number of markers** at **All markers**, and click **Retrieve Spatial Data**.
-6. Open **Proximity Profile** to profile proximity scores, then continue to
-   Clustering, Colocalization, or 3D Layout. Return to Retrieve Data and run it
-   again to replace the active scope.
-7. In **Patch Analysis**, select receiver and target populations and markers,
-   then click **Prepare Patch Data** before opening candidate or stored-result
-   views.
+The app loads the configured RDS once and does not expose a visitor-selectable
+server path. For trusted local administration only, set
+`PROXIOME_ALLOW_LOCAL_LOAD=true` before startup to show the path field. Never
+enable that setting on a public deployment.
+
+## 3. Use the stored views
+
+Donor, comparison, cell-type, and marker controls filter stored rows. They do
+not trigger a new statistical test or rebuild an aggregate. If a combination
+was not computed by the tertiary analysis, the app cannot create it at runtime.
+The combined two-donor tables are descriptive and have no p-values.
+Donor-specific volcanoes reproduce stored exploratory component-level tests;
+they do not provide population-level donor inference.
+
+## Tests
+
+```bash
+Rscript --vanilla tests/testthat.R
+```
+
+The test fixture is synthetic and uses a standard `SeuratObject` assay, so CI
+does not need a real PXL file or the demo dataset.

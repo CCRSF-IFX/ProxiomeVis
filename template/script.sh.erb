@@ -1,39 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOSTNAME_FQDN="${HOSTNAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown)}"
+APP_DIR="${PROXIOME_APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+RSCRIPT_BIN="${PROXIOME_RSCRIPT:-Rscript}"
 
-case "${HOSTNAME_FQDN}" in
-  ncifcrf.gov|*.ncifcrf.gov)
-    DEFAULT_APP_DIR="/mnt/ccrsf-static/illumina/RnD_pixelgen_CAR-T_datasets/shiny/proxiome_demo"
-    ;;
-  biowulf.nih.gov|*.biowulf.nih.gov)
-    DEFAULT_APP_DIR="${BIOWULF_PROXIOME_APP_DIR:-/data/${USER}/ProxiomeVis/proxiome_demo}"
-    ;;
-  *)
-    DEFAULT_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    ;;
-esac
-
-APP_DIR="${PROXIOME_APP_DIR:-${DEFAULT_APP_DIR}}"
-PROXIOMEVIS_HOME="${PROXIOMEVIS_HOME:-${HOME}/.ProxiomeVis}"
-PROXIOME_RUNTIME_DIR="${PROXIOME_RUNTIME_DIR:-${PROXIOMEVIS_HOME}/runtime}"
-PYTHON_BIN="${PROXIOME_PYTHON:-${APP_DIR}/.venv/bin/python}"
-
-if [[ ! -x "${PYTHON_BIN}" ]]; then
-  echo "Python environment not found: ${PYTHON_BIN}" >&2
-  echo "Run 'uv sync --frozen' during deployment or set PROXIOME_PYTHON." >&2
+if ! command -v "${RSCRIPT_BIN}" >/dev/null 2>&1; then
+  echo "Rscript not found: ${RSCRIPT_BIN}. Set PROXIOME_RSCRIPT to your R executable." >&2
+  exit 1
+fi
+if [[ ! -f "${APP_DIR}/app.R" ]]; then
+  echo "app.R not found in ${APP_DIR}. Set PROXIOME_APP_DIR to this R checkout." >&2
   exit 1
 fi
 
-mkdir -p "${PROXIOMEVIS_HOME}" "${PROXIOMEVIS_HOME}/cache" "${PROXIOME_RUNTIME_DIR}"
-chmod 700 "${PROXIOMEVIS_HOME}" "${PROXIOMEVIS_HOME}/cache" "${PROXIOME_RUNTIME_DIR}" 2>/dev/null || true
-
-export PROXIOMEVIS_HOME
-export PROXIOME_RUNTIME_DIR
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export SHINY_HOST="${SHINY_HOST:-0.0.0.0}"
+export PROXIOME_PORT="${port:-${PORT:-${PORT1:-3839}}}"
 
 cd "${APP_DIR}"
-exec "${PYTHON_BIN}" -m shiny run \
-  --host "${SHINY_HOST:-0.0.0.0}" \
-  --port "${port:-${PORT:-${PORT1:-3839}}}" \
-  app.py
+exec "${RSCRIPT_BIN}" --vanilla -e \
+  'shiny::runApp(".", host = Sys.getenv("SHINY_HOST"), port = as.integer(Sys.getenv("PROXIOME_PORT")))'

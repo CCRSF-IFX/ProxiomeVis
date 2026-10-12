@@ -1,0 +1,27 @@
+Package: ProxiomeVis
+Type: Project
+Title: Precomputed Pixelgen Results in R Shiny
+Version: 0.1.0
+Description: Interactive report views for processed Seurat objects with a
+    versioned ProxiomeVis precomputed analysis contract.
+Encoding: UTF-8
+Depends: R (>= 4.3.0)
+Imports:
+    shiny (>= 1.8.0),
+    bslib (>= 0.8.0),
+    ggplot2,
+    plotly,
+    DT,
+    SeuratObject (>= 5.0.0),
+    Matrix,
+    jsonlite,
+    data.table,
+    ggrepel,
+    scales,
+    tibble,
+    pheatmap,
+    yaml
+Suggests:
+    pixelatorR,
+    testthat (>= 3.0.0),
+    withr

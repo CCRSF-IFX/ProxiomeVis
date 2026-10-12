@@ -1,117 +1,112 @@
 # ProxiomeVis
 
-ProxiomeVis is a Python Shiny application for exploring processed Pixelgen
-single-cell protein spatial data. The retired R implementation is preserved on
-the `legacy/r-version` branch.
+ProxiomeVis is an R Shiny app for viewing frozen Pixelgen proxiome results.
+The expensive proximity analysis is completed before the app starts; the app
+filters and plots compact tables stored in a prepared RDS file.
 
-The app accepts one processed `.h5ad` file and matching `.pxl` files. Cell
-metadata, abundance, annotations, embeddings, and optional patch results come
-from H5AD. Proximity scores and component layouts are queried from PXL on
-demand.
-
-## Features
-
-- **QC**: stored filtering history, cell-calling rank plots, QC distributions,
-  and metadata inspection.
-- **Abundance**: embedding views, marker distributions, cell-type composition,
-  annotation heatmaps, and differential abundance.
-- **Spatial Metrics**: one prepared retrieval feeds proximity profiling,
-  clustering, differential colocalization, and 3D layouts.
-- **Patch Analysis**: receiver/target marker selection, prepared candidate
-  screening from PXL, and stored patch burden/composition views.
-- **Documentation**: an in-app production workflow, parameter reference,
-  interpretation guidance, and reporting checklist shared with the MkDocs site.
-- **Activity Log**: structured session events and downloadable sanitized
-  diagnostics.
-- **Analysis grouping**: metadata-derived or custom sample groups shared across
-  the application.
+This mode is intentionally read-only. It does not recalculate proximity scores,
+run tests on selected cells, or require the original PXL files at runtime.
 
 ## Requirements
 
-- Python 3.10 or 3.11
-- One processed AnnData `.h5ad` file
-- Matching `.pxl` files for spatial metrics, patch candidate screening, and 3D
-  cellgraphs
+- R with `SeuratObject`, `Matrix`, `pixelatorR`, `shiny`, `bslib`, `ggplot2`,
+  `plotly`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
+  `pheatmap`, and `yaml`
+- a prepared RDS following the [precomputed-results contract](docs/precomputed-results.md)
+
+`pixelatorR` must be installed even though the app does not query PXL files:
+the saved Seurat object contains custom PNA classes defined by that package.
+
+## Prepare the RDS
+
+Build the runtime file from the annotated Seurat RDS and the matching analysis
+output directory:
+
+```bash
+Rscript --vanilla scripts/prepare_precomputed_rds.R \
+  ../pixelgen_demo_data/demo_analysis/cca_analysis/results/demo_cca_clustered.rds \
+  ../pixelgen_demo_data/demo_analysis/tertiary_analysis \
+  output/proxiomevis_demo_v1.rds
+```
+
+For this repository, the conventional output path is:
+
+```text
+output/proxiomevis_demo_v1.rds
+```
+
+`output/` is intentionally gitignored. Build the artifact on the deployment
+host or copy it there through the project's controlled data-delivery process;
+do not commit the demo RDS to this source repository.
+
+The builder copies the frozen `abundance`, `self_proximity`, and
+`colocalization` readouts into the versioned `object@misc$proxiomevis`
+payload. See [Precomputed results](docs/precomputed-results.md) for the input
+files, stored fields, and scientific limits.
+
+The current builder targets this demo analysis layout and its `d1`/`d2`
+outputs. The versioned runtime contract and Shiny reader remain separate from
+that demo-specific preparation code.
+
+`../pixelgen_demo_data` is a read-only source dataset. The builder reads the CCA
+object and tertiary results there and writes only the requested `OUTPUT_RDS`.
 
 ## Run the app
 
-From this directory:
+By default, the app reads `output/proxiomevis_demo_v1.rds`. To use a
+different trusted server-local file, set `PROXIOME_PRECOMPUTED_RDS`:
 
 ```bash
-uv sync --extra test
-uv run shiny run --reload app.py
+export PROXIOME_PRECOMPUTED_RDS=/absolute/path/to/proxiomevis_demo_v1.rds
+Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
 ```
 
-Open **Data** and enter the server-visible H5AD and PXL paths. Defaults can be
-set before launch:
+The repository workspace also provides an isolated R executable. Limit BLAS
+threads when using it on a shared host:
 
 ```bash
-export PROXIOME_H5AD='/path/to/processed_data.h5ad'
-export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
-export PROXIOMEVIS_HOME="$HOME/.ProxiomeVis"
-uv run shiny run app.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  ../.pixi/envs/r/bin/Rscript --vanilla \
+  -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
 ```
 
-The reference H5AD is:
+Then open `http://127.0.0.1:3838` from the same machine, or use the secure
+proxy provided by the deployment environment.
 
-```text
-/Volumes/ccrsf-static/illumina/CCRSFIFX-23_MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/python_results/pg_data_combined_filtered_annotated.h5ad
-```
+The donor and cell-type controls filter results that were already computed.
+They do not recompute a multi-donor aggregate for an arbitrary subset. This
+dataset contains two donors, so the combined donor-matched results are
+descriptive and have no p-values. Donor-specific report volcanoes retain the
+tertiary analysis's stored component-level p-values and adjusted p-values; they
+are labeled exploratory and are not population-level donor inference. The app
+never treats cells as independent biological replicates.
 
-The matching default PXL glob is:
+## Data handling
 
-```text
-/Volumes/ccrsf-static/singlecell_projects/MarinaDobrovolskaia_CS041374_6_Pixelgen_062226/Analysis_2nd_combo/Analysis/pixelator/*.pxl
-```
+Use RDS paths that are trusted and already visible to the R process. `readRDS()`
+can deserialize executable R objects, so do not expose unrestricted public RDS
+uploads. For hosted use, place prepared files in an administrator-controlled
+directory and pass the selected path through `PROXIOME_PRECOMPUTED_RDS`.
 
-## Data and retrieval model
+The in-app server-path field is disabled by default. A trusted local operator
+can enable it before startup with `PROXIOME_ALLOW_LOCAL_LOAD=true`. Never enable
+that flag on a public deployment: it lets a visitor request any RDS path that
+the Shiny process can read.
 
-H5AD supplies observations, markers, abundance, QC history, annotations,
-embeddings, and optional patch tables. Embedded H5AD proximity tables are
-ignored; the app filters and aggregates precomputed PXL proximity data before
-returning results.
-
-Use **Spatial Metrics > Retrieve Data** to prepare a population and marker
-scope. Use **Prepare Patch Data** to freeze receiver, target, analysis-group,
-and marker selections for Patch Analysis. Editing retrieval controls does not
-replace active results until the corresponding preparation button is clicked.
+Because the prepared RDS contains all runtime readouts, the server does not
+need the large PXL files mounted in this mode.
 
 ## Tests
 
 ```bash
-uv run --extra test pytest -q
+Rscript --vanilla tests/testthat.R
 ```
 
-## Diagnostics
+The unit-test fixture uses `SeuratObject` only and does not download or open a
+real PXL file.
 
-The server writes one structured JSONL log per browser session under
-`$PROXIOMEVIS_HOME/runtime`. Events include session ID, severity, app version,
-Git commit, and server traceback. Browser messages and downloaded diagnostics
-redact full server paths.
+## Python implementation
 
-Set `PROXIOMEVIS_VERSION` and `PROXIOMEVIS_COMMIT` when Git metadata is not
-available in a packaged deployment.
-
-## Open OnDemand deployment
-
-The launcher in `template/script.sh.erb` expects a deployed virtual environment
-at `${PROXIOME_APP_DIR}/.venv` by default. Restore it during deployment:
-
-```bash
-cd /path/to/shared/proxiome_demo
-uv sync --frozen
-```
-
-Common overrides are:
-
-```bash
-export PROXIOME_APP_DIR=/path/to/shared/proxiome_demo
-export PROXIOME_PYTHON=/path/to/python
-export PROXIOME_H5AD=/path/to/processed_data.h5ad
-export PROXIOME_PXL='/path/to/layouts/*.layout.pxl'
-export PROXIOMEVIS_HOME=$HOME/.ProxiomeVis
-```
-
-Runtime cache and diagnostics use `$PROXIOMEVIS_HOME`, not the shared
-application directory. The launcher validates the Python interpreter and does
-not install dependencies at user startup.
+The Python implementation remains preserved and maintained on the
+`py_version` branch. The R implementation is developed independently; its
+history does not reset or overwrite the Python branch.

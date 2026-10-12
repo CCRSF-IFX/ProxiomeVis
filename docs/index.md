@@ -1,31 +1,29 @@
-# ProxiomeVis Python
+# ProxiomeVis R
 
-ProxiomeVis Python is an interactive Shiny application for reviewing processed
-Pixelgen AnnData. It accepts one `.h5ad` file and uses the stored counts,
-normalized abundance, QC history, annotations, and embeddings.
+ProxiomeVis is an R Shiny report for processed Pixelgen data. It combines the
+annotated Seurat object from the demo CCA analysis with frozen abundance,
+self-proximity, and colocalization results from the tertiary analysis.
 
-Start with the [User Guide and Parameter Reference](user-guide.md) for the
-production workflow, control behavior, defaults, and interpretation guidance.
+The app provides:
 
-## What the app shows
+- QC cell counts and stored cell annotations;
+- interactive embeddings colored by annotation or marker abundance;
+- per-sample summaries, donor-specific contrasts, and stored cross-donor
+  descriptive effects for the three readouts;
+- downloadable tables for the currently displayed stored results.
 
-- **QC**: filtering summaries, molecule-rank plots, QC distributions, and metadata
-- **Abundance**: marker abundance on embeddings, distributions, cell-type composition, annotation heatmaps, and differential abundance
-- **Spatial Metrics**: PXL-backed self-clustering, marker-pair proximity, and
-  3D cellgraphs
-- **Patch Analysis**: receiver/target marker selection, prepared PXL candidate
-  screening, and stored patch burden/composition tables
+The app does not open PXL files or recalculate proximity scores. A preparation
+script builds one versioned runtime RDS, and every Shiny session reads that
+prepared file.
 
-The Python app uses H5AD for cell metadata, abundance, embeddings, and optional
-patch tables. It queries proximity and layouts from assigned PXL files.
+## Interpretation boundary
 
-## Typical workflow
+The demo contains two donors. Combined donor-matched effects are descriptive,
+contain no p-values, and are not population-level inference. Donor-specific
+report volcanoes reproduce stored exploratory component-level p-values from the
+tertiary analysis; Shiny does not recalculate them. Cells are not independent
+biological replicates.
 
-1. Open the app.
-2. Load a processed H5AD path from **Data**.
-3. Review QC.
-4. Explore abundance and annotation.
-5. Assign matching PXL paths and review spatial metrics or a cellgraph.
-6. Review patch modules when the H5AD contains those tables.
-7. Optionally change the session-local analysis grouping.
-8. Download figures or tables as needed.
+Start with [Getting started](getting-started.md), then review the
+[precomputed-results contract](precomputed-results.md) before preparing a new
+dataset.

@@ -1,70 +1,49 @@
 # Troubleshooting
 
-## The H5AD load takes a long time
+## The app cannot find its RDS
 
-Large H5AD files can take time to materialize metadata and abundance tables.
-Use the Activity Log to distinguish H5AD loading from later PXL queries.
+Build `output/proxiomevis_demo_v1.rds`, or set
+`PROXIOME_PRECOMPUTED_RDS` to an absolute path readable by the Shiny process.
+The configured file must exist and end in `.rds`.
 
-## The app says the H5AD path is not readable
+## The RDS fails contract validation
 
-Check that the path is absolute and visible from the machine running Shiny. On
-Open OnDemand, the path must be readable from the compute session, not only from
-your local computer. The input must be a processed `.h5ad` file.
+Rebuild it with `scripts/prepare_precomputed_rds.R`. The app accepts schema
+version 1 and checks metadata mappings, reductions, assay layers, result-table
+columns, marker-pair types, support counts, and descriptive-inference rules.
+It deliberately rejects an old or partially assembled payload.
 
-## A plot is empty
+## R reports an unknown PNA class
 
-Check the sidebar filters. Empty plots usually mean the selected condition,
-cell type, marker, or contrast has no matching cells.
+Install a `pixelatorR` version compatible with the source analysis. The app
+does not query PXL, but R must register pixelatorR's S4 classes before restoring
+the saved Seurat object.
 
-For differential views, verify that group A and group B both contain enough
-cells after filtering.
+## A filter produces no rows
 
-## The 3D Layout tab cannot find a layout file
+The controls only narrow the frozen tertiary results. Choose a donor,
+comparison, cell type, and feature present in the prepared tables. The app
+cannot compute a missing combination from individual cells.
 
-In the Python app, assign a matching `.layout.pxl` file, directory, or glob in
-the **Data** menu, or set:
+## PXL files are unavailable
 
-```bash
-export PROXIOME_PXL='/path/to/pixelator/layout/files/*.layout.pxl'
-```
+This is expected at runtime. PXL files are upstream analysis inputs and are not
+read by precomputed mode.
 
-Then reload the H5AD. The PXL filename must contain the selected sample name
-unless only one PXL file is assigned.
+## The port is unavailable
 
-## The 3D Layout plot is slow
-
-Large Pixelator graph components can contain many nodes. Reduce **Max background
-nodes** or choose a smaller component.
-
-Highlighted marker nodes are kept; the cap mainly reduces non-highlighted
-background nodes.
-
-## SVG download fails
-
-Open **Activity Log** and check the latest operation. SVG export uses Plotly's
-static-image engine and requires the application's Kaleido runtime. If the
-problem persists, download the diagnostics bundle and provide it to the
-application administrator.
-
-## An operation reports a reference ID
-
-Open **Activity Log** and click **Download diagnostics**. The ZIP contains
-sanitized runtime metadata and structured events for the current browser
-session, including app version, Git commit, severity, and error traceback. It
-does not include H5AD/PXL contents or full server paths. Server-side JSONL logs
-are stored under `$PROXIOMEVIS_HOME/runtime` (default:
-`$HOME/.ProxiomeVis/runtime`) for administrators.
-
-## Build the documentation locally
-
-From the app directory:
+Use another local port, for example:
 
 ```bash
-mkdocs build --strict
+Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3839)'
 ```
 
-To preview locally:
+For a shared deployment, keep Shiny behind the environment's authenticated
+proxy. Do not expose the server-local RDS path control or unrestricted RDS
+uploads to untrusted users.
 
-```bash
-mkdocs serve
-```
+## The server-path field is missing
+
+This is the secure default. Configure `PROXIOME_PRECOMPUTED_RDS` before startup.
+A trusted local operator can set `PROXIOME_ALLOW_LOCAL_LOAD=true` to expose the
+field temporarily. Do not use that flag on a public app.

@@ -5,9 +5,10 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 
-# Untracked artifacts left by legacy checkouts
+# R environment cache
 renv/
-tests/testthat/
+.Rhistory
+.RData
 
 # Application runtime artifacts and local data
 cache/
