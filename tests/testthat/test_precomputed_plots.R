@@ -37,6 +37,63 @@ test_that("heatmap completion keeps unavailable values missing and uses symmetri
   expect_equal(plot$scales$scales[[1L]]$limits, c(-limit, limit))
 })
 
+test_that("heatmap clicks use row-by-column pair keys, including missing tiles", {
+  contrasts <- precomputed_fixture()@misc$proxiomevis$donor_contrasts$colocalization
+  contrasts <- contrasts[contrasts$donor == "D1", , drop = FALSE]
+  for (columns in c(1L, 2L)) {
+    rows <- if (columns == 1L) contrasts[contrasts$celltype == "B", , drop = FALSE] else {
+      contrasts[!(contrasts$celltype == "T" & contrasts$marker_2 == "C"), , drop = FALSE]
+    }
+    rows <- rows[rev(seq_len(nrow(rows))), , drop = FALSE]
+    plot <- plot_precomputed_heatmap(rows)
+    original_data <- plot$data
+    original_layers <- ggplot2::ggplot_build(plot)$data
+    interactive <- plot
+    i <- match(interactive$data$feature_id, rows$feature_id)
+    interactive$data$key <- report_feature_key(rows$marker_1[i], rows$marker_2[i])
+    widget <- precomputed_heatmap_plotly(interactive, source = "linked-summary")
+    built <- plotly::plotly_build(plotly::plotly_build(widget))
+    trace <- Filter(function(trace) identical(trace$type, "heatmap"), built$x$data)[[1L]]
+    key_matrix <- do.call(rbind, lapply(trace$key, as.character))
+    expect_equal(dim(key_matrix), c(2L, columns))
+    positions <- cbind(match(as.integer(interactive$data$feature_label), trace$y),
+                       match(as.integer(interactive$data$analysis_label), trace$x))
+    expect_identical(unname(key_matrix[positions]), interactive$data$key)
+    expect_true(all(vapply(as.vector(key_matrix), function(key) {
+      pair <- jsonlite::fromJSON(key)
+      is.character(pair) && length(pair) == 2L && pair[1L] == "A" && pair[2L] %in% c("B", "C")
+    }, logical(1))))
+    serialized <- jsonlite::fromJSON(plotly::plotly_json(built, jsonedit = FALSE), simplifyVector = FALSE)
+    json_trace <- Filter(function(trace) identical(trace$type, "heatmap"), serialized$data)[[1L]]
+    expect_length(json_trace$key, 2L)
+    expect_true(all(lengths(json_trace$key) == columns))
+    expect_identical(json_trace$key[[1L]][[1L]], key_matrix[1L, 1L])
+    if (columns == 2L) {
+      missing <- which(is.na(interactive$data$effect_size))
+      expect_length(missing, 1L)
+      expect_identical(key_matrix[positions[missing, , drop = FALSE]], report_feature_key("A", "C"))
+      expect_true(is.na(plot$data$effect_size[missing]))
+    }
+    expect_identical(built$x$source, "linked-summary")
+    expect_true("plotly_click" %in% built$x$shinyEvents)
+    expect_identical(plot$data, original_data)
+    expect_equal(ggplot2::ggplot_build(plot)$data, original_layers)
+  }
+  single <- contrasts[contrasts$marker_2 == "B", , drop = FALSE]
+  for (columns in c(1L, 2L)) {
+    plot <- plot_precomputed_heatmap(single[seq_len(columns), , drop = FALSE])
+    plot$data$key <- rep(report_feature_key("A", "B"), nrow(plot$data))
+    built <- plotly::plotly_build(plotly::plotly_build(precomputed_heatmap_plotly(plot)))
+    trace <- Filter(function(trace) identical(trace$type, "heatmap"), built$x$data)[[1L]]
+    expect_true(trace$`_isSimpleKey`)
+    expect_identical(as.character(trace$key), report_feature_key("A", "B"))
+    serialized <- jsonlite::fromJSON(plotly::plotly_json(built, jsonedit = FALSE), simplifyVector = FALSE)
+    json_trace <- Filter(function(trace) identical(trace$type, "heatmap"), serialized$data)[[1L]]
+    expect_identical(unlist(json_trace$key), report_feature_key("A", "B"))
+  }
+  expect_s3_class(precomputed_heatmap_plotly(precomputed_empty_plot("No stored results", "Summary")), "plotly")
+})
+
 test_that("embedding helpers align cells and support sparse marker abundance", {
   app_data <- precomputed_app_data(precomputed_fixture())
   prepared <- precomputed_embedding_data(
@@ -74,12 +131,23 @@ test_that("QC retention and unavailable paired source values have explicit plots
   expect_match(ggplot2::ggplot_build(plot)$data[[1L]]$label, "not stored")
 })
 
-test_that("the report UI exposes frozen report adapters", {
+test_that("the report UI groups stored views under shared navigation and selection", {
   skip_if_not_installed("shiny")
   skip_if_not_installed("bslib")
   ui <- as.character(precomputed_ui("report"))
-  expect_match(ui, "Report volcano", fixed = TRUE)
-  expect_match(ui, "Spatial report", fixed = TRUE)
+  expect_match(ui, 'id="report-results_view"', fixed = TRUE)
+  expect_match(ui, "Tables &amp; methods", fixed = TRUE)
+  expect_match(ui, "Spatial matrix", fixed = TRUE)
+  expect_match(ui, 'id="report-donor_control"', fixed = TRUE)
+  expect_match(ui, 'id="report-explore_3d"', fixed = TRUE)
+  expect_match(ui, 'id="report-download_filtered_results_csv"', fixed = TRUE)
+  expect_match(ui, 'id="report-download_spatial_csv"', fixed = TRUE)
+  expect_false(grepl('id="report-report_donor"', ui, fixed = TRUE))
+  expect_false(grepl('id="report-spatial_donor"', ui, fixed = TRUE))
+  for (id in c("effect_heatmap", "effect_detail", "report_volcano_plot", "spatial_report_plot",
+               "results_table", "report_volcano_table", "fdr_controls")) {
+    expect_equal(sum(gregexpr(paste0('id="report-', id, '"'), ui, fixed = TRUE)[[1L]] > 0L), 1L)
+  }
   expect_match(ui, "Exploratory component-level test", fixed = TRUE)
 })
 

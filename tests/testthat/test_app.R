@@ -9,6 +9,11 @@ test_that("the hosted app rejects visitor-selected server paths", {
   sys.source("app.R", envir = environment)
   expect_false(grepl('id="rds_path"', as.character(environment$ui), fixed = TRUE))
   shiny::testServer(environment$server, {
+    modal <- NULL
+    session$sendModal <- function(type, message) modal <<- message$html
+    session$setInputs(dataset = 1)
+    expect_match(modal, "Dataset", fixed = TRUE)
+    expect_false(grepl('id="rds_path"', modal, fixed = TRUE))
     session$setInputs(rds_path = "/untrusted/not-present.rds", load_rds = 1)
     expect_identical(data()$contract$dataset_id, "fixture-v1")
     expect_null(error())
@@ -24,8 +29,12 @@ test_that("failed trusted-local reload keeps the active dataset", {
   withr::local_envvar(c(PROXIOME_PRECOMPUTED_RDS = fixture_path, PROXIOME_ALLOW_LOCAL_LOAD = "true"))
   environment <- new.env(parent = globalenv())
   sys.source("app.R", envir = environment)
-  expect_true(grepl('id="rds_path"', as.character(environment$ui), fixed = TRUE))
+  expect_false(grepl('id="rds_path"', as.character(environment$ui), fixed = TRUE))
   shiny::testServer(environment$server, {
+    modal <- NULL
+    session$sendModal <- function(type, message) modal <<- message$html
+    session$setInputs(dataset = 1)
+    expect_true(grepl('id="rds_path"', modal, fixed = TRUE))
     session$setInputs(rds_path = "/untrusted/not-present.rds", load_rds = 1)
     expect_identical(data()$contract$dataset_id, "fixture-v1")
     expect_match(error(), "existing precomputed")

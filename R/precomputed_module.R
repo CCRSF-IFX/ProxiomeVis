@@ -560,6 +560,34 @@ plot_precomputed_heatmap <- function(results, top_n = 20L, title = "Stored diffe
     )
 }
 
+precomputed_heatmap_plotly <- function(plot, source = "A") {
+  widget <- plotly::ggplotly(plot, tooltip = "text", source = source)
+  rows <- plot$data
+  if (is.data.frame(rows) && nrow(rows) &&
+      all(c("feature_label", "analysis_label", "key") %in% names(rows))) {
+    widget$x$data <- lapply(widget$x$data, function(trace) {
+      if (!identical(trace$type, "heatmap")) return(trace)
+      # Plotly's heatmap click handler indexes keys by [row][column], like z.
+      keys <- matrix(NA_character_, nrow = length(trace$y), ncol = length(trace$x))
+      positions <- cbind(match(as.integer(rows$feature_label), trace$y),
+                         match(as.integer(rows$analysis_label), trace$x))
+      mapped <- stats::complete.cases(positions)
+      keys[positions[mapped, , drop = FALSE]] <- rows$key[mapped]
+      unique_keys <- unique(as.vector(keys))
+      trace$`_isSimpleKey` <- length(unique_keys) == 1L
+      trace$`_isNestedKey` <- !trace$`_isSimpleKey`
+      # Row lists survive Plotly's key validation; an R matrix gets flattened.
+      trace$key <- if (trace$`_isSimpleKey`) unique_keys else {
+        lapply(seq_len(nrow(keys)), function(i) unname(keys[i, ]))
+      }
+      trace
+    })
+  }
+  widget |>
+    plotly::layout(autosize = TRUE, margin = list(l = 140, r = 50, t = 100, b = 150)) |>
+    plotly::event_register("plotly_click")
+}
+
 precomputed_effect_detail_data <- function(results, donor_contrasts) {
   results <- precomputed_as_table(results)
   donor_contrasts <- precomputed_as_table(donor_contrasts)
@@ -610,11 +638,12 @@ plot_precomputed_effect_detail <- function(
     return(precomputed_empty_plot("No stored detail is available for this feature.", title))
   }
 
-  p <- ggplot2::ggplot() +
+  p <- ggplot2::ggplot(mapping = ggplot2::aes(text = hover)) +
     ggplot2::geom_hline(yintercept = 0, color = "#8a9699", linewidth = 0.5) +
     ggplot2::labs(
       title = title,
-      subtitle = "Dots are stored donor contrasts; diamonds and ranges are stored cross-donor summaries.",
+      subtitle = if (nrow(aggregate)) "Dots are stored donor contrasts; diamonds and ranges are stored cross-donor summaries."
+        else "Dots are stored effects for the selected donor; no cross-donor inference is shown.",
       x = NULL,
       y = "Stored effect",
       color = "Donor"
@@ -630,13 +659,13 @@ plot_precomputed_effect_detail <- function(
     p <- p +
       ggplot2::geom_linerange(
         data = aggregate,
-        ggplot2::aes(x = analysis_label, ymin = min_effect, ymax = max_effect, text = hover),
+        ggplot2::aes(x = analysis_label, ymin = min_effect, ymax = max_effect),
         linewidth = 1.1,
         color = "#263238"
       ) +
       ggplot2::geom_point(
         data = aggregate,
-        ggplot2::aes(x = analysis_label, y = effect_size, text = hover),
+        ggplot2::aes(x = analysis_label, y = effect_size),
         shape = 23,
         size = 4,
         fill = "white",
@@ -652,7 +681,7 @@ plot_precomputed_effect_detail <- function(
     p <- p +
       ggplot2::geom_point(
         data = donors,
-        ggplot2::aes(x = analysis_label, y = effect_size, color = donor, text = hover),
+        ggplot2::aes(x = analysis_label, y = effect_size, color = donor),
         position = ggplot2::position_jitter(width = 0.08, height = 0, seed = 1),
         size = 3,
         alpha = 0.9
@@ -844,244 +873,48 @@ precomputed_metric_card <- function(label, output_id) {
   )
 }
 
-precomputed_ui <- function(id) {
-  ns <- shiny::NS(id)
 
-  bslib::navset_underline(
-    id = ns("report_page"),
-    bslib::nav_panel(
-      "Overview / QC",
-      shiny::uiOutput(ns("dataset_heading")),
-      bslib::layout_column_wrap(
-        width = "180px", fill = FALSE,
-        precomputed_metric_card("Cells", ns("metric_cells")),
-        precomputed_metric_card("Samples", ns("metric_samples")),
-        precomputed_metric_card("Donors", ns("metric_donors")),
-        precomputed_metric_card("Cell types", ns("metric_celltypes"))
-      ),
-      bslib::layout_columns(
-        col_widths = c(7, 5), fill = FALSE,
-        bslib::card(full_screen = TRUE,
-          bslib::card_header("QC cell counts"),
-          bslib::card_body(plotly::plotlyOutput(ns("qc_plot"), height = "480px"))
-        ),
-        bslib::card(full_screen = TRUE,
-          bslib::card_header("QC table"),
-          bslib::card_body(DT::DTOutput(ns("qc_table")))
-        )
-      ),
-      bslib::card(
-        class = "mt-3",
-        bslib::card_header("Analysis provenance"),
-        bslib::card_body(
-          precomputed_download_group(
-            shiny::downloadButton(ns("download_provenance"), "Provenance JSON", class = "btn-sm btn-outline-primary")
-          ),
-          shiny::tags$pre(class = "small", shiny::textOutput(ns("provenance_text")))
-        )
-      )
-    ),
-    bslib::nav_panel(
-      "Embeddings",
-      bslib::layout_sidebar(
-        sidebar = bslib::sidebar(
-          title = "Embedding controls",
-          width = 300,
-          shiny::selectInput(ns("umap_reduction"), "UMAP / annotation reduction", choices = character()),
-          shiny::selectInput(ns("pca_reduction"), "PCA reduction", choices = character()),
-          shiny::selectInput(
-            ns("embedding_color"),
-            "Color cells by",
-            choices = c(
-              "Cell type" = "celltype",
-              "Cluster" = "cluster",
-              "Condition" = "condition",
-              "Donor" = "donor",
-              "Marker abundance" = "abundance"
-            ),
-            selected = "celltype"
-          ),
-          shiny::conditionalPanel(
-            condition = "input.embedding_color == 'abundance'",
-            ns = ns,
-            shiny::selectizeInput(ns("embedding_marker"), "Abundance marker", choices = character())
-          ),
-          shiny::tags$p(
-            class = "text-muted small",
-            "Embedding colors are display annotations or normalized abundance from the loaded RDS; no spatial file is read."
-          )
-        ),
-        bslib::layout_columns(
-          col_widths = c(6, 6), fill = FALSE,
-            bslib::card(full_screen = TRUE,
-              bslib::card_header("UMAP / annotation embedding"),
-              bslib::card_body(
-                precomputed_download_group(
-                  shiny::downloadButton(ns("download_umap_svg"), "SVG", class = "btn-sm btn-outline-primary")
-                ),
-                plotly::plotlyOutput(ns("umap_plot"), height = "620px")
-              )
-            ),
-            bslib::card(full_screen = TRUE,
-              bslib::card_header("PCA embedding"),
-              bslib::card_body(
-                precomputed_download_group(
-                  shiny::downloadButton(ns("download_pca_svg"), "SVG", class = "btn-sm btn-outline-primary")
-                ),
-                plotly::plotlyOutput(ns("pca_plot"), height = "620px")
-              )
-            )
-        )
-      )
-    ),
-    bslib::nav_panel(
-      "Precomputed results",
-      bslib::layout_sidebar(
-        sidebar = bslib::sidebar(
-          title = "Stored analysis scope",
-          width = 320,
-          shiny::selectInput(ns("readout"), "Readout", choices = PRECOMPUTED_READOUTS),
-          shiny::selectInput(ns("donor"), "Donor view", choices = c("All stored donors" = PRECOMPUTED_ALL)),
-          shiny::selectInput(ns("comparison"), "Stored comparison", choices = c("All comparisons" = PRECOMPUTED_ALL)),
-          shiny::selectInput(ns("celltype"), "Cell type", choices = c("All cell types" = PRECOMPUTED_ALL)),
-          shiny::checkboxInput(ns("include_controls"), "Include control markers", value = FALSE),
-          shiny::numericInput(ns("top_features"), "Heatmap top features", value = 20, min = 2, max = 80, step = 1),
-          shiny::tags$hr(),
-          shiny::selectizeInput(ns("detail_feature"), "Detail feature", choices = character()),
-          shiny::radioButtons(
-            ns("detail_display"),
-            "Detail display",
-            choices = c("Donor effects and stored range" = "effects", "Paired condition values" = "conditions"),
-            selected = "effects"
-          ),
-          shiny::uiOutput(ns("fdr_controls")),
-          shiny::tags$div(
-            class = "alert alert-secondary small mt-3",
-            "All donors shows the stored cross-donor summary. Selecting one donor switches to that donor's stored contrast; it does not recompute or pool an analysis."
-          )
-        ),
-        shiny::uiOutput(ns("result_summary")),
-        bslib::card(full_screen = TRUE,
-          bslib::card_header("Differential-effect heatmap"),
-          bslib::card_body(
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_results_csv"), "Results CSV", class = "btn-sm btn-outline-primary"),
-              shiny::downloadButton(ns("download_heatmap_svg"), "Heatmap SVG", class = "btn-sm btn-outline-primary")
-            ),
-            plotly::plotlyOutput(ns("effect_heatmap"), height = "720px")
-          )
-        ),
-        bslib::card(full_screen = TRUE,
-          class = "mt-3",
-          bslib::card_header("Selected-feature detail"),
-          bslib::card_body(
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_detail_svg"), "Detail SVG", class = "btn-sm btn-outline-primary")
-            ),
-            plotly::plotlyOutput(ns("effect_detail"), height = "540px")
-          )
-        ),
-        bslib::navset_card_tab(
-          full_screen = TRUE,
-          id = ns("result_tables"),
-          bslib::nav_panel("Results", DT::DTOutput(ns("results_table"))),
-          bslib::nav_panel(
-            "Donor contrasts",
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_contrasts_csv"), "Donor contrasts CSV", class = "btn-sm btn-outline-primary")
-            ),
-            DT::DTOutput(ns("contrasts_table"))
-          ),
-          bslib::nav_panel(
-            "Sample support",
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_samples_csv"), "Sample support CSV", class = "btn-sm btn-outline-primary")
-            ),
-            DT::DTOutput(ns("samples_table"))
-          )
-        )
-      )
-    ),
-    bslib::nav_panel(
-      "Report volcano",
-      bslib::layout_sidebar(
-        sidebar = bslib::sidebar(
-          title = "Stored report scope",
-          width = 320,
-          shiny::selectInput(ns("report_readout"), "Readout", choices = PRECOMPUTED_READOUTS),
-          shiny::selectInput(ns("report_donor"), "Donor", choices = character()),
-          shiny::selectInput(ns("report_comparison"), "Comparison", choices = character()),
-          shiny::selectInput(ns("report_celltype"), "Cell type", choices = character()),
-          shiny::uiOutput(ns("report_fdr_controls")),
-          shiny::tags$div(
-            class = "alert alert-warning small mt-3",
-            shiny::tags$strong("Exploratory component-level test. "),
-            "The volcano and P values are the original stored result for one donor; they are not donor-population inference. The cutoff affects the table only."
-          )
-        ),
-        bslib::card(full_screen = TRUE,
-          bslib::card_header("Original report volcano"),
-          bslib::card_body(
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_report_volcano_svg"), "Volcano SVG", class = "btn-sm btn-outline-primary"),
-              shiny::downloadButton(ns("download_report_volcano_csv"), "Stored rows CSV", class = "btn-sm btn-outline-primary")
-            ),
-            shiny::tags$p(class = "small text-muted",
-              "Hover for marker details. Scroll or drag a box to zoom; double-click to reset. SVG downloads retain the original report labels."),
-            plotly::plotlyOutput(ns("report_volcano_plot"), height = "720px")
-          )
-        ),
-        bslib::card(full_screen = TRUE,
-          class = "mt-3",
-          bslib::card_header("Stored component-level results"),
-          bslib::card_body(DT::DTOutput(ns("report_volcano_table")))
-        ),
-        bslib::card(full_screen = TRUE,
-          class = "mt-3",
-          bslib::card_header("Original abundance heatmap"),
-          bslib::card_body(
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_report_abundance_heatmap_svg"), "Abundance heatmap SVG", class = "btn-sm btn-outline-primary")
-            ),
-            shiny::plotOutput(ns("report_abundance_heatmap_plot"), height = "820px")
-          )
-        )
-      )
-    ),
-    bslib::nav_panel(
-      "Spatial report",
-      bslib::layout_sidebar(
-        sidebar = bslib::sidebar(
-          title = "Stored spatial panel",
-          width = 320,
-          shiny::selectInput(ns("spatial_donor"), "Donor", choices = character()),
-          shiny::selectInput(ns("spatial_celltype"), "Cell type", choices = character()),
-          shiny::radioButtons(
-            ns("spatial_kind"),
-            "Display",
-            choices = c("Condition differences" = "differences", "Condition profiles" = "profiles"),
-            selected = "differences"
-          ),
-          shiny::selectInput(ns("spatial_panel"), "Comparison / condition", choices = character()),
-          shiny::tags$p(
-            class = "text-muted small",
-            "Marker order and color/size scales come from the frozen report alignment bundle; the app does not recalculate proximity."
-          )
-        ),
-        bslib::card(full_screen = TRUE,
-          bslib::card_header("Original spatial report view"),
-          bslib::card_body(
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_spatial_report_svg"), "Spatial report SVG", class = "btn-sm btn-outline-primary")
-            ),
-            shiny::plotOutput(ns("spatial_report_plot"), height = "820px")
-          )
-        )
-      )
-    ),
-    bslib::nav_panel("Custom analysis", hybrid_analysis_ui(ns("analysis"))),
-    bslib::nav_panel("Cell 3D", cell_graph_ui(ns("graph")))
-  )
+precomputed_explorer_scope <- function(data, readout = NULL, donor = NULL, celltype = NULL, comparison = NULL) {
+  readouts <- unname(PRECOMPUTED_READOUTS)
+  readout <- precomputed_keep_selection(readout, readouts)
+  rows <- precomputed_contract_table(data$contract, "donor_contrasts", readout)
+  donors <- sort(unique(as.character(data$metadata$donor)))
+  donor <- precomputed_keep_selection(donor, donors)
+  donor_rows <- precomputed_filter_table(rows, donor = donor, include_controls = TRUE)
+  celltypes <- precomputed_report_celltypes(data$contract, data$metadata, donor, readout, donor_rows)
+  if (!length(celltypes)) celltypes <- sort(unique(as.character(data$metadata$celltype)))
+  celltype <- precomputed_keep_selection(celltype, c(celltypes, PRECOMPUTED_ALL))
+  comparisons <- precomputed_available_values(donor_rows, "comparison")
+  comparison <- precomputed_keep_selection(comparison, comparisons)
+  selected <- if (length(comparison) && !is.na(comparison)) {
+    precomputed_filter_table(donor_rows, celltype = celltype, comparison = comparison, include_controls = TRUE)
+  } else donor_rows[FALSE, , drop = FALSE]
+  list(readout = readout, donor = donor, donors = donors, celltype = celltype, celltypes = celltypes,
+       comparison = comparison, comparisons = comparisons, rows = selected)
+}
+
+precomputed_display_rows <- function(rows, filter = FALSE, cutoff = 0.05) {
+  if (!nrow(rows)) return(rows)
+  rows$feature <- precomputed_feature_labels(rows)
+  if ("p_adj" %in% names(rows) && any(is.finite(rows$p_adj))) {
+    cutoff <- suppressWarnings(as.numeric(cutoff)[1L])
+    if (!length(cutoff) || !is.finite(cutoff) || cutoff < 0 || cutoff > 1) cutoff <- 0.05
+    rows$stored_fdr_status <- ifelse(!is.finite(rows$p_adj), "Not available",
+      ifelse(rows$p_adj <= cutoff, paste0("FDR ≤ ", cutoff), paste0("FDR > ", cutoff)))
+    if (isTRUE(filter)) rows <- rows[is.finite(rows$p_adj) & rows$p_adj <= cutoff, , drop = FALSE]
+  }
+  rows
+}
+
+precomputed_searched_rows <- function(rows, indices, search = "", column_search = character()) {
+  # Shiny decodes DataTables' zero-match [] as NULL, just like an unbound table.
+  if (is.null(indices)) {
+    searching <- any(nzchar(c(search, unlist(column_search))), na.rm = TRUE)
+    return(if (searching) rows[FALSE, , drop = FALSE] else rows)
+  }
+  indices <- as.integer(indices)
+  indices <- indices[!is.na(indices) & indices > 0L & indices <= nrow(rows)]
+  rows[unique(indices), , drop = FALSE]
 }
 
 precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(), code_dir = "R") {
@@ -1093,8 +926,18 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     hybrid_analysis_server("analysis", current_data, job_manager, code_dir,
       active = shiny::reactive(identical(input$report_page, "Custom analysis")))
+    graph_selection <- shiny::reactiveVal(NULL)
     cell_graph_server("graph", current_data,
-      active = shiny::reactive(identical(input$report_page, "Cell 3D")))
+      active = shiny::reactive(identical(input$report_page, "Cell 3D")), selection = graph_selection)
+
+    scope <- shiny::reactive(precomputed_explorer_scope(current_data(),
+      input$readout, input$donor, input$celltype, input$comparison))
+    output$donor_control <- shiny::renderUI({
+      donors <- sort(unique(as.character(current_data()$metadata$donor)))
+      if (length(donors) == 1L) return(shiny::tags$p(class = "pt-2", shiny::tags$strong("Donor: "), donors))
+      shiny::selectInput(session$ns("donor"), "Donor", choices = donors,
+        selected = precomputed_keep_selection(shiny::isolate(input$donor), donors))
+    })
 
     readout_tables <- shiny::reactive({
       value <- current_data()
@@ -1164,121 +1007,123 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       )
     }, ignoreInit = FALSE)
 
-    shiny::observeEvent(list(current_data(), input$readout), {
-      tables <- readout_tables()
-      donors <- precomputed_available_values(tables$contrasts, "donor")
-      comparisons <- sort(unique(c(
-        precomputed_available_values(tables$results, "comparison"),
-        precomputed_available_values(tables$contrasts, "comparison")
-      )))
-      celltypes <- sort(unique(c(
-        precomputed_available_values(tables$results, "celltype"),
-        precomputed_available_values(tables$contrasts, "celltype")
-      )))
-      donor_choices <- c("All stored donors" = PRECOMPUTED_ALL, stats::setNames(donors, donors))
-      comparison_choices <- c("All comparisons" = PRECOMPUTED_ALL, stats::setNames(comparisons, comparisons))
-      celltype_choices <- c("All cell types" = PRECOMPUTED_ALL, stats::setNames(celltypes, celltypes))
-      shiny::updateSelectInput(
-        session,
-        "donor",
-        choices = donor_choices,
-        selected = precomputed_keep_selection(shiny::isolate(input$donor), unname(donor_choices), PRECOMPUTED_ALL)
-      )
-      shiny::updateSelectInput(
-        session,
-        "comparison",
-        choices = comparison_choices,
-        selected = precomputed_keep_selection(shiny::isolate(input$comparison), unname(comparison_choices), PRECOMPUTED_ALL)
-      )
-      shiny::updateSelectInput(
-        session,
-        "celltype",
-        choices = celltype_choices,
-        selected = precomputed_keep_selection(shiny::isolate(input$celltype), unname(celltype_choices), PRECOMPUTED_ALL)
-      )
-    }, ignoreInit = FALSE)
-
-    selected_results <- shiny::reactive({
-      value <- current_data()
-      tables <- readout_tables()
-      rows <- precomputed_result_rows_for_donor(value$contract, tables$readout, input$donor)
-      precomputed_filter_table(
-        rows,
-        donor = input$donor,
-        comparison = input$comparison,
-        celltype = input$celltype,
-        include_controls = input$include_controls
-      )
+    shiny::observeEvent(list(current_data(), input$readout, input$donor), {
+      selection <- scope()
+      shiny::updateSelectInput(session, "celltype",
+        choices = c(stats::setNames(selection$celltypes, selection$celltypes), "All cell types (summary)" = PRECOMPUTED_ALL),
+        selected = selection$celltype)
+      shiny::updateSelectInput(session, "comparison", choices = selection$comparisons, selected = selection$comparison)
     })
 
-    selected_contrasts <- shiny::reactive({
-      tables <- readout_tables()
-      precomputed_filter_table(
-        tables$contrasts,
-        donor = input$donor,
-        comparison = input$comparison,
-        celltype = input$celltype,
-        include_controls = input$include_controls
-      )
-    })
+    selected_results <- shiny::reactive(scope()$rows)
+    selected_contrasts <- shiny::reactive(selected_results())
 
     selected_samples <- shiny::reactive({
-      tables <- readout_tables()
-      samples <- precomputed_filter_table(
-        tables$samples,
-        donor = input$donor,
-        celltype = input$celltype,
-        include_controls = input$include_controls
-      )
-      if (!identical(precomputed_scope_value(input$comparison), PRECOMPUTED_ALL) && nrow(samples) > 0L && "condition" %in% names(samples)) {
-        contrast_scope <- precomputed_filter_table(
-          tables$contrasts,
-          donor = input$donor,
-          comparison = input$comparison,
-          celltype = input$celltype,
-          include_controls = input$include_controls
-        )
-        conditions <- unique(c(as.character(contrast_scope$group_a), as.character(contrast_scope$group_b)))
-        conditions <- conditions[!is.na(conditions) & nzchar(conditions)]
-        if (length(conditions) > 0L) {
-          samples <- samples[as.character(samples$condition) %in% conditions, , drop = FALSE]
-        }
-      }
-      samples
+      selected <- scope()
+      samples <- precomputed_filter_table(readout_tables()$samples, donor = selected$donor,
+        celltype = selected$celltype, include_controls = TRUE)
+      rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
+        comparison = selected$comparison, include_controls = TRUE)
+      conditions <- unique(c(as.character(rows$group_a), as.character(rows$group_b)))
+      samples[samples$condition %in% conditions, , drop = FALSE]
     })
 
+    selected_key <- shiny::reactiveVal(NULL)
+    feature_rows <- shiny::reactive({
+      rows <- scope()$rows
+      if (!nrow(rows)) {
+        rows$key <- character()
+        return(rows)
+      }
+      rows$key <- report_feature_key(rows$marker_1, rows$marker_2)
+      rows[!duplicated(rows$key), , drop = FALSE]
+    })
     shiny::observe({
-      results <- selected_results()
-      if (nrow(results) == 0L || !"feature_id" %in% names(results)) {
-        shiny::updateSelectizeInput(session, "detail_feature", choices = character(), selected = character(), server = TRUE)
+      rows <- feature_rows()
+      keys <- rows$key
+      chosen <- selected_key()
+      if (!length(chosen) && length(keys)) {
+        selected_key(keys[1L])
+        chosen <- keys[1L]
+      }
+      choices <- stats::setNames(keys, precomputed_feature_labels(rows))
+      if (length(chosen) && !chosen %in% keys) {
+        pair <- tryCatch(jsonlite::fromJSON(chosen), error = function(e) character())
+        if (length(pair) == 2L) choices <- c(choices, stats::setNames(chosen,
+          paste0(paste(unique(pair), collapse = " ↔ "), " (no stored test in this scope)")))
+      }
+      shiny::updateSelectizeInput(session, "detail_feature", choices = choices,
+        selected = chosen, server = TRUE)
+    })
+    shiny::observeEvent(input$detail_feature, {
+      if (input$detail_feature %in% c(feature_rows()$key, selected_key())) selected_key(input$detail_feature)
+    })
+    shiny::observeEvent(current_data(), { selected_key(NULL) }, ignoreInit = TRUE)
+    detail_results <- shiny::reactive(precomputed_empty_table())
+    detail_contrasts <- shiny::reactive({
+      rows <- scope()$rows
+      if (!nrow(rows) || !length(selected_key())) return(rows[FALSE, , drop = FALSE])
+      rows[report_feature_key(rows$marker_1, rows$marker_2) == selected_key(), , drop = FALSE]
+    })
+
+    select_feature <- function(key, from_spatial = FALSE) {
+      pair <- tryCatch(jsonlite::fromJSON(as.character(key)[1L]), error = function(e) character())
+      if (!is.character(pair) || length(pair) != 2L || anyNA(pair) ||
+          !all(pair %in% rownames(current_data()$abundance))) return(invisible(NULL))
+      selected_key(report_feature_key(pair[1L], pair[2L]))
+      if (from_spatial) shiny::updateSelectInput(session, "readout",
+        selected = if (pair[1L] == pair[2L]) "self_proximity" else "colocalization")
+    }
+    for (view in c("summary", "volcano", "spatial")) local({
+      plot_view <- view
+      shiny::observeEvent({
+        shiny::req(session$rootScope()$input[[paste0("plotly_click-", session$ns(plot_view))]])
+        plotly::event_data("plotly_click", source = session$ns(plot_view), priority = "event")
+      }, {
+        event <- plotly::event_data("plotly_click", source = session$ns(plot_view), priority = "event")
+        key <- if (!is.null(event$key)) event$key else event$customdata
+        if (length(key)) select_feature(key[1L], from_spatial = plot_view == "spatial")
+      })
+    })
+    shiny::observeEvent(input$results_table_rows_selected, {
+      rows <- display_results()
+      i <- input$results_table_rows_selected
+      if (length(i) == 1L && i > 0 && i <= nrow(rows))
+        select_feature(report_feature_key(rows$marker_1[i], rows$marker_2[i]))
+    })
+    shiny::observeEvent(input$report_volcano_table_rows_selected, {
+      rows <- report_volcano_display()
+      i <- input$report_volcano_table_rows_selected
+      if (length(i) == 1L && i > 0 && i <= nrow(rows))
+        select_feature(report_feature_key(rows$marker_1[i], rows$marker_2[i]))
+    })
+    output$feature_context <- shiny::renderUI({
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      if (length(pair) != 2L) return(shiny::tags$p("Click a plot or table row to inspect a feature."))
+      rows <- detail_contrasts()
+      fields <- intersect(c("celltype", "effect_size", "metric", "p_adj", "n_cells_a", "n_cells_b"), names(rows))
+      shiny::tagList(
+        shiny::tags$strong(paste(unique(pair), collapse = " ↔ ")),
+        if (!nrow(rows)) shiny::tags$p("No stored differential test for this feature in the selected scope."),
+        if (nrow(rows)) shiny::tags$ul(lapply(seq_len(nrow(rows)), function(i)
+          shiny::tags$li(paste(paste(fields, unlist(rows[i, fields, drop = FALSE]), sep = ": "), collapse = " · ")))),
+        shiny::tags$p(class = "small", "Cell-level exploration is separate from these frozen statistics. ",
+          "Choose a condition and one highlight marker in Cell 3D, then click Display."))
+    })
+    shiny::observeEvent(input$explore_3d, {
+      shared <- scope()
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      if (shared$celltype == PRECOMPUTED_ALL || length(pair) != 2L) {
+        shiny::showNotification("Choose one cell type and a feature before exploring cells.", type = "warning")
         return()
       }
-      feature_rows <- results[!duplicated(results$feature_id), , drop = FALSE]
-      choices <- stats::setNames(as.character(feature_rows$feature_id), precomputed_feature_labels(feature_rows))
-      selected <- precomputed_keep_selection(shiny::isolate(input$detail_feature), unname(choices))
-      shiny::freezeReactiveValue(input, "detail_feature")
-      shiny::updateSelectizeInput(session, "detail_feature", choices = choices, selected = selected, server = TRUE)
-    })
-
-    detail_results <- shiny::reactive({
-      if (!identical(precomputed_scope_value(input$donor), PRECOMPUTED_ALL)) {
-        return(precomputed_empty_table())
-      }
-      results <- selected_results()
-      feature <- input$detail_feature
-      if (is.null(feature) || !"feature_id" %in% names(results)) {
-        return(precomputed_empty_table())
-      }
-      results[as.character(results$feature_id) == feature, , drop = FALSE]
-    })
-
-    detail_contrasts <- shiny::reactive({
-      contrasts <- selected_contrasts()
-      feature <- input$detail_feature
-      if (is.null(feature) || !"feature_id" %in% names(contrasts)) {
-        return(precomputed_empty_table())
-      }
-      contrasts[as.character(contrasts$feature_id) == feature, , drop = FALSE]
+      rows <- precomputed_filter_table(readout_tables()$contrasts, donor = shared$donor,
+        comparison = shared$comparison, include_controls = TRUE)
+      graph_selection(list(donor = shared$donor, celltype = shared$celltype,
+        marker_1 = pair[1L], marker_2 = pair[2L],
+        conditions = unique(c(as.character(rows$group_a), as.character(rows$group_b))),
+        token = input$explore_3d))
+      bslib::nav_select("report_page", "Cell 3D", session = session)
     })
 
     output$dataset_heading <- shiny::renderUI({
@@ -1372,68 +1217,12 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       content = function(file) precomputed_write_svg(pca_ggplot(), file, 9, 7)
     )
 
-    report_scope <- shiny::reactive({
-      value <- current_data()
-      readouts <- unname(PRECOMPUTED_READOUTS)[vapply(
-        unname(PRECOMPUTED_READOUTS),
-        function(readout) nrow(precomputed_contract_table(value$contract, "donor_contrasts", readout)) > 0L,
-        logical(1)
-      )]
-      readout <- precomputed_keep_selection(input$report_readout, readouts)
-      rows <- precomputed_contract_table(value$contract, "donor_contrasts", readout)
-      donors <- precomputed_available_values(rows, "donor")
-      donor <- precomputed_keep_selection(input$report_donor, donors)
-      donor_rows <- precomputed_filter_table(rows, donor = donor, include_controls = TRUE)
-      celltypes <- precomputed_report_celltypes(
-        value$contract, value$metadata, donor, readout, donor_rows
-      )
-      celltype <- precomputed_keep_selection(input$report_celltype, celltypes)
-      comparisons <- precomputed_available_values(donor_rows, "comparison")
-      comparison <- precomputed_keep_selection(input$report_comparison, comparisons)
-      list(
-        readouts = readouts,
-        readout = readout,
-        donors = donors,
-        donor = donor,
-        celltypes = celltypes,
-        celltype = celltype,
-        comparisons = comparisons,
-        comparison = comparison,
-        rows = precomputed_filter_table(
-          donor_rows,
-          comparison = comparison,
-          celltype = celltype,
-          include_controls = TRUE
-        )
-      )
-    })
-
-    shiny::observe({
-      scope <- report_scope()
-      readout_choices <- PRECOMPUTED_READOUTS[PRECOMPUTED_READOUTS %in% scope$readouts]
-      shiny::updateSelectInput(session, "report_readout", choices = readout_choices, selected = scope$readout)
-      shiny::updateSelectInput(session, "report_donor", choices = scope$donors, selected = scope$donor)
-      shiny::updateSelectInput(session, "report_celltype", choices = scope$celltypes, selected = scope$celltype)
-      shiny::updateSelectInput(session, "report_comparison", choices = scope$comparisons, selected = scope$comparison)
-    })
-
-    output$report_fdr_controls <- shiny::renderUI({
-      rows <- report_scope()$rows
-      has_fdr <- "p_adj" %in% names(rows) && any(is.finite(rows$p_adj))
-      if (!has_fdr) {
-        return(shiny::tags$div(
-          class = "alert alert-info small mt-2",
-          "No adjusted P values were stored for this report scope; FDR filtering is disabled."
-        ))
-      }
-      shiny::tagList(
-        shiny::numericInput(session$ns("report_fdr_cutoff"), "Stored FDR table cutoff", value = 0.05, min = 0, max = 1, step = 0.01),
-        shiny::checkboxInput(session$ns("report_fdr_filter"), "Show only table rows at or below cutoff", value = FALSE)
-      )
-    })
+    report_scope <- scope
 
     report_volcano_ggplot <- shiny::reactive({
       scope <- report_scope()
+      if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
+        "Select one cell type for its stored volcano.", "Original report volcano"))
       if (!length(scope$readout) || is.na(scope$readout) || !length(scope$donor) || is.na(scope$donor) ||
           !length(scope$celltype) || is.na(scope$celltype) || !length(scope$comparison) || is.na(scope$comparison)) {
         return(precomputed_empty_plot("No stored donor-level volcano is available.", "Original report volcano"))
@@ -1449,30 +1238,15 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       )
     })
     output$report_volcano_plot <- plotly::renderPlotly({
-      report_volcano_plotly(report_volcano_ggplot())
+      report_volcano_plotly(report_volcano_ggplot(), source = session$ns("volcano"))
     })
 
-    report_volcano_display <- shiny::reactive({
-      rows <- report_scope()$rows
-      if (nrow(rows) == 0L) return(rows)
-      rows$feature <- precomputed_feature_labels(rows)
-      if ("p_adj" %in% names(rows) && any(is.finite(rows$p_adj))) {
-        cutoff <- suppressWarnings(as.numeric(input$report_fdr_cutoff)[1L])
-        if (!is.finite(cutoff)) cutoff <- 0.05
-        rows$stored_fdr_status <- ifelse(
-          is.finite(rows$p_adj),
-          ifelse(rows$p_adj <= cutoff, paste0("FDR ≤ ", cutoff), paste0("FDR > ", cutoff)),
-          "Not available"
-        )
-        if (isTRUE(input$report_fdr_filter)) {
-          rows <- rows[is.finite(rows$p_adj) & rows$p_adj <= cutoff, , drop = FALSE]
-        }
-      }
-      rows
-    })
+    report_volcano_display <- shiny::reactive(
+      precomputed_display_rows(report_scope()$rows, input$fdr_filter, input$fdr_cutoff))
     output$report_volcano_table <- DT::renderDT({
       shiny::validate(shiny::need(nrow(report_volcano_display()) > 0L, "No stored rows match this display scope."))
-      DT::datatable(report_volcano_display(), rownames = FALSE, filter = "top", options = list(pageLength = 15, scrollX = TRUE))
+      DT::datatable(report_volcano_display(), rownames = FALSE, filter = "top",
+        selection = "single", options = list(pageLength = 15, scrollX = TRUE))
     })
     output$download_report_volcano_svg <- shiny::downloadHandler(
       filename = function() paste0(precomputed_safe_filename(
@@ -1521,47 +1295,38 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     )
 
     spatial_scope <- shiny::reactive({
+      shared <- scope()
       contract <- current_data()$contract
       alignment <- contract$report$alignment
       kind <- precomputed_scope_value(input$spatial_kind, "differences")
       if (!kind %in% c("differences", "profiles")) kind <- "differences"
-      donors <- precomputed_report_values(alignment$donors, "donor")
-      celltypes <- precomputed_report_values(alignment$markers, "celltype")
-      if (length(donors) == 0L || length(celltypes) == 0L) {
-        contrast_tables <- lapply(
-          unname(PRECOMPUTED_READOUTS),
-          function(readout) precomputed_contract_table(contract, "donor_contrasts", readout)
-        )
-        if (length(donors) == 0L) {
-          donors <- sort(unique(unlist(lapply(contrast_tables, precomputed_available_values, column = "donor"), use.names = FALSE)))
-        }
-        if (length(celltypes) == 0L) {
-          celltypes <- sort(unique(unlist(lapply(contrast_tables, precomputed_available_values, column = "celltype"), use.names = FALSE)))
-        }
-      }
-      panels <- if (identical(kind, "profiles")) {
-        precomputed_report_values(alignment$conditions, "condition")
+      donor_rows <- precomputed_filter_table(
+        precomputed_contract_table(contract, "donor_contrasts", shared$readout),
+        donor = shared$donor, comparison = shared$comparison, include_controls = TRUE)
+      groups <- unique(c(as.character(donor_rows$group_a), as.character(donor_rows$group_b)))
+      if (identical(kind, "profiles")) {
+        panels <- intersect(precomputed_report_values(alignment$conditions, "condition"), groups)
+        panel <- precomputed_keep_selection(input$spatial_panel, panels)
       } else {
-        precomputed_report_values(alignment$contrasts, "comparison")
+        candidates <- unlist(lapply(contract$report$source_results[[shared$donor]], function(rows) {
+          if (!all(c("contrast", "target", "reference") %in% names(rows))) return(character())
+          matched <- as.character(rows$target) %in% donor_rows$group_a &
+                     as.character(rows$reference) %in% donor_rows$group_b
+          unique(as.character(rows$contrast[matched]))
+        }), use.names = FALSE)
+        panels <- intersect(precomputed_report_values(alignment$contrasts, "comparison"), candidates)
+        panel <- if (length(panels) == 1L) panels else NA_character_
       }
-      list(
-        kind = kind,
-        donors = donors,
-        donor = precomputed_keep_selection(input$spatial_donor, donors),
-        celltypes = celltypes,
-        celltype = precomputed_keep_selection(input$spatial_celltype, celltypes),
-        panels = panels,
-        panel = precomputed_keep_selection(input$spatial_panel, panels)
-      )
+      list(kind = kind, donor = shared$donor, celltype = shared$celltype, panels = panels, panel = panel)
     })
-    shiny::observe({
-      scope <- spatial_scope()
-      shiny::updateSelectInput(session, "spatial_donor", choices = scope$donors, selected = scope$donor)
-      shiny::updateSelectInput(session, "spatial_celltype", choices = scope$celltypes, selected = scope$celltype)
-      shiny::updateSelectInput(session, "spatial_panel", choices = scope$panels, selected = scope$panel)
+    shiny::observeEvent(list(scope(), input$spatial_kind), {
+      selected <- spatial_scope()
+      shiny::updateSelectInput(session, "spatial_panel", choices = selected$panels, selected = selected$panel)
     })
     spatial_report_ggplot <- shiny::reactive({
       scope <- spatial_scope()
+      if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
+        "Select one cell type for its spatial matrix.", "Spatial matrix"))
       if (!length(scope$donor) || is.na(scope$donor) || !length(scope$celltype) || is.na(scope$celltype) ||
           !length(scope$panel) || is.na(scope$panel)) {
         return(precomputed_empty_plot("No aligned spatial report panel is stored.", "Original spatial report view"))
@@ -1576,7 +1341,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         title = "Original spatial report view"
       )
     })
-    output$spatial_report_plot <- shiny::renderPlot(spatial_report_ggplot(), res = 110)
+    output$spatial_report_plot <- plotly::renderPlotly(
+      report_spatial_plotly(spatial_report_ggplot(), source = session$ns("spatial")))
     output$download_spatial_report_svg <- shiny::downloadHandler(
       filename = function() paste0(precomputed_safe_filename(
         spatial_scope()$donor, spatial_scope()$celltype, spatial_scope()$kind,
@@ -1591,58 +1357,59 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (!has_fdr) {
         return(shiny::tags$div(
           class = "alert alert-info small mt-2",
-          shiny::tags$strong("Descriptive result. "),
+          shiny::tags$strong("Stored probabilities unavailable. "),
           "No adjusted P values were stored, so FDR controls are disabled."
         ))
       }
       shiny::tagList(
         shiny::numericInput(session$ns("fdr_cutoff"), "Stored FDR display cutoff", value = 0.05, min = 0, max = 1, step = 0.01),
         shiny::checkboxInput(session$ns("fdr_filter"), "Show only rows at or below this stored FDR", value = FALSE),
-        shiny::tags$p(class = "text-muted small", "This filters the on-screen table only; it does not adjust or rerun tests, alter plots, or change downloads.")
+        shiny::tags$p(class = "text-muted small", "Table filters affect the tables and Filtered CSV downloads only. Plots and Original report SVG retain frozen thresholds; All stored rows ignores table searches and FDR filters.")
       )
     })
 
     output$result_summary <- shiny::renderUI({
-      results <- selected_results()
-      contrasts <- selected_contrasts()
-      donor <- precomputed_scope_value(input$donor)
-      donor_message <- if (identical(donor, PRECOMPUTED_ALL)) {
-        "Showing stored cross-donor summaries and their contributing donor contrasts."
-      } else {
-        paste("Showing stored contrasts for", donor,
-              "only; component-level tests are exploratory and are not donor-population inference. No analysis was recalculated.")
-      }
-      features <- if ("feature_id" %in% names(results)) length(unique(results$feature_id)) else 0L
-      shiny::div(
-        class = "alert alert-light border",
-        shiny::tags$strong(donor_message),
-        shiny::tags$div(
-          class = "small mt-1",
-          paste(format(nrow(results), big.mark = ","), "stored effect rows ·",
-                format(features, big.mark = ","), "features ·",
-                format(nrow(contrasts), big.mark = ","), "donor contrast rows")
-        )
+      selected <- scope()
+      rows <- selected$rows
+      groups <- if (nrow(rows)) unique(paste(rows$group_a, "−", rows$group_b)) else character()
+      direction <- if (length(groups)) paste(groups, collapse = "; ") else
+        paste(selected$comparison, "— no stored effects in this scope")
+      shiny::div(class = "alert alert-light border",
+        shiny::tags$strong(paste("Donor:", selected$donor, "·",
+          if (selected$celltype == PRECOMPUTED_ALL) "All cell types" else selected$celltype, "·",
+          direction, "·", names(PRECOMPUTED_READOUTS)[match(selected$readout, PRECOMPUTED_READOUTS)])),
+        shiny::tags$p(class = "small mb-1", "Positive effects mean target exceeds reference. ",
+          "Stored single-donor results; no analysis was recalculated."),
+        shiny::tags$p(class = "small mb-0",
+          "Exploratory component-level tests, where stored, are not donor-population inference. ",
+          nrow(rows), " stored effects. Missing or untested values are not zero.")
       )
     })
 
     heatmap_ggplot <- shiny::reactive({
       readout_label <- names(PRECOMPUTED_READOUTS)[match(readout_tables()$readout, PRECOMPUTED_READOUTS)]
       plot_precomputed_heatmap(
-        selected_results(),
+        precomputed_filter_table(selected_results(), include_controls = input$include_controls),
         top_n = input$top_features,
         title = paste(readout_label, "stored differential effects")
       )
     })
     output$effect_heatmap <- plotly::renderPlotly({
-      plotly::ggplotly(heatmap_ggplot(), tooltip = "text") |>
-        plotly::layout(autosize = TRUE, margin = list(l = 140, r = 50, t = 100, b = 150))
+      plot <- heatmap_ggplot()
+      rows <- scope()$rows
+      if (is.data.frame(plot$data) && nrow(plot$data) && nrow(rows)) {
+        i <- match(plot$data$feature_id, rows$feature_id)
+        plot$data$key <- report_feature_key(rows$marker_1[i], rows$marker_2[i])
+      }
+      precomputed_heatmap_plotly(plot, source = session$ns("summary"))
     })
 
     detail_ggplot <- shiny::reactive({
       value <- current_data()
       contrasts <- detail_contrasts()
       donor_colors <- precomputed_colors(value$contract, "donor", contrasts$donor)
-      feature_label <- input$detail_feature
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      feature_label <- paste(unique(pair), collapse = " ↔ ")
       if (nrow(contrasts) > 0L) {
         feature_label <- precomputed_feature_labels(contrasts)[1L]
       } else if (nrow(detail_results()) > 0L) {
@@ -1668,33 +1435,12 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         plotly::layout(autosize = TRUE, margin = list(l = 80, r = 50, t = 100, b = 100))
     })
 
-    display_results <- shiny::reactive({
-      rows <- selected_results()
-      if (nrow(rows) == 0L) {
-        return(rows)
-      }
-      rows$feature <- precomputed_feature_labels(rows)
-      if ("p_adj" %in% names(rows) && any(is.finite(rows$p_adj))) {
-        cutoff <- suppressWarnings(as.numeric(input$fdr_cutoff)[1])
-        if (!is.finite(cutoff)) cutoff <- 0.05
-        rows$stored_fdr_status <- ifelse(
-          is.finite(rows$p_adj),
-          ifelse(rows$p_adj <= cutoff, paste0("FDR ≤ ", cutoff), paste0("FDR > ", cutoff)),
-          "Not available"
-        )
-        if (isTRUE(input$fdr_filter)) {
-          rows <- rows[is.finite(rows$p_adj) & rows$p_adj <= cutoff, , drop = FALSE]
-        }
-      }
-      rows
-    })
+    display_results <- shiny::reactive(
+      precomputed_display_rows(selected_results(), input$fdr_filter, input$fdr_cutoff))
     output$results_table <- DT::renderDT({
       shiny::validate(shiny::need(nrow(display_results()) > 0L, "No stored result rows match this display scope."))
-      DT::datatable(display_results(), rownames = FALSE, filter = "top", options = list(pageLength = 15, scrollX = TRUE))
-    })
-    output$contrasts_table <- DT::renderDT({
-      shiny::validate(shiny::need(nrow(selected_contrasts()) > 0L, "No stored donor contrasts match this scope."))
-      DT::datatable(selected_contrasts(), rownames = FALSE, filter = "top", options = list(pageLength = 15, scrollX = TRUE))
+      DT::datatable(display_results(), rownames = FALSE, filter = "top",
+        selection = "single", options = list(pageLength = 15, scrollX = TRUE))
     })
     output$samples_table <- DT::renderDT({
       shiny::validate(shiny::need(nrow(selected_samples()) > 0L, "No stored sample support rows match this scope."))
@@ -1702,19 +1448,67 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
 
     output$download_results_csv <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$donor, input$comparison, input$celltype, "results"), ".csv"),
+      filename = function() paste0(precomputed_safe_filename(scope()$readout, scope()$donor, scope()$comparison, scope()$celltype, "results"), ".csv"),
       content = function(file) utils::write.csv(selected_results(), file, row.names = FALSE, na = "")
     )
-    output$download_contrasts_csv <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$donor, input$comparison, input$celltype, "donor-contrasts"), ".csv"),
-      content = function(file) utils::write.csv(selected_contrasts(), file, row.names = FALSE, na = "")
+    output$download_filtered_results_csv <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, scope()$readout, "filtered-results"), ".csv"),
+      content = function(file) utils::write.csv(
+        precomputed_searched_rows(display_results(), input$results_table_rows_all,
+          input$results_table_search, input$results_table_search_columns),
+        file, row.names = FALSE, na = "")
     )
+    output$download_filtered_report_csv <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, scope()$readout, "filtered-report-rows"), ".csv"),
+      content = function(file) utils::write.csv(
+        precomputed_searched_rows(report_volcano_display(), input$report_volcano_table_rows_all,
+          input$report_volcano_table_search, input$report_volcano_table_search_columns),
+        file, row.names = FALSE, na = "")
+    )
+    spatial_rows <- shiny::reactive({
+      selected <- spatial_scope()
+      rows <- current_data()$contract$report$alignment[[selected$kind]]
+      if (!is.data.frame(rows)) return(precomputed_empty_table())
+      rows <- as.data.frame(rows)
+      rows[!is.na(rows$panel) & rows$donor == selected$donor & rows$celltype == selected$celltype &
+        rows$panel %in% selected$panel, , drop = FALSE]
+    })
+    output$download_spatial_csv <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(spatial_scope()$donor,
+        spatial_scope()$celltype, spatial_scope()$kind, spatial_scope()$panel, "spatial"), ".csv"),
+      content = function(file) utils::write.csv(spatial_rows(), file, row.names = FALSE, na = "")
+    )
+    output$methods_ui <- shiny::renderUI({
+      selected <- scope()
+      rows <- selected$rows
+      fields <- if (nrow(rows)) intersect(c("metric", "method", "replicate_unit", "inference", "adjustment_family"), names(rows)) else character()
+      settings <- current_data()$contract$report$settings[[selected$donor]]
+      section <- switch(selected$readout, abundance = "abundance", self_proximity = "clustering",
+        colocalization = "colocalization")
+      shiny::tagList(
+        if (!nrow(rows)) shiny::tags$p("No stored differential test is available in this scope."),
+        shiny::tags$p("These are frozen single-donor contrasts. Cells are not independent biological donors; ",
+          "stored component-level P values are exploratory. Display filters never rerun or readjust tests."),
+        shiny::tags$dl(lapply(fields, function(field) shiny::tagList(shiny::tags$dt(field),
+          shiny::tags$dd(paste(unique(as.character(rows[[field]])), collapse = "; "))))),
+        shiny::tags$p("Spatial condition profiles use the stored profile summary (mean in this demo); ",
+          "spatial differential effects use differences of observed medians. Profile differences must not be substituted for stored effects. ",
+          "Condition values are shown only if persisted. Missing stored entries are not replaced with zero; ",
+          "profile means retain the upstream missing-observation policy shown in the frozen settings."),
+        shiny::tags$details(shiny::tags$summary("Frozen plot and filtering settings"),
+          shiny::tags$pre(as.character(jsonlite::toJSON(list(
+            analysis = settings[[section]], thresholds = settings$thresholds, spatial = settings$spatial),
+            auto_unbox = TRUE, pretty = TRUE, null = "null"))))
+      )
+    })
     output$download_samples_csv <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$donor, input$comparison, input$celltype, "sample-support"), ".csv"),
+      filename = function() paste0(precomputed_safe_filename(scope()$readout, scope()$donor, scope()$comparison, scope()$celltype, "sample-support"), ".csv"),
       content = function(file) utils::write.csv(selected_samples(), file, row.names = FALSE, na = "")
     )
     output$download_heatmap_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$donor, input$comparison, input$celltype, "heatmap"), ".svg"),
+      filename = function() paste0(precomputed_safe_filename(scope()$readout, scope()$donor, scope()$comparison, scope()$celltype, "heatmap"), ".svg"),
       content = function(file) precomputed_write_svg(heatmap_ggplot(), file, 12, 8)
     )
     output$download_detail_svg <- shiny::downloadHandler(

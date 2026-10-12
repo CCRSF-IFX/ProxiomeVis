@@ -96,19 +96,32 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
 Then open `http://127.0.0.1:3838` from the same machine, or use the secure
 proxy provided by the deployment environment.
 
-In the report tabs, donor and cell-type controls filter results already computed.
-They do not recompute a multi-donor aggregate for an arbitrary subset. This
-dataset contains two donors, so the combined donor-matched results are
-descriptive and have no p-values. Donor-specific report volcanoes retain the
-tertiary analysis's stored component-level p-values and adjusted p-values; they
-are labeled exploratory and are not population-level donor inference. The app
-never treats cells as independent biological replicates.
+The top navigation contains **Overview / QC**, **Embeddings**, **Precomputed
+results**, **Custom analysis**, and **Cell 3D**. The **Dataset** button at the
+upper right opens dataset details and optional trusted-local loading controls.
+Sidecar status describes configured assets; validation occurs when they are used.
 
-The **Report volcano** view supports marker hover, scroll-wheel zoom, and
-drag-to-box zoom for all three readouts. Double-click to reset, or use the
-Plotly toolbar to pan/reset. Hover replaces repelled labels on screen; the
-Volcano SVG download retains the original labeled report plot. Spatial report
-and abundance heatmaps remain static.
+**Precomputed results** shares one donor, cell type, comparison, and readout
+across **Summary**, **Volcano**, **Spatial matrix**, and **Tables & methods**.
+With one donor, its name is a fixed label; otherwise choose one donor. Results
+come directly from that donor's frozen contrasts, not a cross-donor aggregate.
+The summary can show all cell types, while volcano and spatial views require
+one cell type. Positive effects mean target minus reference. Stored component-
+level P values remain exploratory within-donor evidence, not population-level
+treatment inference; cells are not independent biological replicates.
+
+Click a summary tile, volcano point, spatial pair, or result-table row to select
+the same feature in the shared detail panel. Pair order is interchangeable.
+Volcano and spatial plots support hover and zoom; original report SVG downloads
+retain the frozen plotting strategy and statistics. The original abundance
+heatmap remains static and is collapsed under Summary. Spatial condition
+profiles are means, whereas differential effects are differences of medians;
+these are distinct stored quantities, not interchangeable calculations.
+
+FDR controls and table searches affect tables and **Filtered table CSV** exports
+only. **All stored rows CSV** ignores those filters. Heatmap display controls
+and table filters do not change frozen report thresholds. Hidden plot outputs
+are suspended; these prepared views do not load proximity or graph sidecars.
 
 **Custom analysis:** choose one donor, one cell type, two conditions, and markers.
 Optionally select cells using the embedding lasso/box or searchable cell selector.
@@ -130,6 +143,9 @@ test. The viewer refuses cells above 200,000 nodes without silently downsampling
 Prepared coverage is shown explicitly. The first access to a sample may checksum
 its whole file; later cell selections reuse validation and query matching
 Parquet row groups rather than load the sample into R.
+You can also click **Explore cells in 3D** in the selected-feature panel to
+transfer the donor, cell type, and marker pair. Choose a comparison condition and
+one highlight marker there; the handoff does not click Display or load a graph.
 
 See [Hybrid analysis](docs/hybrid-analysis.md) for methods, data schemas, and limits.
 
@@ -140,7 +156,7 @@ can deserialize executable R objects, so do not expose unrestricted public RDS
 uploads. For hosted use, place prepared files in an administrator-controlled
 directory and pass the selected path through `PROXIOME_PRECOMPUTED_RDS`.
 
-The in-app server-path field is disabled by default. A trusted local operator
+The in-app server-path field in the Dataset panel is disabled by default. A trusted local operator
 can enable it before startup with `PROXIOME_ALLOW_LOCAL_LOAD=true`. Never enable
 that flag on a public deployment: it lets a visitor request any RDS path that
 the Shiny process can read.

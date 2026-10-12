@@ -36,8 +36,50 @@ cell_graph_ui <- function(id) {
   )
 }
 
-cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
+cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selection = shiny::reactive(NULL)) {
   shiny::moduleServer(id, function(input, output, session) {
+    handoff <- shiny::reactiveVal(NULL)
+    handoff_pending <- shiny::reactiveVal(FALSE)
+    shiny::observeEvent(selection(), {
+      request <- selection()
+      if (is.null(request)) {
+        handoff(NULL)
+        handoff_pending(FALSE)
+        return()
+      }
+      fields <- c("donor", "celltype", "marker_1", "marker_2")
+      shiny::req(is.list(request), all(vapply(request[fields], function(value) {
+        is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value)
+      }, logical(1))))
+      value <- data()
+      meta <- value$metadata
+      cohort <- meta[meta$donor == request$donor & meta$celltype == request$celltype, , drop = FALSE]
+      markers <- rownames(value$abundance)
+      shiny::req(nrow(cohort), request$marker_1 %in% markers, request$marker_2 %in% markers,
+        is.character(request$conditions), length(request$conditions), !anyNA(request$conditions))
+      request$conditions <- intersect(unique(request$conditions), unique(cohort$condition))
+      handoff_pending(TRUE)
+      handoff(request)
+      shiny::updateSelectInput(session, "donor", choices = sort(unique(meta$donor)), selected = request$donor)
+      shiny::updateSelectInput(session, "celltype", choices = sort(unique(meta$celltype[meta$donor == request$donor])),
+        selected = request$celltype)
+      shiny::updateSelectInput(session, "condition", choices = c("Choose a condition" = "",
+        stats::setNames(request$conditions, request$conditions)), selected = "")
+      choices <- c("Choose a marker" = "", stats::setNames(markers, markers))
+      shiny::updateSelectizeInput(session, "pair_1", choices = choices, selected = request$marker_1, server = TRUE)
+      shiny::updateSelectizeInput(session, "pair_2", choices = choices, selected = request$marker_2, server = TRUE)
+      shiny::updateSelectizeInput(session, "markers", choices = choices, selected = "", server = TRUE)
+      shiny::updateSelectizeInput(session, "cell", choices = character(), selected = character(), server = TRUE)
+    }, ignoreNULL = FALSE, priority = 100)
+    shiny::observeEvent(list(input$donor, input$celltype, input$pair_1, input$pair_2,
+                            input$condition, input$markers), {
+      request <- handoff()
+      if (handoff_pending() && identical(input$donor, request$donor) &&
+          identical(input$celltype, request$celltype) && identical(input$pair_1, request$marker_1) &&
+          identical(input$pair_2, request$marker_2) &&
+          (!length(input$condition) || identical(input$condition, "")) &&
+          (!length(input$markers) || identical(input$markers, ""))) handoff_pending(FALSE)
+    })
     index <- shiny::reactive({
       shiny::req(active())
       input$refresh
@@ -75,6 +117,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
       meta[match(entries$cell_id, meta$component), , drop = FALSE]
     })
     shiny::observeEvent(data(), {
+      if (handoff_pending()) return()
       choices <- c("Choose a marker" = "", stats::setNames(rownames(data()$abundance), rownames(data()$abundance)))
       for (id in c("pair_1", "pair_2", "markers")) {
         selected <- shiny::isolate(input[[id]])
@@ -86,7 +129,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
       any(nzchar(c(input$pair_1, input$pair_2)))
     })
     ranked <- shiny::reactive({
-      shiny::req(active(), ranking_requested(), input$donor, input$celltype, input$condition)
+      shiny::req(active(), !handoff_pending(), ranking_requested(), input$donor, input$celltype, input$condition)
       shiny::validate(shiny::need(length(input$pair_1) == 1L && nzchar(input$pair_1) &&
         length(input$pair_2) == 1L && nzchar(input$pair_2), "Select one marker in each ranking dropdown."))
       value <- data()
@@ -115,6 +158,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
       result[chosen, , drop = FALSE]
     })
     cell_choices <- shiny::reactive({
+      shiny::req(!handoff_pending())
       if (ranking_requested()) {
         result <- shown_ranking()
         if (!nrow(result)) return(character())
@@ -128,6 +172,9 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
       stats::setNames(choices, choices)
     })
     output$ranking_status <- shiny::renderText({
+      if (handoff_pending() || (!is.null(handoff()) && !length(input$condition[nzchar(input$condition)]))) {
+        return("Choose a condition to rank cells, then select a cell and highlight marker before clicking Display.")
+      }
       if (!ranking_requested()) return("Select two ranking markers to rank cells, or browse prepared cells without ranking.")
       result <- ranked()
       total <- attr(result, "provenance")$cohort_cells
@@ -147,23 +194,33 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
           "dataset cells have prepared 3D assets. All nodes are preserved; oversized cells are reported, never silently truncated."))
     })
     shiny::observeEvent(available(), {
-      choices <- sort(unique(available()$donor))
+      if (handoff_pending()) return()
+      meta <- if (is.null(handoff())) available() else data()$metadata
+      choices <- sort(unique(meta$donor))
       shiny::updateSelectInput(session, "donor", choices = choices,
         selected = precomputed_keep_selection(shiny::isolate(input$donor), choices))
     })
     shiny::observeEvent(list(available(), input$donor), {
-      meta <- available()
+      if (handoff_pending()) return()
+      meta <- if (is.null(handoff())) available() else data()$metadata
       choices <- sort(unique(meta$celltype[meta$donor == input$donor]))
       shiny::updateSelectInput(session, "celltype", choices = choices,
         selected = precomputed_keep_selection(shiny::isolate(input$celltype), choices, "CD4 T"))
     })
     shiny::observeEvent(list(available(), input$donor, input$celltype), {
-      meta <- available()
+      if (handoff_pending()) return()
+      meta <- if (is.null(handoff())) available() else data()$metadata
       choices <- sort(unique(meta$condition[meta$donor == input$donor & meta$celltype == input$celltype]))
+      request <- handoff()
+      if (!is.null(request) && identical(input$donor, request$donor) && identical(input$celltype, request$celltype)) {
+        choices <- intersect(request$conditions, choices)
+        choices <- c("Choose a condition" = "", stats::setNames(choices, choices))
+      }
       shiny::updateSelectInput(session, "condition", choices = choices,
         selected = precomputed_keep_selection(shiny::isolate(input$condition), choices))
     })
     shiny::observe({
+      if (handoff_pending()) return()
       choices <- tryCatch(cell_choices(), error = function(error) character())
       shiny::updateSelectizeInput(session, "cell", choices = choices,
         selected = if (ranking_requested()) unname(head(choices, 1L)) else
@@ -171,6 +228,8 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE)) {
     })
     displayed <- shiny::eventReactive(input$display, {
       shiny::req(active())
+      shiny::validate(shiny::need(!handoff_pending() && length(input$condition) == 1L && nzchar(input$condition),
+        "Choose a condition before clicking Display."))
       choices <- cell_choices()
       shiny::validate(shiny::need(length(input$cell) == 1L && input$cell %in% choices,
         "Select a cell from the current list before clicking Display."))

@@ -139,7 +139,7 @@ test_that("interactive volcanoes expose every point without changing report expo
     plot <- plot_report_volcano(contract, readout, "D1", "B", "TRT vs NC")
     original_data <- ggplot2::ggplot_build(plot)$data
     original_layers <- plot$layers
-    expect_warning(widget <- report_volcano_plotly(plot), NA)
+    expect_warning(widget <- report_volcano_plotly(plot, source = "results-volcano"), NA)
     built <- plotly::plotly_build(widget)
     points <- Filter(function(trace) identical(trace$mode, "markers"), built$x$data)
     hover <- unlist(lapply(points, function(trace) trace$text))
@@ -147,6 +147,14 @@ test_that("interactive volcanoes expose every point without changing report expo
     expect_true(any(grepl("Marker.*B", hover)))
     expect_true(all(grepl("Adjusted P value:", hover, fixed = TRUE)))
     expect_true(all(grepl("Target: TRT", hover, fixed = TRUE)))
+    keys <- unlist(lapply(points, function(trace) trace$key), use.names = FALSE)
+    expected_keys <- if (identical(readout, "colocalization")) {
+      report_feature_key("B", "A")
+    } else report_feature_key(c("A", "B"), c("A", "B"))
+    expect_setequal(keys, expected_keys)
+    expect_setequal(unlist(lapply(points, function(trace) trace$customdata)), expected_keys)
+    expect_identical(built$x$source, "results-volcano")
+    expect_true("plotly_click" %in% built$x$shinyEvents)
     expect_true(built$x$config$scrollZoom)
     expect_true(built$x$config$displayModeBar)
     expect_identical(built$x$layout$dragmode, "zoom")
@@ -159,6 +167,17 @@ test_that("interactive volcanoes expose every point without changing report expo
     empty <- plot_report_volcano(contract, readout, "D1", "T", "TRT vs NC")
     expect_warning(expect_s3_class(report_volcano_plotly(empty), "plotly"), NA)
   }
+})
+
+test_that("feature keys preserve exact unordered marker identities", {
+  expect_identical(report_feature_key(c("B", "A"), c("A", "A")), c('["A","B"]', '["A","A"]'))
+  expect_identical(report_feature_key(factor("B"), factor("A")), report_feature_key("A", "B"))
+  expect_identical(report_feature_key(character(), character()), character())
+  expect_identical(report_feature_key(NA_character_, "A"), NA_character_)
+  expect_error(report_feature_key(c("A", "B"), "A"))
+  expect_false(identical(report_feature_key("A/B", "C"), report_feature_key("A", "B/C")))
+  marker <- 'CD3"\\<β>'
+  expect_setequal(jsonlite::fromJSON(report_feature_key(marker, "CD45")), c(marker, "CD45"))
 })
 
 test_that("volcano hover escapes labels and shows stored zero P values", {
@@ -188,6 +207,69 @@ test_that("aligned spatial plots retain shared marker order and scales", {
   expect_identical(levels(plot$data$marker_1), c("A", "B"))
   expect_equal(plot$scales$get_scales("fill")$limits, c(-2, 2))
   expect_equal(plot$data$p_adj, contract$report$alignment$differences$p_adj)
+})
+
+test_that("interactive spatial matrices retain stored values, scales, order and report exports", {
+  contract <- report_plot_fixture()
+  for (kind in c("profiles", "differences")) {
+    panel <- if (identical(kind, "profiles")) "TRT" else "TRT_vs_NC"
+    plot <- plot_report_spatial(contract, "D1", "B", kind, panel)
+    original_data <- ggplot2::ggplot_build(plot)$data
+    original_layers <- plot$layers
+    expect_warning(widget <- report_spatial_plotly(plot, source = "results-spatial"), NA)
+    built <- plotly::plotly_build(widget)
+    points <- Filter(function(trace) identical(trace$mode, "markers") && !is.null(trace$key), built$x$data)
+    hover <- unlist(lapply(points, function(trace) trace$text), use.names = FALSE)
+    expect_length(hover, 4L)
+    expect_true(all(grepl("Availability: supported", hover, fixed = TRUE)))
+    expect_true(all(grepl("Fraction detected: 1", hover, fixed = TRUE)))
+    expect_true(all(grepl("Adjusted P value:", hover, fixed = TRUE)))
+    keys <- unlist(lapply(points, function(trace) trace$key), use.names = FALSE)
+    expect_setequal(keys, report_feature_key(c("A", "A", "B"), c("A", "B", "B")))
+    expect_setequal(unlist(lapply(points, function(trace) trace$customdata)), keys)
+    expect_identical(built$x$source, "results-spatial")
+    expect_true("plotly_click" %in% built$x$shinyEvents)
+    expect_identical(built$x$layout$xaxis$ticktext, c("A", "B"))
+    expect_identical(built$x$layout$yaxis$ticktext, c("B", "A"))
+    colorbars <- Filter(function(trace) !is.null(trace$marker$colorbar), built$x$data)
+    limits <- contract$report$alignment$limits[[kind]]
+    expect_equal(range(as.numeric(colorbars[[1L]]$marker$colorbar$ticktext)), c(-limits, limits))
+    expect_true(built$x$config$scrollZoom)
+    expect_identical(built$x$layout$dragmode, "zoom")
+    expect_identical(plot$layers, original_layers)
+    expect_equal(ggplot2::ggplot_build(plot)$data, original_data)
+  }
+})
+
+test_that("spatial hover distinguishes unavailable pairs, zero effects and color saturation", {
+  contract <- report_plot_fixture()
+  rows <- contract$report$alignment$differences
+  rows[marker_1 == "A" & marker_2 == "B", `:=`(status = "unavailable", value = NA_real_, p_adj = NA_real_)]
+  rows[marker_1 == "B" & marker_2 == "B", value := 0]
+  rows[marker_1 == "A" & marker_2 == "A", value := 5]
+  plot <- plot_report_spatial(contract, "D1", "B", "differences", "TRT_vs_NC")
+  built <- plotly::plotly_build(report_spatial_plotly(plot))
+  missing <- Filter(function(trace) identical(trace$mode, "lines"), built$x$data)[[1L]]
+  expect_match(missing$text, "Availability: unavailable", fixed = TRUE)
+  expect_match(missing$text, "Difference in medians: Not available", fixed = TRUE)
+  expect_identical(missing$fillcolor, "rgba(209,209,209,1)")
+  points <- Filter(function(trace) identical(trace$mode, "markers") && !is.null(trace$key), built$x$data)
+  zero <- Filter(function(trace) any(grepl("Difference in medians: 0<br>", trace$text, fixed = TRUE)), points)[[1L]]
+  expect_identical(zero$marker$color, "rgba(255,255,255,1)")
+  expect_gt(zero$marker$line$width, 0)
+  expect_true(any(grepl("Difference in medians: 5<br>", unlist(lapply(points, function(trace) trace$text)), fixed = TRUE)))
+  expect_equal(plot$scales$get_scales("fill")$limits, c(-2, 2))
+  expect_equal(plot$data$p_adj, rows$p_adj)
+})
+
+test_that("interactive spatial matrices handle unavailable and empty scopes", {
+  contract <- report_plot_fixture()
+  contract$report$alignment$differences[, `:=`(status = "unavailable", value = NA_real_, p_adj = NA_real_)]
+  plot <- plot_report_spatial(contract, "D1", "B", "differences", "TRT_vs_NC")
+  expect_warning(widget <- report_spatial_plotly(plot), NA)
+  expect_s3_class(widget, "plotly")
+  empty <- plot_report_spatial(contract, "D1", "T", "differences", "TRT_vs_NC")
+  expect_warning(expect_s3_class(report_spatial_plotly(empty), "plotly"), NA)
 })
 
 test_that("abundance heatmaps use the frozen displayed matrix", {

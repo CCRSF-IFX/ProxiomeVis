@@ -177,23 +177,85 @@ Consumers should validate the contract version and required columns before
 rendering any view. A newer incompatible layout should use a new version rather
 than silently changing the meaning of an existing field.
 
-## What donor and cell-type selection means
+## Explore one donor's stored results
 
-In the report tabs, selections narrow the stored rows. They do not reopen PXL, recalculate a
-proximity score, rerun marker eligibility filters, or recompute a donor-matched
-aggregate for the selected subset. Consequently, a result can only be shown if
-that donor/cell-type/marker combination was present when the frozen tables were
-built.
+The top navigation groups stored views under **Precomputed results**. Its shared
+selection bar contains donor, cell type, comparison, and readout. A single-donor
+dataset displays the donor as a fixed label; multi-donor datasets offer a donor
+dropdown, but every result view still uses one donor's original stored contrast.
+The descriptive cross-donor rows remain preserved in the contract; they are not
+required or substituted for donor-specific effects by this interface.
 
-This analysis contains two donors. Donor points and treatment-minus-reference
-effects are useful for exploratory comparison, but two donors do not support
-population-level significance claims. The app therefore presents descriptive
-combined effects without p-values. Donor-specific report volcanoes may display
-the already stored component-level p-values described above. Report controls
-never run a new test. **Custom analysis** instead submits an explicit selected-cell
-comparison to a background R process, with its own result and provenance. Those
-new p-values remain exploratory: cells within a donor are not independent
-biological replicates, and selection using the same data can bias testing.
+The four subtabs are:
+
+| Subtab | Contents |
+| --- | --- |
+| Summary | Differential effects for the selected cell type, or across all cell types; optional original abundance heatmap |
+| Volcano | One donor and one cell type's original stored test with hover, zoom, and feature selection |
+| Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects |
+| Tables & methods | Searchable result and volcano rows, sample support, exports, and method settings |
+
+Choosing **All cell types (summary)** is supported by the heatmap and tables.
+Volcano and spatial views then ask for one cell type rather than silently
+choosing a different scope. Comparison labels retain target/reference direction:
+a positive effect means target exceeds reference. Results come from stored
+rows; these controls do not reopen PXL, recalculate proximity, rerun eligibility
+filters, or fit a new test.
+
+Click a heatmap tile, volcano point, spatial marker pair, or result-table row
+to select the same feature in the detail panel shared by all four views.
+Pair keys are order-independent. The panel shows the selected scope's stored
+effect, available probabilities, and cell support; condition values are shown
+only if present in the contract. A feature without a stored test is labeled as
+such instead of being converted to a zero effect.
+
+**Explore cells in 3D** transfers that donor, cell type, and pair. The user must
+choose a condition from the comparison and one highlight marker, then click
+**Display**. The handoff does not load a graph or alter the previously displayed
+3D view. It can initiate ranking only after a condition is chosen and the
+required proximity sidecar is available.
+
+### Statistical meaning and spatial exploration
+
+Original donor-specific volcanoes may display the stored component-level P
+values described above. These are exploratory within-donor tests, not evidence
+of a population-level treatment effect. Cells from one donor are not independent
+biological replicates. The same limitation applies to a dataset containing only
+one donor; no combined or pooled test is invented.
+
+The spatial matrix deliberately combines self-proximity and colocalization,
+independent of the readout control used by the other subtabs. Hover exposes the
+pair, stored value, and availability; click selects the pair for detail. The
+marker order and aligned scales follow the frozen report. Condition profiles
+show stored population means with the upstream missing-as-zero policy, while
+differential effects show differences of observed medians. The former must not
+be subtracted to reconstruct the latter. Untested or unavailable entries are
+distinguished from measured values near zero.
+
+**Custom analysis** instead submits an explicit selected-cell comparison to a
+background R process with its own result and provenance. Those new P values
+remain exploratory, and selection using the same data can bias testing.
+
+### Filters, exports, and rendering
+
+FDR controls are labeled table filters; the app does not apply them to the
+original report plots. When no adjusted P values were stored, these controls
+are unavailable rather than fabricated. Table searches and FDR filters affect
+the corresponding **Filtered table CSV**, including all matching rows rather
+than just the current page. **All stored rows CSV** ignores both filters and
+exports the selected donor/cell-type/comparison/readout scope. Heatmap feature
+counts and control-marker display options affect only the summary display.
+
+**Original report SVG** preserves the upstream report plotting strategy and
+thresholds. The interactive spatial view also offers its displayed rows as CSV.
+The methods section exposes stored effect metrics, original settings, test
+methods, and multiple-testing information where available; it does not infer
+missing method details.
+
+Plot outputs are suspended while their subtab is hidden; shared selections and
+the selected feature persist while navigating. Prepared views read only the
+loaded RDS. Sidecars are used for explicit cell-level ranking, graph display,
+or custom spatial analysis, not merely for viewing a stored result.
 
 ## Runtime and PXL files
 

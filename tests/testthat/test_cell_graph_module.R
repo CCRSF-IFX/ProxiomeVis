@@ -242,3 +242,117 @@ test_that("missing or duplicate expected graph sources fail closed", {
     }
   })
 })
+
+test_that("report handoff prefills controls without loading or redrawing until Display", {
+  fixture <- cell_graph_module_fixture()
+  fixture$data$assets$proximity <- list(path = "proximity")
+  ranking_fixture(fixture$data, file.path(dirname(fixture$data$bundle_path), "proximity"))
+  current <- shiny::reactiveVal(fixture$data)
+  selection <- shiny::reactiveVal(NULL)
+  loads <- plots <- 0L
+  loader <- load_cell_graph_asset
+  plotter <- plot_cell_graph_asset
+  server <- cell_graph_server
+  environment(server) <- list2env(list(
+    load_cell_graph_asset = function(...) { loads <<- loads + 1L; loader(...) },
+    plot_cell_graph_asset = function(...) { plots <<- plots + 1L; plotter(...) }
+  ), parent = environment(cell_graph_server))
+  messages <- list()
+  mock <- shiny::MockShinySession$new()
+  mock$sendInputMessage <- function(id, message) messages[[sub("^.*-", "", id)]] <<- message
+  shiny::testServer(server, args = list(data = current, selection = selection), session = mock, {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", pair_1 = "", pair_2 = "",
+                      cell = "cell1", markers = "A", display = 0L)
+    session$setInputs(display = 1L)
+    expect_identical(asset()$cell_id, "cell1")
+    expect_no_error(output$plot)
+    original_plots <- plots
+    request <- list(donor = "D2", celltype = "B", marker_1 = "B", marker_2 = "A",
+                    conditions = c("TRT", "NC"), token = 1L)
+    selection(request)
+    flush_graph_outputs(session)
+    expect_true(handoff_pending())
+    expect_identical(messages$donor$value, "D2")
+    expect_identical(messages$celltype$value, "B")
+    expect_identical(messages$pair_1$value, "B")
+    expect_identical(messages$pair_2$value, "A")
+    expect_identical(messages$condition$value, "")
+    expect_match(as.character(messages$condition$options), "TRT")
+    expect_match(as.character(messages$condition$options), "NC")
+    expect_identical(messages$markers$value, "")
+    expect_identical(asset()$cell_id, "cell1")
+    expect_identical(displayed()$marker, "A")
+    expect_no_error(output$plot)
+    expect_equal(loads, 1L)
+    expect_equal(plots, original_plots)
+    expect_match(output$ranking_status, "Choose a condition")
+
+    # Client updates arrive in separate flushes; old condition/highlight must not win.
+    session$setInputs(donor = "D2")
+    expect_true(handoff_pending())
+    expect_identical(messages$condition$value, "")
+    expect_error(ranked(), class = "shiny.silent.error")
+    session$setInputs(celltype = "B", pair_1 = "B", pair_2 = "A", condition = "", markers = "")
+    flush_graph_outputs(session)
+    expect_false(handoff_pending())
+    expect_identical(messages$condition$value, "")
+    expect_match(as.character(messages$condition$options), "TRT")
+    expect_equal(loads, 1L)
+    expect_equal(plots, original_plots)
+    session$setInputs(display = 2L)
+    expect_error(asset(), "Choose a condition", class = "shiny.silent.error")
+    expect_equal(loads, 1L)
+
+    session$setInputs(condition = "NC", cell = "cell2", markers = "A")
+    expect_identical(ranked()$component, c("cell10", "cell2"))
+    expect_equal(loads, 1L)
+    session$setInputs(display = 3L)
+    expect_identical(asset()$cell_id, "cell2")
+    expect_identical(displayed()$marker, "A")
+    expect_equal(loads, 2L)
+    expect_no_error(output$plot)
+    updated_plots <- plots
+    request$token <- 2L
+    selection(request)
+    flush_graph_outputs(session)
+    expect_true(handoff_pending())
+    expect_identical(messages$condition$value, "")
+    expect_identical(messages$markers$value, "")
+    expect_identical(asset()$cell_id, "cell2")
+    expect_equal(loads, 2L)
+    expect_equal(plots, updated_plots)
+  })
+})
+
+test_that("handoff without sidecars remains friendly and does not load a graph", {
+  fixture <- cell_graph_module_fixture()
+  fixture$data$assets <- NULL
+  current <- shiny::reactiveVal(fixture$data)
+  selection <- shiny::reactiveVal(NULL)
+  loads <- 0L
+  server <- cell_graph_server
+  environment(server) <- list2env(list(load_cell_graph_asset = function(...) {
+    loads <<- loads + 1L
+    stop("Unexpected graph read")
+  }), parent = environment(cell_graph_server))
+  messages <- list()
+  mock <- shiny::MockShinySession$new()
+  mock$sendInputMessage <- function(id, message) messages[[sub("^.*-", "", id)]] <<- message
+  shiny::testServer(server, args = list(data = current, selection = selection), session = mock, {
+    selection(list(donor = "D2", celltype = "B", marker_1 = "A", marker_2 = "A",
+                   conditions = c("TRT", "NC"), token = 1L))
+    flush_graph_outputs(session)
+    expect_identical(messages$donor$value, "D2")
+    expect_identical(messages$pair_1$value, "A")
+    expect_identical(messages$pair_2$value, "A")
+    expect_identical(messages$condition$value, "")
+    expect_identical(messages$markers$value, "")
+    expect_error(output$coverage, "no prepared 3D assets", class = "shiny.silent.error")
+    session$setInputs(donor = "D2", celltype = "B", pair_1 = "A", pair_2 = "A", condition = NULL, markers = NULL)
+    expect_false(handoff_pending())
+    session$setInputs(condition = "NC")
+    expect_error(ranked(), "Prepare a proximity sidecar", class = "shiny.silent.error")
+    expect_equal(loads, 0L)
+    expect_false(session$isClosed())
+  })
+})

@@ -1,32 +1,81 @@
-report_volcano_plotly <- function(plot) {
+report_feature_key <- function(marker_1, marker_2) {
+  stopifnot(length(marker_1) == length(marker_2))
+  marker_1 <- as.character(marker_1)
+  marker_2 <- as.character(marker_2)
+  vapply(seq_along(marker_1), function(i) {
+    pair <- c(marker_1[[i]], marker_2[[i]])
+    if (anyNA(pair)) return(NA_character_)
+    as.character(jsonlite::toJSON(sort(pair, method = "radix")))
+  }, character(1))
+}
+
+report_interactive_layer <- function(layer, plot_data, fields) {
+  rows <- if (is.data.frame(layer$data)) layer$data else plot_data
+  if (!is.data.frame(rows) || !nrow(rows)) return(layer)
+  rows <- as.data.frame(rows)
+  if (all(c("marker_1", "marker_2") %in% names(rows))) {
+    rows$.feature_key <- report_feature_key(rows$marker_1, rows$marker_2)
+  } else if ("marker" %in% names(rows)) {
+    rows$.feature_key <- report_feature_key(rows$marker, rows$marker)
+  } else return(layer)
+  fields <- fields[names(fields) %in% names(rows)]
+  rows$.report_hover <- Reduce(function(a, b) paste(a, b, sep = "<br>"),
+    lapply(names(fields), function(name) {
+      value <- rows[[name]]
+      if (is.numeric(value)) value <- signif(value, 5)
+      value <- ifelse(is.na(value), "Not available", as.character(value))
+      paste0(fields[[name]], ": ", htmltools::htmlEscape(value))
+    }))
+  mapping <- layer$mapping
+  mapping$text <- ggplot2::aes(text = .report_hover)$text
+  mapping$key <- ggplot2::aes(key = .feature_key)$key
+  mapping$customdata <- ggplot2::aes(customdata = .feature_key)$customdata
+  # Clone the layer so the original ggplot and its SVG export stay untouched.
+  ggplot2::ggproto(NULL, layer, data = rows, mapping = mapping)
+}
+
+report_volcano_plotly <- function(plot, source = "A") {
   # R plotmath labels do not reliably translate to Plotly axis titles.
   if (is.expression(plot$labels$y)) plot <- plot + ggplot2::labs(y = "-log10(adjusted P)")
   # Plotly cannot translate repel labels; point hover replaces them on screen.
   plot$layers <- Filter(function(layer) !inherits(layer$geom, "GeomTextRepel"), plot$layers)
   plot$layers <- lapply(plot$layers, function(layer) {
     if (!inherits(layer$geom, "GeomPoint")) return(layer)
-    rows <- if (is.data.frame(layer$data)) layer$data else plot$data
-    if (!is.data.frame(rows) || !nrow(rows)) return(layer)
-    rows <- as.data.frame(rows)
     fields <- c(
       marker = "Marker", marker_1 = "Marker 1", marker_2 = "Marker 2",
       target = "Target", reference = "Reference", celltype = "Cell type",
       difference = "Abundance difference", diff_median = "Median difference",
       p = "P value", p_adj = "Adjusted P value"
     )
-    fields <- fields[names(fields) %in% names(rows)]
-    rows$.volcano_hover <- Reduce(function(a, b) paste(a, b, sep = "<br>"),
-      lapply(names(fields), function(name) {
-        value <- rows[[name]]
-        if (is.numeric(value)) value <- signif(value, 5)
-        paste0(fields[[name]], ": ", htmltools::htmlEscape(as.character(value)))
-      }))
-    mapping <- layer$mapping
-    mapping$text <- ggplot2::aes(text = .volcano_hover)$text
-    # Clone the layer so the original ggplot and its SVG export stay untouched.
-    ggplot2::ggproto(NULL, layer, data = rows, mapping = mapping)
+    report_interactive_layer(layer, plot$data, fields)
   })
-  plotly::ggplotly(plot, tooltip = "text") |>
+  plotly::ggplotly(plot, tooltip = "text", source = source) |>
+    plotly::event_register("plotly_click") |>
+    plotly::layout(dragmode = "zoom", hovermode = "closest") |>
+    plotly::config(scrollZoom = TRUE, displayModeBar = TRUE,
+                   displaylogo = FALSE, doubleClick = "reset")
+}
+
+report_spatial_plotly <- function(plot, source = "A") {
+  fields <- c(
+    marker_1 = "Marker 1", marker_2 = "Marker 2", donor = "Donor",
+    celltype = "Cell type", panel = "Condition / comparison",
+    value = if (is.null(plot$labels$fill)) "Stored value" else plot$labels$fill,
+    p_adj = "Adjusted P value", status = "Availability", pct_detected = "Fraction detected"
+  )
+  # Empty tile layers cannot be translated by ggplotly.
+  plot$layers <- Filter(function(layer) {
+    !(inherits(layer$geom, "GeomTile") && is.data.frame(layer$data) && !nrow(layer$data))
+  }, plot$layers)
+  plot$layers <- lapply(plot$layers, function(layer) {
+    if (inherits(layer$geom, "GeomLabel")) {
+      return(ggplot2::ggproto(NULL, layer, geom = ggplot2::GeomText))
+    }
+    if (!inherits(layer$geom, c("GeomPoint", "GeomTile"))) return(layer)
+    report_interactive_layer(layer, plot$data, fields)
+  })
+  plotly::ggplotly(plot, tooltip = "text", source = source) |>
+    plotly::event_register("plotly_click") |>
     plotly::layout(dragmode = "zoom", hovermode = "closest") |>
     plotly::config(scrollZoom = TRUE, displayModeBar = TRUE,
                    displaylogo = FALSE, doubleClick = "reset")

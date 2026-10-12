@@ -7,6 +7,7 @@ for (file in c("proximity_store.R", "hybrid_analysis.R", "hybrid_jobs.R", "hybri
 }
 if (file.exists(file.path("..", "..", "R", "precomputed_module.R"))) {
   source(file.path("..", "..", "R", "precomputed_module.R"))
+  source(file.path("..", "..", "R", "precomputed_ui.R"))
 }
 
 precomputed_fixture <- function() {

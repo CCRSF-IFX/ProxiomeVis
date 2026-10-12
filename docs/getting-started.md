@@ -45,7 +45,8 @@ Rscript --vanilla scripts/prepare_hybrid_bundle.R \
 
 Only graph preparation is restricted by this list; the analysis bundle and
 proximity sidecar still cover the dataset. **Cell 3D** shows prepared-cell
-coverage and offers only available assets. Rerunning with additional cells
+coverage; ranked cells without an asset are labeled and cannot be displayed.
+Rerunning with additional cells
 atomically rewrites each affected sample file with the union of old and new
 cells and updates the graph index. Previously prepared cells are retained. Run
 preparers sequentially, not concurrently against the same directory. Omit the
@@ -79,16 +80,45 @@ the Shiny R environment. No runtime PXL mount is required.
 
 The app loads the configured RDS once and does not expose a visitor-selectable
 server path. For trusted local administration only, set
-`PROXIOME_ALLOW_LOCAL_LOAD=true` before startup to show the path field. Never
+`PROXIOME_ALLOW_LOCAL_LOAD=true` before startup to show the path field inside
+the upper-right **Dataset** panel. Never
 enable that setting on a public deployment.
 
 ## 4. Explore or run a new comparison
 
-Donor, comparison, cell-type, and marker controls filter stored rows. They do
-not trigger a new statistical test or rebuild an aggregate in the report tabs.
-The combined two-donor tables are descriptive and have no p-values.
-Donor-specific volcanoes reproduce stored exploratory component-level tests;
-they do not provide population-level donor inference.
+Use the top navigation for **Overview / QC**, **Embeddings**, **Precomputed
+results**, **Custom analysis**, and **Cell 3D**. Open **Dataset** at the upper
+right for the active bundle and configured sidecars.
+
+In **Precomputed results**, choose one donor, cell type, comparison, and readout
+once. A single-donor dataset shows a fixed donor label instead of a redundant
+dropdown. The shared selection persists across these subtabs:
+
+- **Summary:** stored differential-effect heatmap, optionally across all cell
+  types; the original abundance heatmap is available in a collapsed section.
+- **Volcano:** donor-specific stored test with hover, feature selection, and zoom.
+- **Spatial matrix:** interactive self-proximity and colocalization together,
+  with condition-profile and differential-effect views.
+- **Tables & methods:** searchable results, sample support,
+  original method settings, and CSV downloads.
+
+Volcano and spatial views need one cell type; they do not silently substitute
+one when **All cell types (summary)** is selected. Controls select stored rows,
+never rerun a test. Positive effects mean target minus reference. Stored
+component-level P values are exploratory within one donor, not population-level
+treatment inference. Spatial condition means are not the group medians used
+for stored differential effects.
+
+Click a plot feature or result-table row to update the shared selected-feature
+panel. Self-pairs and reversed marker pairs refer to the same feature. Condition
+values appear only when they were actually stored. **Explore cells in 3D**
+transfers the donor, cell type, and pair without loading a graph.
+
+FDR and search controls filter tables and their **Filtered table CSV** downloads.
+**All stored rows CSV** retains every stored row in the chosen scope, ignoring
+those filters. Report plots and **Original report SVG** retain the original
+thresholds; heatmap controls change only the summary display. Hidden plots are
+not rendered until needed, and precomputed views require no sidecar reads.
 
 Use **Custom analysis** for a new selected-cell comparison: choose one donor,
 one cell type, two conditions and markers; optionally lasso cells in the embedding;
@@ -99,7 +129,8 @@ spatial reanalysis, not the report viewer.
 
 Use **Cell 3D** to rank cells within donor, cell type, and condition by two markers'
 observed log2 ratio (self-pairs allowed; pair order does not matter).
-Choose a ranked cell and one highlight marker, then click **Display** to load it.
+After a feature handoff, choose a condition from the comparison and one highlight
+marker. Choose a ranked cell, then click **Display** to load it.
 Changing controls does not update the displayed graph until Display is clicked. Rotate,
 zoom, hover, and export its nodes and provenance. The view is nodes only, and all
 nodes remain visible unless the cell exceeds the 200,000-node limit. Coverage is
