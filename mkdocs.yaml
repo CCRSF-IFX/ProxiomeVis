@@ -2,8 +2,8 @@
 site_name: ProxiomeVis Documentation
 site_author: CCRSF-IFX
 site_description: >-
-  ProxiomeVis R is a Shiny report for annotated Pixelgen data and frozen
-  abundance, self-proximity, and colocalization results.
+  ProxiomeVis R is a Shiny app for frozen Pixelgen reports, bounded background
+  comparisons, and prepared cell-level 3D graphs.
 
 # Repository
 repo_name: CCRSF-IFX/ProxiomeVis
@@ -25,4 +25,5 @@ nav:
   - Overview: index.md
   - Getting started: getting-started.md
   - Precomputed results: precomputed-results.md
+  - Hybrid analysis: hybrid-analysis.md
   - Troubleshooting: troubleshooting.md

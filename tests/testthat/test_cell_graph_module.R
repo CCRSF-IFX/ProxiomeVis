@@ -1,0 +1,164 @@
+cell_graph_module_fixture <- function() {
+  skip_if_not_installed("arrow")
+  skip_if_not_installed("dplyr")
+  root <- withr::local_tempdir(.local_envir = parent.frame())
+  directory <- file.path(root, "graphs")
+  dir.create(directory)
+  data <- precomputed_app_data(precomputed_fixture())
+  data$bundle_path <- file.path(root, "analysis.rds")
+  data$assets <- list(graphs = list(path = "graphs", index = "index.rds"))
+  data$cell_sources <- data.frame(component = data$metadata$component,
+                                  original_id = paste0("source-", seq_len(nrow(data$metadata))),
+                                  sample_id = data$metadata$sample_id)
+  samples <- lapply(1:2, function(i) {
+    mapping <- data$cell_sources[i, ]
+    nodes <- data.frame(cell_id = mapping$component, node_id = c("node1", "node2"),
+                        x = c(0, 1), y = c(1, 0), z = c(0, 0))
+    nodes$markers <- list(character(), "A")
+    temporary <- tempfile(tmpdir = directory)
+    arrow::write_parquet(nodes, temporary)
+    checksum <- unname(tools::md5sum(temporary))
+    filename <- paste0(checksum, ".parquet")
+    stopifnot(file.rename(temporary, file.path(directory, filename)))
+    data.frame(sample = mapping$sample_id, file = filename, md5 = checksum,
+               size_bytes = file.info(file.path(directory, filename))$size,
+               source_pxl = paste0(mapping$sample_id, ".pxl"),
+               source_pxl_md5 = paste(rep("a", 32), collapse = ""), layout = "wpmds_3d",
+               n_nodes = 2L, n_cells = 1L)
+  })
+  index <- list(schema_version = 2L, dataset_id = data$contract$dataset_id,
+                n_total_cells = nrow(data$metadata), coverage = "selected_cells",
+                cells = data.frame(cell_id = data$cell_sources$component[1:2],
+                  source_cell_id = data$cell_sources$original_id[1:2],
+                  sample = data$cell_sources$sample_id[1:2], n_nodes = 2L),
+                samples = do.call(rbind, samples))
+  index_path <- file.path(directory, "index.rds")
+  saveRDS(index, index_path)
+  list(data = data, index = index, index_path = index_path)
+}
+
+flush_graph_outputs <- function(session) {
+  session$flushReact()
+  for (i in seq_len(3L)) {
+    later::run_now(0)
+    session$flushReact()
+  }
+}
+
+test_that("a report-only dataset and missing graph directory give validation messages without ending the session", {
+  fixture <- cell_graph_module_fixture()
+  report_only <- fixture$data
+  report_only$assets <- NULL
+  current <- shiny::reactiveVal(report_only)
+  shiny::testServer(cell_graph_server, args = list(data = current), {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", cell = "cell1", markers = "A")
+    expect_error(index(), "no prepared 3D assets", class = "shiny.silent.error")
+    expect_error(output$coverage, "no prepared 3D assets", class = "shiny.silent.error")
+    expect_false(session$isClosed())
+    missing <- fixture$data
+    missing$assets$graphs$path <- "absent-graphs"
+    current(missing)
+    session$flushReact()
+    expect_error(index(), class = "shiny.silent.error")
+    expect_false(session$isClosed())
+    current(fixture$data)
+    flush_graph_outputs(session)
+    expect_identical(asset()$cell_id, "cell1")
+    expect_match(output$summary, "2 nodes; wpmds_3d", fixed = TRUE)
+    expect_match(output$summary, "marker identities; nodes only", fixed = TRUE)
+    expect_no_error(output$plot)
+    exported <- utils::read.csv(output$nodes_csv, stringsAsFactors = FALSE)
+    expect_identical(names(exported), c("cell_id", "node_id", "x", "y", "z", "markers"))
+    expect_length(jsonlite::fromJSON(exported$markers[1L]), 0L)
+    expect_identical(jsonlite::fromJSON(exported$markers[2L]), "A")
+    provenance <- jsonlite::read_json(output$provenance_json)
+    expect_equal(provenance$schema_version, 2L)
+    expect_false(any(c("nodes", "counts", "edges") %in% names(provenance)))
+    expect_false(session$isClosed())
+  })
+})
+
+test_that("a forged graph-to-bundle source mapping is rejected and refresh recovers", {
+  fixture <- cell_graph_module_fixture()
+  forged <- fixture$index
+  forged$cells$source_cell_id[1L] <- "different-original-cell"
+  saveRDS(forged, fixture$index_path)
+  current <- shiny::reactiveVal(fixture$data)
+  shiny::testServer(cell_graph_server, args = list(data = current), {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", cell = "cell1", markers = "A")
+    expect_error(index(), "bundle's source cell mapping", class = "shiny.silent.error")
+    expect_false(session$isClosed())
+    saveRDS(fixture$index, fixture$index_path)
+    session$setInputs(refresh = 1L)
+    flush_graph_outputs(session)
+    expect_identical(asset()$source_cell_id, "source-1")
+    expect_no_error(output$plot)
+    expect_false(session$isClosed())
+  })
+})
+
+test_that("oversized graph selection is explained and choosing a smaller cell restores the view", {
+  fixture <- cell_graph_module_fixture()
+  oversized <- fixture$index
+  oversized$cells$n_nodes[1L] <- 200001L
+  oversized$samples$n_nodes[1L] <- 200001L
+  saveRDS(oversized, fixture$index_path)
+  current <- shiny::reactiveVal(fixture$data)
+  shiny::testServer(cell_graph_server, args = list(data = current), {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", cell = "cell1", markers = "A")
+    expect_error(asset(), "size limit", class = "shiny.silent.error")
+    expect_error(output$summary, "no nodes were silently removed", class = "shiny.silent.error")
+    expect_false(session$isClosed())
+    session$setInputs(donor = "D2", cell = "cell2")
+    flush_graph_outputs(session)
+    expect_identical(asset()$cell_id, "cell2")
+    expect_equal(nrow(asset()$nodes), 2L)
+    expect_match(output$summary, "2 nodes; wpmds_3d", fixed = TRUE)
+    expect_no_error(output$plot)
+    expect_false(session$isClosed())
+  })
+})
+
+test_that("graph source hashes match the frozen inventory without reading any PXL file", {
+  fixture <- cell_graph_module_fixture()
+  fixture$data$contract$proximity_source$pxl_manifest <- data.frame(
+    sample_alias = rev(fixture$index$samples$sample),
+    pxl_md5 = rev(fixture$index$samples$source_pxl_md5),
+    pxl_file = "/unmounted/no-runtime-access.pxl")
+  current <- shiny::reactiveVal(fixture$data)
+  shiny::testServer(cell_graph_server, args = list(data = current), {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", cell = "cell1", markers = "A")
+    expect_identical(asset()$cell_id, "cell1")
+    expect_no_error(index())
+    changed <- fixture$data
+    changed$contract$proximity_source$pxl_manifest$pxl_md5[1L] <- paste(rep("b", 32), collapse = "")
+    current(changed)
+    session$flushReact()
+    expect_error(index(), "frozen PXL source checksums", class = "shiny.silent.error")
+    expect_error(asset(), "frozen PXL source checksums", class = "shiny.silent.error")
+    expect_false(session$isClosed())
+    current(fixture$data)
+    flush_graph_outputs(session)
+    expect_identical(asset()$cell_id, "cell1")
+    expect_no_error(output$plot)
+  })
+})
+
+test_that("missing or duplicate expected graph sources fail closed", {
+  fixture <- cell_graph_module_fixture()
+  inventory <- data.frame(sample_alias = fixture$index$samples$sample,
+                          pxl_md5 = fixture$index$samples$source_pxl_md5)
+  current <- shiny::reactiveVal(fixture$data)
+  shiny::testServer(cell_graph_server, args = list(data = current), {
+    session$setInputs(cell = "cell1", markers = "A")
+    for (invalid in list(inventory[-1L, ], rbind(inventory, inventory[1L, ]),
+                         inventory["sample_alias"], transform(inventory, pxl_md5 = NA_character_))) {
+      changed <- fixture$data
+      changed$contract$proximity_source$pxl_manifest <- invalid
+      current(changed)
+      session$flushReact()
+      expect_error(index(), "frozen PXL source", class = "shiny.silent.error")
+      expect_false(session$isClosed())
+    }
+  })
+})

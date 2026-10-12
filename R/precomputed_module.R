@@ -836,14 +836,10 @@ precomputed_download_group <- function(...) {
 }
 
 precomputed_metric_card <- function(label, output_id) {
-  shiny::div(
-    class = "col-6 col-lg-3 mb-3",
-    bslib::card(
-      class = "h-100",
-      bslib::card_body(
-        shiny::tags$div(class = "text-muted small text-uppercase", label),
-        shiny::tags$div(class = "fs-3 fw-semibold", shiny::textOutput(output_id, inline = TRUE))
-      )
+  bslib::card(
+    bslib::card_body(
+      shiny::tags$div(class = "text-muted small text-uppercase", label),
+      shiny::tags$div(class = "fs-3 fw-semibold", shiny::textOutput(output_id, inline = TRUE))
     )
   )
 }
@@ -851,33 +847,27 @@ precomputed_metric_card <- function(label, output_id) {
 precomputed_ui <- function(id) {
   ns <- shiny::NS(id)
 
-  bslib::navset_card_underline(
+  bslib::navset_underline(
     id = ns("report_page"),
-    full_screen = TRUE,
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
-      shiny::div(
-        class = "row",
+      bslib::layout_column_wrap(
+        width = "180px", fill = FALSE,
         precomputed_metric_card("Cells", ns("metric_cells")),
         precomputed_metric_card("Samples", ns("metric_samples")),
         precomputed_metric_card("Donors", ns("metric_donors")),
         precomputed_metric_card("Cell types", ns("metric_celltypes"))
       ),
-      shiny::fluidRow(
-        shiny::column(
-          width = 7,
-          bslib::card(
-            bslib::card_header("QC cell counts"),
-            bslib::card_body(plotly::plotlyOutput(ns("qc_plot"), height = "480px"))
-          )
+      bslib::layout_columns(
+        col_widths = c(7, 5), fill = FALSE,
+        bslib::card(full_screen = TRUE,
+          bslib::card_header("QC cell counts"),
+          bslib::card_body(plotly::plotlyOutput(ns("qc_plot"), height = "480px"))
         ),
-        shiny::column(
-          width = 5,
-          bslib::card(
-            bslib::card_header("QC table"),
-            bslib::card_body(DT::DTOutput(ns("qc_table")))
-          )
+        bslib::card(full_screen = TRUE,
+          bslib::card_header("QC table"),
+          bslib::card_body(DT::DTOutput(ns("qc_table")))
         )
       ),
       bslib::card(
@@ -921,10 +911,9 @@ precomputed_ui <- function(id) {
             "Embedding colors are display annotations or normalized abundance from the loaded RDS; no spatial file is read."
           )
         ),
-        shiny::fluidRow(
-          shiny::column(
-            width = 6,
-            bslib::card(
+        bslib::layout_columns(
+          col_widths = c(6, 6), fill = FALSE,
+            bslib::card(full_screen = TRUE,
               bslib::card_header("UMAP / annotation embedding"),
               bslib::card_body(
                 precomputed_download_group(
@@ -932,11 +921,8 @@ precomputed_ui <- function(id) {
                 ),
                 plotly::plotlyOutput(ns("umap_plot"), height = "620px")
               )
-            )
-          ),
-          shiny::column(
-            width = 6,
-            bslib::card(
+            ),
+            bslib::card(full_screen = TRUE,
               bslib::card_header("PCA embedding"),
               bslib::card_body(
                 precomputed_download_group(
@@ -945,7 +931,6 @@ precomputed_ui <- function(id) {
                 plotly::plotlyOutput(ns("pca_plot"), height = "620px")
               )
             )
-          )
         )
       )
     ),
@@ -976,7 +961,7 @@ precomputed_ui <- function(id) {
           )
         ),
         shiny::uiOutput(ns("result_summary")),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           bslib::card_header("Differential-effect heatmap"),
           bslib::card_body(
             precomputed_download_group(
@@ -986,7 +971,7 @@ precomputed_ui <- function(id) {
             plotly::plotlyOutput(ns("effect_heatmap"), height = "720px")
           )
         ),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           class = "mt-3",
           bslib::card_header("Selected-feature detail"),
           bslib::card_body(
@@ -997,6 +982,7 @@ precomputed_ui <- function(id) {
           )
         ),
         bslib::navset_card_tab(
+          full_screen = TRUE,
           id = ns("result_tables"),
           bslib::nav_panel("Results", DT::DTOutput(ns("results_table"))),
           bslib::nav_panel(
@@ -1033,7 +1019,7 @@ precomputed_ui <- function(id) {
             "The volcano and P values are the original stored result for one donor; they are not donor-population inference. The cutoff affects the table only."
           )
         ),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           bslib::card_header("Original report volcano"),
           bslib::card_body(
             precomputed_download_group(
@@ -1045,12 +1031,12 @@ precomputed_ui <- function(id) {
             plotly::plotlyOutput(ns("report_volcano_plot"), height = "720px")
           )
         ),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           class = "mt-3",
           bslib::card_header("Stored component-level results"),
           bslib::card_body(DT::DTOutput(ns("report_volcano_table")))
         ),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           class = "mt-3",
           bslib::card_header("Original abundance heatmap"),
           bslib::card_body(
@@ -1082,7 +1068,7 @@ precomputed_ui <- function(id) {
             "Marker order and color/size scales come from the frozen report alignment bundle; the app does not recalculate proximity."
           )
         ),
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           bslib::card_header("Original spatial report view"),
           bslib::card_body(
             precomputed_download_group(
@@ -1092,17 +1078,23 @@ precomputed_ui <- function(id) {
           )
         )
       )
-    )
+    ),
+    bslib::nav_panel("Custom analysis", hybrid_analysis_ui(ns("analysis"))),
+    bslib::nav_panel("Cell 3D", cell_graph_ui(ns("graph")))
   )
 }
 
-precomputed_server <- function(id, data) {
+precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(), code_dir = "R") {
   shiny::moduleServer(id, function(input, output, session) {
     current_data <- shiny::reactive({
       value <- data()
       shiny::req(value, value$contract, value$metadata, value$embeddings)
       value
     })
+    hybrid_analysis_server("analysis", current_data, job_manager, code_dir,
+      active = shiny::reactive(identical(input$report_page, "Custom analysis")))
+    cell_graph_server("graph", current_data,
+      active = shiny::reactive(identical(input$report_page, "Cell 3D")))
 
     readout_tables <- shiny::reactive({
       value <- current_data()

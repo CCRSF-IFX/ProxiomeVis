@@ -1,21 +1,27 @@
 # ProxiomeVis
 
-ProxiomeVis is an R Shiny app for viewing frozen Pixelgen proxiome results.
-The expensive proximity analysis is completed before the app starts; the app
-filters and plots compact tables stored in a prepared RDS file.
+ProxiomeVis is an R Shiny app for exploring Pixelgen proxiome data. It combines
+frozen report views with bounded, background differential analysis on selected
+cells and an on-demand 3D cell graph viewer. Expensive proximity scoring and
+graph preparation happen upstream; no runtime view or test opens PXL files.
 
-This mode is intentionally read-only. It does not recalculate proximity scores,
-run tests on selected cells, or require the original PXL files at runtime.
+The default viewer loads a compact, versioned plain-R bundle. Optional sidecar
+files supply observed cell-level scores and per-sample 3D node tables without
+loading those whole datasets into each Shiny session. New exploratory results
+never replace the frozen report results.
 
 ## Requirements
 
-- R with `SeuratObject`, `Matrix`, `pixelatorR`, `shiny`, `bslib`, `ggplot2`,
+- Viewer: R with `Matrix`, `shiny`, `bslib`, `ggplot2`,
   `plotly`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`,
-  `pheatmap`, and `yaml`
-- a prepared RDS following the [precomputed-results contract](docs/precomputed-results.md)
+  `pheatmap`, `yaml`, `callr`, `promises`, `later`, and `digest`
+- Analysis worker: additionally `SeuratObject`, `Seurat`, `pixelatorR`, `arrow`,
+  and `dplyr`; preparation also needs `DBI` and `duckdb`
+- Cell 3D: additionally `arrow` and `dplyr` to query prepared node tables
+- A trusted application bundle; legacy Seurat RDS inputs remain supported
 
-`pixelatorR` must be installed even though the app does not query PXL files:
-the saved Seurat object contains custom PNA classes defined by that package.
+Plain application bundles do not require Seurat or pixelatorR to open.
+Legacy PNA/Seurat RDS inputs still need their class-defining packages.
 
 ## Prepare the RDS
 
@@ -29,11 +35,27 @@ Rscript --vanilla scripts/prepare_precomputed_rds.R \
   output/proxiomevis_demo_v1.rds
 ```
 
-For this repository, the conventional output path is:
+Then prepare the compact application bundle and its sidecars:
 
-```text
-output/proxiomevis_demo_v1.rds
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
+  Rscript --vanilla scripts/prepare_hybrid_bundle.R \
+  output/proxiomevis_demo_v1.rds output/hybrid_demo
 ```
+
+The result is `output/hybrid_demo/analysis.rds`, `proximity/` (partitioned
+Parquet), and `graphs/` (one node-only Parquet file per prepared sample plus a
+version 2 `index.rds`). Keep these together
+when deploying. The optional third argument overrides the source PXL directory;
+a fourth argument lists selected graph cells, one exact ID per line. This limits
+only 3D preparation, not the reports or proximity data. See
+[Getting started](docs/getting-started.md#2-prepare-the-hybrid-application-bundle).
+Rerunning validates completed sample files and preserves their prepared cells.
+Adding cells rewrites the affected sample file atomically with the union of
+previously prepared and newly requested cells. Do not run two preparers against
+the same output directory concurrently. Version 1 per-cell graph exports must
+be rebuilt in a new directory; they are not automatically migrated or deleted.
+The legacy precomputed RDS alone still supports all existing report views.
 
 `output/` is intentionally gitignored. Build the artifact on the deployment
 host or copy it there through the project's controlled data-delivery process;
@@ -53,11 +75,12 @@ object and tertiary results there and writes only the requested `OUTPUT_RDS`.
 
 ## Run the app
 
-By default, the app reads `output/proxiomevis_demo_v1.rds`. To use a
+By default, the app reads `output/hybrid_demo/analysis.rds` when present,
+otherwise `output/proxiomevis_demo_v1.rds`. To use a
 different trusted server-local file, set `PROXIOME_PRECOMPUTED_RDS`:
 
 ```bash
-export PROXIOME_PRECOMPUTED_RDS=/absolute/path/to/proxiomevis_demo_v1.rds
+export PROXIOME_PRECOMPUTED_RDS=/absolute/path/to/hybrid_demo/analysis.rds
 Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
 ```
 
@@ -65,7 +88,7 @@ The repository workspace also provides an isolated R executable. Limit BLAS
 threads when using it on a shared host:
 
 ```bash
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
   ../.pixi/envs/r/bin/Rscript --vanilla \
   -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
 ```
@@ -73,7 +96,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
 Then open `http://127.0.0.1:3838` from the same machine, or use the secure
 proxy provided by the deployment environment.
 
-The donor and cell-type controls filter results that were already computed.
+In the report tabs, donor and cell-type controls filter results already computed.
 They do not recompute a multi-donor aggregate for an arbitrary subset. This
 dataset contains two donors, so the combined donor-matched results are
 descriptive and have no p-values. Donor-specific report volcanoes retain the
@@ -87,6 +110,25 @@ Plotly toolbar to pan/reset. Hover replaces repelled labels on screen; the
 Volcano SVG download retains the original labeled report plot. Spatial report
 and abundance heatmaps remain static.
 
+**Custom analysis:** choose one donor, one cell type, two conditions, and markers.
+Optionally select cells using the embedding lasso/box or searchable cell selector.
+Confirm the exploratory-analysis notice, then run. The separate R worker allows
+continued navigation and can be cancelled. Results and JSON provenance record
+the submitted cell groups, feature family, bundle checksum, methods, and software.
+Changing controls does not change the completed result until another run.
+
+**Cell 3D:** choose a prepared cell and up to three marker highlights. All nodes
+remain visible. The node-only sidecar stores coordinates and marker identities,
+not edges or marker counts. Rotate, zoom, hover, and export the selected cell's
+nodes and provenance. These are abstract graph-layout coordinates, not measured
+physical distances; shared-node highlights are not a statistical colocalization
+test. The viewer refuses cells above 200,000 nodes without silently downsampling.
+Prepared coverage is shown explicitly. The first access to a sample may checksum
+its whole file; later cell selections reuse validation and query matching
+Parquet row groups rather than load the sample into R.
+
+See [Hybrid analysis](docs/hybrid-analysis.md) for methods, data schemas, and limits.
+
 ## Data handling
 
 Use RDS paths that are trusted and already visible to the R process. `readRDS()`
@@ -99,8 +141,14 @@ can enable it before startup with `PROXIOME_ALLOW_LOCAL_LOAD=true`. Never enable
 that flag on a public deployment: it lets a visitor request any RDS path that
 the Shiny process can read.
 
-Because the prepared RDS contains all runtime readouts, the server does not
-need the large PXL files mounted in this mode.
+The deployed bundle and sidecars need no PXL mount. Keep them read-only and
+replace datasets atomically; requests are pinned to the bundle loaded by the UI.
+Each Shiny R process permits one analysis worker and rejects overlapping work
+with a retry message. Jobs are limited to 120 seconds, 2,000 cells, 160 markers,
+1,000 pairs, and 1 million collected score rows. These are work limits, not an
+OS memory guarantee; set deployment-level CPU/RAM quotas too. Multiple Shiny R
+processes each have their own worker limit. Results are session-local; there is
+no shared result cache or durable multi-server job queue.
 
 ## Tests
 
@@ -108,8 +156,18 @@ need the large PXL files mounted in this mode.
 Rscript --vanilla tests/testthat.R
 ```
 
-The unit-test fixture uses `SeuratObject` only and does not download or open a
-real PXL file.
+Tests use synthetic Seurat inputs, small locally generated PXL-like databases,
+and actual isolated R subprocesses; no source demo download is required. Install
+the worker/preparation dependencies to exercise the full suite.
+
+With the prepared demo app and Chromium CDP on port 9223:
+
+```bash
+node tests/browser_smoke.mjs
+node tests/browser_hybrid_smoke.mjs
+```
+
+The 3D browser check needs WebGL (software rendering is sufficient).
 
 ## Python implementation
 

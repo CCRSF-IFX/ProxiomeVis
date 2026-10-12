@@ -1,7 +1,7 @@
 # ProxiomeVis R
 
-ProxiomeVis is an R Shiny report for processed Pixelgen data. It combines the
-annotated Seurat object from the demo CCA analysis with frozen abundance,
+ProxiomeVis is an R Shiny explorer for processed Pixelgen data. It combines
+prepared cell annotations and embeddings with frozen abundance,
 self-proximity, and colocalization results from the tertiary analysis.
 
 The app provides:
@@ -10,11 +10,16 @@ The app provides:
 - interactive embeddings colored by annotation or marker abundance;
 - per-sample summaries, donor-specific contrasts, and stored cross-donor
   descriptive effects for the three readouts;
-- downloadable tables for the currently displayed stored results.
+- downloadable tables for the currently displayed stored results;
+- bounded background comparisons on selected cells within one donor/cell type;
+- on-demand, node-only 3D cell views with marker-identity highlights.
 
 The app does not open PXL files or recalculate proximity scores. A preparation
-script builds one versioned runtime RDS, and every Shiny session reads that
-prepared file.
+workflow builds a compact plain-R bundle and optional disk-backed proximity and
+graph sidecars. Sessions share the startup bundle read-only within each R process;
+analysis workers load only a bounded selection of observed scores. The graph
+sidecar uses one Parquet file per sample and a version 2 index. Arrow selects one
+cell's nodes for viewing; no edges or marker-count matrices are stored there.
 
 ## Interpretation boundary
 
@@ -25,5 +30,5 @@ tertiary analysis; Shiny does not recalculate them. Cells are not independent
 biological replicates.
 
 Start with [Getting started](getting-started.md), then review the
-[precomputed-results contract](precomputed-results.md) before preparing a new
-dataset.
+[precomputed-results contract](precomputed-results.md) and
+[hybrid analysis guide](hybrid-analysis.md) before preparing a new dataset.

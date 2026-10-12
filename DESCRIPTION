@@ -1,19 +1,18 @@
 Package: ProxiomeVis
 Type: Project
-Title: Precomputed Pixelgen Results in R Shiny
+Title: Pixelgen Results and Bounded Exploration in R Shiny
 Version: 0.1.0
-Description: Interactive report views for processed Seurat objects with a
-    versioned ProxiomeVis precomputed analysis contract.
+Description: Interactive report views, bounded background differential analysis,
+    and prepared cell graphs from versioned ProxiomeVis application bundles.
 Encoding: UTF-8
 Depends: R (>= 4.3.0)
 Imports:
-    shiny (>= 1.8.0),
+    shiny (>= 1.8.1),
     bslib (>= 0.8.0),
     ggplot2,
     plotly,
     htmltools,
     DT,
-    SeuratObject (>= 5.0.0),
     Matrix,
     jsonlite,
     data.table,
@@ -21,8 +20,18 @@ Imports:
     scales,
     tibble,
     pheatmap,
-    yaml
+    yaml,
+    callr,
+    promises,
+    later,
+    digest
 Suggests:
+    SeuratObject (>= 5.0.0),
+    Seurat,
     pixelatorR,
+    arrow,
+    dplyr,
+    DBI,
+    duckdb,
     testthat (>= 3.0.0),
     withr

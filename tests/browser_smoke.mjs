@@ -124,6 +124,7 @@ try {
     await waitFor(`(() => { const r = document.getElementById('report-report_volcano_plot').layout.xaxis.range; return r[1] - r[0] < ${before[1] - before[0]}; })()`);
     await evaluate("document.querySelector('#report-report_volcano_plot [data-title=\"Reset axes\"]').click()");
     await waitFor(`Math.abs(document.getElementById('report-report_volcano_plot').layout.xaxis.range[0] - ${before[0]}) < 1e-6`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
     await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: box.x, y: box.y, deltaX: 0, deltaY: -100 });
     await waitFor(`(() => { const r = document.getElementById('report-report_volcano_plot').layout.xaxis.range; return r[1] - r[0] < ${before[1] - before[0]}; })()`);
     await download('download_report_volcano_svg', /<svg/);

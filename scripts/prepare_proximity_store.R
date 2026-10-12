@@ -1,0 +1,10 @@
+#!/usr/bin/env Rscript
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2L) stop("Usage: Rscript scripts/prepare_proximity_store.R analysis.rds output/proximity")
+script <- sub("^--file=", "", grep("^--file=", commandArgs(), value = TRUE)[1L])
+root <- dirname(dirname(normalizePath(script, mustWork = TRUE)))
+source(file.path(root, "R", "precomputed_contract.R"))
+source(file.path(root, "R", "proximity_store.R"))
+data <- read_precomputed_rds(args[[1L]])
+manifest <- prepare_proximity_store(data, data$contract$proximity_source$pxl_by_sample, args[[2L]])
+message("Prepared ", sum(manifest$partitions$rows), " observed proximity rows across ", nrow(manifest$partitions), " sample partitions.")

@@ -1,6 +1,10 @@
 source(file.path("..", "..", "R", "precomputed_contract.R"))
 source(file.path("..", "..", "R", "report_plot_sources.R"))
 source(file.path("..", "..", "R", "report_plots.R"))
+for (file in c("proximity_store.R", "hybrid_analysis.R", "hybrid_jobs.R", "hybrid_module.R",
+               "cell_graph_assets.R", "cell_graph_module.R")) {
+  source(file.path("..", "..", "R", file))
+}
 if (file.exists(file.path("..", "..", "R", "precomputed_module.R"))) {
   source(file.path("..", "..", "R", "precomputed_module.R"))
 }
