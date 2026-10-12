@@ -80,6 +80,39 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
       bslib::navset_underline(
         id = ns("results_view"),
         bslib::nav_panel(
+          "Tables",
+          shiny::uiOutput(ns("fdr_controls")),
+          shiny::tags$p(class = "small text-muted",
+            "Table filters and searches affect only tables and filtered CSV downloads. All stored rows exports ignore those filters. Click a result row to select its feature."),
+          bslib::navset_card_tab(
+            full_screen = TRUE, id = ns("result_tables"),
+            bslib::nav_panel(
+              "Results",
+              precomputed_download_group(
+                shiny::downloadButton(ns("download_filtered_results_csv"), "Filtered table CSV", class = "btn-sm btn-outline-primary"),
+                shiny::downloadButton(ns("download_results_csv"), "All stored rows CSV", class = "btn-sm btn-outline-primary")
+              ),
+              DT::DTOutput(ns("results_table"))
+            ),
+            bslib::nav_panel(
+              "Volcano rows",
+              precomputed_download_group(
+                shiny::downloadButton(ns("download_filtered_report_csv"), "Filtered volcano table CSV", class = "btn-sm btn-outline-primary")
+              ),
+              DT::DTOutput(ns("report_volcano_table"))
+            ),
+            bslib::nav_panel(
+              "Sample support",
+              precomputed_download_group(
+                shiny::downloadButton(ns("download_samples_csv"), "Sample support CSV", class = "btn-sm btn-outline-primary")
+              ),
+              DT::DTOutput(ns("samples_table"))
+            )
+          ),
+          bslib::accordion(bslib::accordion_panel("Statistical methods and original thresholds",
+            shiny::uiOutput(ns("methods_ui"))), open = FALSE, class = "mt-3")
+        ),
+        bslib::nav_panel(
           "Summary",
           bslib::layout_column_wrap(
             width = "220px", fill = FALSE,
@@ -147,39 +180,6 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
           )
         ),
-        bslib::nav_panel(
-          "Tables & methods",
-          shiny::uiOutput(ns("fdr_controls")),
-          shiny::tags$p(class = "small text-muted",
-            "Table filters and searches affect only tables and filtered CSV downloads. All stored rows exports ignore those filters. Click a result row to select its feature."),
-          bslib::navset_card_tab(
-            full_screen = TRUE, id = ns("result_tables"),
-            bslib::nav_panel(
-              "Results",
-              precomputed_download_group(
-                shiny::downloadButton(ns("download_filtered_results_csv"), "Filtered table CSV", class = "btn-sm btn-outline-primary"),
-                shiny::downloadButton(ns("download_results_csv"), "All stored rows CSV", class = "btn-sm btn-outline-primary")
-              ),
-              DT::DTOutput(ns("results_table"))
-            ),
-            bslib::nav_panel(
-              "Volcano rows",
-              precomputed_download_group(
-                shiny::downloadButton(ns("download_filtered_report_csv"), "Filtered volcano table CSV", class = "btn-sm btn-outline-primary")
-              ),
-              DT::DTOutput(ns("report_volcano_table"))
-            ),
-            bslib::nav_panel(
-              "Sample support",
-              precomputed_download_group(
-                shiny::downloadButton(ns("download_samples_csv"), "Sample support CSV", class = "btn-sm btn-outline-primary")
-              ),
-              DT::DTOutput(ns("samples_table"))
-            )
-          ),
-          bslib::accordion(bslib::accordion_panel("Statistical methods and original thresholds",
-            shiny::uiOutput(ns("methods_ui"))), open = FALSE, class = "mt-3")
-        )
       ),
       bslib::card(full_screen = TRUE,
         class = "mt-3", bslib::card_header("Selected feature — shared across views"),
