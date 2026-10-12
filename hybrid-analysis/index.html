@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Hybrid analysis - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Hybrid analysis";
+        var mkdocs_page_input_path = "hybrid-analysis.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../precomputed-results/">Precomputed results</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Hybrid analysis</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#running-a-new-comparison">Running a new comparison</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#methods-and-interpretation">Methods and interpretation</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#missing-scores-and-filtering">Missing scores and filtering</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#application-bundle-and-sidecar-schemas">Application bundle and sidecar schemas</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#proximity-sidecar">Proximity sidecar</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#node-only-3d-sidecar">Node-only 3D sidecar</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#dependencies-and-preparation">Dependencies and preparation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#renderer-comparison-2026-10-12">Renderer comparison (2026-10-12)</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../troubleshooting/">Troubleshooting</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Hybrid analysis</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/r_version/docs/hybrid-analysis.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="prepared-reports-and-new-exploratory-analyses">Prepared reports and new exploratory analyses</h1>
+<p>The application separates three operations: viewing frozen results, submitting
+a bounded new comparison to an R worker, and opening prepared cell graphs.
+Viewing or filtering a report never changes its stored statistics. Runtime
+analysis reads a prepared proximity sidecar, not PXL files.</p>
+<h2 id="running-a-new-comparison">Running a new comparison</h2>
+<p>Open the exploratory-analysis tab, choose one donor, one cell type, two distinct
+conditions, a readout, and the markers to test. Use all cells in that scope, or
+select a subset using the embedding's lasso/box tools or the cell selector. The
+selected conditions assign cells to target and reference groups; cells cannot
+belong to both. The displayed counts update before submission.</p>
+<p>Confirm the exploratory-analysis notice and click <strong>Run comparison</strong>. An R
+process performs the test while the reports remain usable. Changing controls
+does not rerun a test. The result identifies the submitted scope; downloads
+include the results CSV and JSON provenance with the exact selected cell IDs.
+The volcano supports hover, box/scroll zoom, and double-click reset. The results
+table also includes requested features that could not be tested.</p>
+<p>Only one background analysis runs at a time per application process. The server
+limits each request to 2,000 cells, 160 markers, 1,000 unordered non-self pairs,
+and 1,000,000 retained score rows, with a 120-second timeout. Colocalization tests
+all combinations of the chosen markers: 45 markers produce 990 pairs; 46 exceed
+the cap. Oversized selections are rejected, not silently downsampled. Cancel a
+running job or narrow the cells/markers if it exceeds a limit.</p>
+<h2 id="methods-and-interpretation">Methods and interpretation</h2>
+<table>
+<thead>
+<tr>
+<th>Readout</th>
+<th>Effect: target minus reference</th>
+<th>Test and minimum support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Abundance</td>
+<td>Mean stored normalized abundance</td>
+<td><code>pixelatorR::RunDAA</code>, using Seurat's two-sided Wilcoxon test; at least 3 selected cells per group</td>
+</tr>
+<tr>
+<td>Self-proximity</td>
+<td>Median observed <code>log2_ratio</code> for each marker paired with itself</td>
+<td><code>pixelatorR::DifferentialProximityAnalysis(metric_type = "self")</code>; at least 20 retained observations per marker in each group</td>
+</tr>
+<tr>
+<td>Colocalization</td>
+<td>Median observed <code>log2_ratio</code> for each unordered pair of different markers</td>
+<td><code>pixelatorR::DifferentialProximityAnalysis(metric_type = "co")</code>; at least 40 retained observations per pair in each group</td>
+</tr>
+</tbody>
+</table>
+<p>Abundance uses the bundle's existing transformed layer without renormalization:
+<code>mean_fxn = Matrix::rowMeans</code>, <code>fc_name = "difference"</code>, <code>slot = fc.slot = "data"</code>
+on a temporary assay containing those stored values, <code>min.pct = 0</code>,
+<code>test.use = "wilcox"</code>. <code>RunDAA</code> sets <code>logfc.threshold = 0</code> and applies BH correction
+to the returned marker p-values. The demo layer contains CLR abundance. Three
+cells is the API's testing minimum, not evidence that a small comparison is
+well powered; the original pipeline recommends 20 for abundance.</p>
+<p>Spatial tests use the package's two-sided, tie-corrected rank test with
+continuity correction. The effect is a <strong>difference of median log2 ratios</strong>,
+not the log fold-change in mean abundance. The preparation formula is
+<code>log2(pmax(join_count, 1) / pmax(join_count_expected_mean, 1))</code>.</p>
+<p>BH adjustment is performed separately over the eligible tested features in
+each submitted request. Restricting markers changes this testing family, so
+adjusted p-values can differ from the frozen report even when individual
+effects and raw p-values agree. The app does not recalculate or replace the
+original report's adjustment family.</p>
+<p>These are exploratory comparisons of cells within <strong>one donor</strong>. Cells are not
+independent biological replicates, and the results do not establish an effect
+across donors. Selecting cells using the same markers or an embedding derived
+from them can introduce selection bias. Neither the donor restriction nor a
+small p-value resolves that problem.</p>
+<h2 id="missing-scores-and-filtering">Missing scores and filtering</h2>
+<p>Preparation retains observed cell–pair rows. Before a spatial test, both
+markers must pass the donor's pinned background-fraction threshold, and the
+score must be finite. A missing, filtered-out, or non-finite observation is
+never converted to zero. A measured score of zero remains an observation.</p>
+<p>The demo's threshold is computed from <strong>all prepared cells in that donor</strong> as
+<code>max(median(isotype_fraction) + 2 * mad(isotype_fraction), 0.001)</code>. It is fixed
+during preparation, not recomputed after lasso selection. Both demo donors have
+a cutoff of 0.001. The source pipeline's median/MAD settings are read from its
+stored report configuration. The current preparer supports this isotype mode
+without extra marker-count or pair-count filters; incompatible configurations
+are rejected instead of silently changed.</p>
+<p>Results distinguish <code>n_cells_a/b</code> (all selected cells) from <code>n_scored_a/b</code>
+(retained observations for this particular feature). Spatial eligibility uses
+the latter. Unsupported features have missing statistics and an explicit
+status. Stored spatial report profiles may use a different missing-observation
+summary convention; those means are never used to reconstruct new tests.</p>
+<h2 id="application-bundle-and-sidecar-schemas">Application bundle and sidecar schemas</h2>
+<p>The version 2 application RDS is a plain R list, not a Seurat object:</p>
+<ul>
+<li><code>bundle_version = 2L</code>; <code>contract</code> retains the version 1 frozen-analysis
+  contract, report settings, defaults, QC, and provenance.</li>
+<li><code>metadata</code> and <code>embeddings</code> contain prepared cell annotations and coordinates.</li>
+<li><code>abundance</code> and optional <code>counts</code> are aligned marker-by-cell sparse matrices.
+  Counts are required for new abundance tests and proximity preparation.</li>
+<li><code>cell_sources</code>, when present, maps <code>component</code>, <code>original_id</code>, and <code>sample_id</code>
+  exactly from the original FSMap; IDs are never inferred by stripping prefixes.</li>
+<li><code>assets$proximity = list(path = "proximity", manifest = "manifest.rds")</code>
+  locates the proximity sidecar relative to the bundle directory.</li>
+<li><code>assets$graphs = list(path = "graphs", index = "index.rds")</code> locates the
+  optional node-only 3D sidecar.</li>
+</ul>
+<h3 id="proximity-sidecar">Proximity sidecar</h3>
+<p>The proximity directory contains a version 1 <code>manifest.rds</code> and one Parquet
+partition per sample. Each row contains <code>component</code>, canonical <code>marker_1</code> and
+<code>marker_2</code>, <code>log2_ratio</code>, and <code>min_marker_fraction</code> (the smaller of the two marker
+counts divided by that cell's total count). Storing the minimum is equivalent
+to requiring both marker fractions to pass the same threshold.</p>
+<p>The manifest contains the dataset ID, a fingerprint of metadata, counts,
+cell-ID mapping and filter settings, donor cutoffs, row counts, partition MD5s,
+and source PXL paths/checksums. Preparation verifies source checksums against
+the frozen report inventory and checks that inputs did not change during
+extraction. PXL connections are read-only; SQL exports selected columns/cells
+directly to Parquet without collecting the full proximity table in R.</p>
+<p>The reader validates dataset identity, partition checksums, and paths within
+the bundle directory, then filters cells/markers before collecting at most the
+row limit plus one. File-system traversal and escaping symlinks are rejected.
+The worker also checks the load-time RDS checksum pinned to the user's request,
+so replacing an RDS under the same dataset ID cannot silently run a different
+analysis. RDS inputs and sidecars must still come from trusted preparation.</p>
+<h3 id="node-only-3d-sidecar">Node-only 3D sidecar</h3>
+<p>The graph directory contains one Parquet file per prepared sample and a small
+<code>index.rds</code> with <code>schema_version = 3L</code>. This graph-index version is separate from
+the application bundle version and the frozen-report contract version.</p>
+<p>Parquet contains exactly these columns:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cell_id</code></td>
+<td>Exact current cell ID in the application bundle</td>
+</tr>
+<tr>
+<td><code>x</code>, <code>y</code>, <code>z</code></td>
+<td>Finite prepared 3D graph-layout coordinates</td>
+</tr>
+<tr>
+<td><code>markers</code></td>
+<td>List of marker identities present at that node; no counts</td>
+</tr>
+</tbody>
+</table>
+<p>Source node IDs are used only during preparation to join marker identities and
+reject duplicate layout nodes, then discarded before writing Parquet. Hover
+shows marker identities; node CSV exports contain the same five columns above.
+Keep the source PXL for node-level traceability: exported rows no longer carry
+source node IDs. Existing version 2 Parquet files remain readable; Arrow excludes
+their node-ID column before loading, and the displayed asset uses version 3.</p>
+<p>All source layout nodes are retained, including nodes without a highlighted
+marker. No edges, marker-count matrices, dataset metadata, or repeated source
+provenance are stored in the Parquet rows. The index holds the dataset identity,
+prepared coverage, and two tables:</p>
+<table>
+<thead>
+<tr>
+<th>Index table</th>
+<th>Columns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cells</code></td>
+<td><code>cell_id</code>, <code>source_cell_id</code>, <code>sample</code>, <code>n_nodes</code></td>
+</tr>
+<tr>
+<td><code>samples</code></td>
+<td><code>sample</code>, <code>file</code>, <code>md5</code>, <code>size_bytes</code>, <code>source_pxl</code>, <code>source_pxl_md5</code>, <code>layout</code>, <code>graph_projection</code>, <code>n_nodes</code>, <code>n_cells</code></td>
+</tr>
+</tbody>
+</table>
+<p>The source cell mapping is checked against the bundle's exact FSMap-derived
+mapping. Source PXL checksums are checked against the frozen inventory when it
+is present, without opening the original PXL files. Source/layout provenance is
+stored once in the index and included in the selected cell's JSON export.
+The demo's observed source layout is <code>coarsened_pmds_3d</code> with
+<code>graph_projection = "full"</code>. This corrects the earlier <code>wpmds_3d</code> provenance
+label; preparation preserves the source coordinates rather than recomputing them.</p>
+<p>Runtime queries filter <code>cell_id</code> through Arrow before collecting nodes. Parquet
+row-group pruning avoids collecting the whole sample. The first access to a
+sample may read its entire file to validate the checksum; subsequent selections
+reuse checksum validation for the unchanged file. That initial disk scan is
+different from loading all sample nodes into R. The viewer rejects cells above
+200,000 nodes instead of silently truncating them.</p>
+<p><strong>Cell 3D</strong> uses CRAN <code>threejs</code> for rotation, zoom, hover, one highlight marker, and
+node/provenance downloads. It has no edge display. Highlights represent marker
+identities, not signal counts; shared-node highlights do not constitute a
+statistical colocalization test. Coordinates are abstract graph-layout positions,
+not physical microscopy positions or measured distances.</p>
+<p>The viewer keeps all nodes and uses one common coordinate scale, not separate
+axis stretching. <strong>Reset view</strong> restores the camera; <strong>Save PNG</strong> captures the
+canvas. Switching the highlight for the same cell preserves the camera, while
+changing cells resets it. Old WebGL resources are released on each Display.
+Plotly remains the renderer for embeddings and precomputed results.</p>
+<p><strong>Download rotating GIF</strong> exports the displayed cell/highlight through one full
+turn around the current camera's up axis, without changing the visible camera.
+Expand <strong>Rotating GIF settings</strong> for duration (1–20 whole seconds), frame rate
+(1–30 FPS), and square image size (128–1024 pixels per side). Defaults are
+6 seconds, 15 FPS, and 600 × 600 pixels. GIF frame delays have centisecond
+precision; rounding is distributed so the full animation retains its duration.
+The export has a white background and loops continuously. GIF's 256-color
+palette may slightly change the appearance of translucent points.</p>
+<p>Encoding runs in a browser worker using locally bundled
+<a href="https://github.com/mattdesl/gifenc">gifenc 1.0.3</a> (MIT; license in
+<code>www/vendor/gifenc-LICENSE.txt</code>), with one captured frame in flight at a time.
+No external CDN, PXL read, server-side analysis, or new R dependency is needed.
+Progress and <strong>Cancel GIF</strong> remain available; Display is disabled until the
+export ends. Replacing/unbinding the graph cancels its export. Limits of
+300 frames, 120 million total pixels, and 64 MiB encoded output bound work and
+memory; reduce duration, FPS, or image size if a limit is reached.</p>
+<p>Choose donor, cell type, condition, and two ranking markers (the same marker
+twice for a self-pair). Reversed pair orders are equivalent. Ranking uses finite
+observed log2 ratios, descending with cell-ID tie breaking; it does not apply
+abundance/differential-test cutoffs or replace missing scores with zero.
+A progress indicator appears while ranking. Choose top 10, bottom 10, their
+deduplicated union, or all scored cells; download the current ranking as CSV.
+Cells without prepared graphs are identified in the list. Clear both ranking
+markers to browse prepared cells without ranking.</p>
+<p>Select one highlight marker and click <strong>Display</strong> to load the selected cell.
+Changing filters, ranking, cell, or highlight does not redraw the last displayed
+graph. Node and provenance downloads refer to that displayed snapshot.</p>
+<p>Preparation can target selected cells. A later invocation retains the union of
+previously prepared and newly requested cells, atomically rewrites affected
+sample files, and updates the index. Unaffected, validated sample files are
+reused. Run preparers sequentially against a given directory. Version 1 per-cell
+RDS graph indexes are rejected with a rebuild instruction: preserve the old
+directory and prepare version 3 assets in a new one. Version 2 sample Parquet
+sidecars are read-only: rebuild in a new directory to remove their stored node
+IDs. The preparer does not perform an automatic destructive migration or mix
+schema versions within one graph directory.</p>
+<h2 id="dependencies-and-preparation">Dependencies and preparation</h2>
+<p>Install the CRAN renderer with <code>install.packages("threejs")</code> (version &gt;= 0.3.4).</p>
+<p>The plain-bundle viewer uses the packages in <code>DESCRIPTION</code>'s <code>Imports</code>; it
+does not require Seurat/PNA class definitions merely to load data. Legacy
+Seurat RDS inputs still require SeuratObject, and PNA inputs require pixelatorR.
+Background differential analysis requires pixelatorR, Seurat, and SeuratObject;
+spatial querying additionally requires Arrow and dplyr. <strong>Cell 3D</strong> also requires
+Arrow and dplyr in the Shiny R environment, but not Seurat or pixelatorR for a
+plain bundle. Offline graph preparation requires the source Seurat/PNA object,
+pixelatorR, Arrow, and dplyr; PXL-to-Parquet preparation also uses DBI and DuckDB.
+Neither the analysis worker nor the 3D viewer needs PXL mounts or permission to
+access the original files.</p>
+<h3 id="renderer-comparison-2026-10-12">Renderer comparison (2026-10-12)</h3>
+<p>The saved measurements are in
+<a href="benchmarks/2026-10-12-cell-renderers/"><code>docs/benchmarks/2026-10-12-cell-renderers/</code></a>:
+<a href="../benchmarks/2026-10-12-cell-renderers/r-results.csv">R timings and sizes (CSV)</a>,
+<a href="../benchmarks/2026-10-12-cell-renderers/browser-results.json">browser measurements (JSON)</a>,
+and <a href="../benchmarks/2026-10-12-cell-renderers/cases.json">test cases and package versions (JSON)</a>.
+These are unchanged copies of the measured results, including the optional
+OrbitControls comparison. The <code>file</code> fields name generated HTML snapshots in
+<code>output/renderer-benchmark</code>, not files included in this small results archive.</p>
+<p>Compared CRAN <code>threejs</code> 0.3.4 with the existing Plotly 4.12.1 renderer from commit
+<code>bb341b2</code>, using three real demo cells, all nodes, the same CD44 highlight, marker
+hover labels, preserved aspect ratios, and 1000 × 700 widgets. The cells are the
+smallest, median, and largest among those within the unchanged 200,000-node limit.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Nodes</th>
+<th style="text-align: right;">Plotly browser ready</th>
+<th style="text-align: right;">threejs browser ready</th>
+<th style="text-align: right;">Plotly / threejs HTML payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">10,021</td>
+<td style="text-align: right;">1,165 ms</td>
+<td style="text-align: right;">159 ms</td>
+<td style="text-align: right;">1.65 / 0.88 MB</td>
+</tr>
+<tr>
+<td style="text-align: right;">41,111</td>
+<td style="text-align: right;">1,636 ms</td>
+<td style="text-align: right;">347 ms</td>
+<td style="text-align: right;">6.66 / 3.48 MB</td>
+</tr>
+<tr>
+<td style="text-align: right;">197,680</td>
+<td style="text-align: right;">5,439 ms</td>
+<td style="text-align: right;">713 ms</td>
+<td style="text-align: right;">32.29 / 16.92 MB</td>
+</tr>
+</tbody>
+</table>
+<p>These are observations from one controlled browser pass, not end-to-end Shiny
+latency or hardware-GPU guarantees. Browser-ready time is navigation to two
+animation frames after the htmlwidget render hook. Each case ran in a fresh
+Chrome 149.0.7827.55 process, after warming dependencies on the smallest cell,
+with back/forward caching disabled. The server has no available hardware WebGL:
+the test used SwiftShader with four workers, CPU affinity 0–3, single-threaded
+V8, and device scale 1. Shared-library download sizes are excluded from the HTML
+payload; MB here means decimal megabytes.</p>
+<p>During a two-second mouse drag, animation-frame callback rates were approximately
+5.8 / 60.0, 2.0 / 27.8, and 0.5 / 7.8 Hz (Plotly / threejs). This measures browser
+responsiveness, not an independent GPU frame counter. The post-GC JavaScript heap
+was 10.8 / 4.2, 17.4 / 9.0, and 51.7 / 33.7 MiB; it excludes native/GPU memory.
+The alternative threejs OrbitControls were also tested; the app retains the
+default TrackballControls for unrestricted rotation. The app disables residual
+camera inertia so Reset stays at the initial view, and wakes rendering for idle
+zoom events; these small interaction fixes are not part of the renderer benchmark.</p>
+<p>R construction is not uniformly faster: medians of three warmed builds were
+146 / 134, 560 / 592, and 2,687 / 3,097 ms. The largest threejs R widget was also
+larger (15.85 versus 14.31 MB). The switch therefore targets browser responsiveness
+and the roughly 47% smaller serialized plot payload, not R-side memory savings.
+No downsampling, sidecar schema change, or node-limit increase was used.</p>
+<p>To reproduce, run <code>Rscript scripts/benchmark_cell_renderers.R</code> from the repository
+root with the demo sidecars and CRAN threejs installed. Serve
+<code>output/renderer-benchmark</code> locally on port 3840, then run
+<code>PROXIOME_CHROME=/path/to/chromium PROXIOME_BENCH_CPUS=0-3 node tests/browser_renderer_benchmark.mjs</code>.
+Omit the CPU-affinity variable outside Linux or choose valid CPUs for the host.
+The scripts save raw R and browser measurements under <code>output/renderer-benchmark</code>.
+The benchmark needs the baseline commit in local Git history and Node.js with
+built-in <code>fetch</code> and <code>WebSocket</code>. The app does not run these benchmarks.</p>
+<p>After preparing the legacy frozen-results RDS, run from the repository:</p>
+<pre><code class="language-sh">Rscript scripts/prepare_hybrid_bundle.R output/proxiomevis_demo_v1.rds output/hybrid_demo
+</code></pre>
+<p>This writes <code>analysis.rds</code> and prepares sidecars. The optional third argument is
+the source PXL directory; an optional fourth argument is a text file containing
+one exact graph cell ID per line. It limits only graph preparation, not the
+reports or proximity sidecar. See <a href="../getting-started/">Getting started</a> for the
+selected-cell command. To prepare only a proximity directory from a compatible
+source bundle:</p>
+<pre><code class="language-sh">Rscript scripts/prepare_proximity_store.R output/proxiomevis_demo_v1.rds output/proximity
+</code></pre>
+<p>The standalone proximity preparer refuses a nonempty output directory. Preserve
+the manifest with its partitions when moving a prepared dataset. The deployed
+layout must keep asset paths relative to <code>analysis.rds</code>; original PXL files are
+not uploaded through the application.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../precomputed-results/" class="btn btn-neutral float-left" title="Precomputed results"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../troubleshooting/" class="btn btn-neutral float-right" title="Troubleshooting">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../precomputed-results/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../troubleshooting/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

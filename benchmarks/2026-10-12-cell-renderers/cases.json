@@ -1,0 +1,99 @@
+{
+  "versions": {
+    "R": "4.5.3",
+    "plotly": "4.12.1",
+    "threejs": "0.3.4"
+  },
+  "cases": [
+    {
+      "renderer": "plotly",
+      "file": "plotly-1.html",
+      "cell_id": "d1_unstim_9f404f3b97877f30",
+      "nodes": 10021,
+      "marker": "CD44",
+      "r_build_ms": 146,
+      "r_widget_bytes": 794832,
+      "html_bytes": 1653242
+    },
+    {
+      "renderer": "threejs",
+      "file": "threejs-1.html",
+      "cell_id": "d1_unstim_9f404f3b97877f30",
+      "nodes": 10021,
+      "marker": "CD44",
+      "r_build_ms": 134,
+      "r_widget_bytes": 832024,
+      "html_bytes": 876358
+    },
+    {
+      "renderer": "threejs_orbit",
+      "file": "threejs_orbit-1.html",
+      "cell_id": "d1_unstim_9f404f3b97877f30",
+      "nodes": 10021,
+      "marker": "CD44",
+      "r_build_ms": 140,
+      "r_widget_bytes": 832024,
+      "html_bytes": 876363
+    },
+    {
+      "renderer": "plotly",
+      "file": "plotly-2.html",
+      "cell_id": "d2_unstim_b157d8a8805b5dc6",
+      "nodes": 41111,
+      "marker": "CD44",
+      "r_build_ms": 560,
+      "r_widget_bytes": 3034720,
+      "html_bytes": 6658452
+    },
+    {
+      "renderer": "threejs",
+      "file": "threejs-2.html",
+      "cell_id": "d2_unstim_b157d8a8805b5dc6",
+      "nodes": 41111,
+      "marker": "CD44",
+      "r_build_ms": 592,
+      "r_widget_bytes": 3319928,
+      "html_bytes": 3484512
+    },
+    {
+      "renderer": "threejs_orbit",
+      "file": "threejs_orbit-2.html",
+      "cell_id": "d2_unstim_b157d8a8805b5dc6",
+      "nodes": 41111,
+      "marker": "CD44",
+      "r_build_ms": 589,
+      "r_widget_bytes": 3319928,
+      "html_bytes": 3484517
+    },
+    {
+      "renderer": "plotly",
+      "file": "plotly-3.html",
+      "cell_id": "d1_PHA_69398af0d7508d48",
+      "nodes": 197680,
+      "marker": "CD44",
+      "r_build_ms": 2687,
+      "r_widget_bytes": 14312488,
+      "html_bytes": 32287568
+    },
+    {
+      "renderer": "threejs",
+      "file": "threejs-3.html",
+      "cell_id": "d1_PHA_69398af0d7508d48",
+      "nodes": 197680,
+      "marker": "CD44",
+      "r_build_ms": 3097,
+      "r_widget_bytes": 15847848,
+      "html_bytes": 16922414
+    },
+    {
+      "renderer": "threejs_orbit",
+      "file": "threejs_orbit-3.html",
+      "cell_id": "d1_PHA_69398af0d7508d48",
+      "nodes": 197680,
+      "marker": "CD44",
+      "r_build_ms": 2966,
+      "r_widget_bytes": 15847848,
+      "html_bytes": 16922419
+    }
+  ]
+}

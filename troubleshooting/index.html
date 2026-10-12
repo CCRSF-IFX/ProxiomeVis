@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="CCRSF-IFX" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Troubleshooting - ProxiomeVis Documentation</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Troubleshooting";
+        var mkdocs_page_input_path = "troubleshooting.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/bash.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> ProxiomeVis Documentation
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Overview</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../precomputed-results/">Precomputed results</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../hybrid-analysis/">Hybrid analysis</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Troubleshooting</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#the-app-cannot-find-its-rds">The app cannot find its RDS</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-rds-fails-contract-validation">The RDS fails contract validation</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#r-reports-an-unknown-pna-class">R reports an unknown PNA class</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#a-filter-produces-no-rows">A filter produces no rows</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#pxl-files-are-unavailable">PXL files are unavailable</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#spatial-analysis-or-cell-3d-says-assets-are-missing">Spatial analysis or Cell 3D says assets are missing</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#cell-3d-reports-an-unsupported-graph-index">Cell 3D reports an unsupported graph index</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#cell-3d-is-missing-arrowdplyr-or-is-slow-on-first-load">Cell 3D is missing Arrow/dplyr or is slow on first load</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#graph-preparation-stops-with-exit-137-and-no-r-error">Graph preparation stops with exit 137 and no R error</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#a-worker-cannot-start-or-reports-a-missing-package">A worker cannot start or reports a missing package</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-worker-is-busy-times-out-or-rejects-a-large-selection">The worker is busy, times out, or rejects a large selection</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#a-new-result-has-missing-statistics-or-differs-from-the-report">A new result has missing statistics or differs from the report</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-bundle-or-sidecar-checksum-does-not-match">The bundle or sidecar checksum does not match</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#a-graph-is-too-large-or-the-3d-panel-is-blank">A graph is too large or the 3D panel is blank</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-port-is-unavailable">The port is unavailable</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-server-path-field-is-missing">The server-path field is missing</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">ProxiomeVis Documentation</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Troubleshooting</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis/edit/r_version/docs/troubleshooting.md">Edit on CCRSF-IFX/ProxiomeVis</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="troubleshooting">Troubleshooting</h1>
+<h2 id="the-app-cannot-find-its-rds">The app cannot find its RDS</h2>
+<p>The default is <code>output/hybrid_demo/analysis.rds</code> when present, otherwise
+<code>output/proxiomevis_demo_v1.rds</code>. Follow <a href="../getting-started/">Getting started</a> to
+prepare these, or set
+<code>PROXIOME_PRECOMPUTED_RDS</code> to an absolute path readable by the Shiny process.
+The configured file must exist and end in <code>.rds</code>.</p>
+<h2 id="the-rds-fails-contract-validation">The RDS fails contract validation</h2>
+<p>The app accepts a plain application bundle with <code>bundle_version = 2L</code> or a
+legacy Seurat RDS. Both retain the frozen contract's <code>schema_version = 1L</code>;
+these version numbers describe different structures and should not be changed
+to make an incompatible file load.</p>
+<p>Validation checks metadata mappings, coordinates, matrix/cell alignment,
+result-table columns, marker pairs, support counts, and descriptive-inference
+rules. Legacy inputs additionally need their configured assay layers and empty
+cell-level proximity slots. Rebuild the frozen demo contract with
+<code>scripts/prepare_precomputed_rds.R</code>, then export a plain bundle as described in
+<a href="../precomputed-results/">Precomputed results</a>. Do not patch invalid results
+merely to bypass validation.</p>
+<h2 id="r-reports-an-unknown-pna-class">R reports an unknown PNA class</h2>
+<p>This applies to legacy analysis files, not plain application bundles. Install
+SeuratObject and a pixelatorR version compatible with the source analysis in the
+R environment that runs the app, or export a plain bundle in the analysis
+environment and deploy that instead. Plain bundles need no Seurat/PNA classes
+for viewing; they still need the viewer packages in <code>DESCRIPTION</code>.</p>
+<p>Check which R executable starts Shiny if packages appear installed but cannot
+be found. This workspace's project environment is
+<code>../.pixi/envs/r/bin/Rscript</code>; it can differ from the system <code>Rscript</code>.</p>
+<h2 id="a-filter-produces-no-rows">A filter produces no rows</h2>
+<p>Report controls only narrow the frozen tertiary results. Choose a donor,
+comparison, cell type, and feature present in those tables. A missing stored
+combination is not computed automatically.</p>
+<p>To run a new comparison, use <strong>Custom analysis</strong> and explicitly submit a valid
+cell selection. Its result is separate from the report and requires the
+appropriate cell-level inputs and worker dependencies.</p>
+<h2 id="pxl-files-are-unavailable">PXL files are unavailable</h2>
+<p>PXL files are preparation inputs, not runtime requirements. Report views use
+the RDS, spatial tests use the prepared proximity sidecar, and <strong>Cell 3D</strong> loads
+the chosen cell's nodes from its sample's prepared Parquet file. If preparation
+itself fails because PXL paths moved, pass their directory as the third argument to
+<code>scripts/prepare_hybrid_bundle.R</code>.</p>
+<h2 id="spatial-analysis-or-cell-3d-says-assets-are-missing">Spatial analysis or Cell 3D says assets are missing</h2>
+<p>A report-only RDS does not contain the optional sidecars. Prepare them upstream,
+then deploy <code>analysis.rds</code> together with its <code>proximity/</code> and <code>graphs/</code>
+directories. Asset descriptors are relative to the bundle directory; absolute
+paths, traversal, and symlinks escaping that directory are rejected.</p>
+<p>Graph coverage is shown explicitly. If preparation is still running, click
+<strong>Refresh prepared cells</strong> to see newly completed cells. Rerun the preparation
+command after an interruption to reuse validated completed sample files. Adding
+cells atomically rewrites affected files with the union of old and new cells;
+it does not remove previously prepared cells from coverage. Do not run two
+preparers concurrently in the same output directory. A failed partial
+proximity export without a manifest needs a fresh output directory; the
+standalone proximity preparer refuses to overwrite a nonempty directory.</p>
+<h2 id="cell-3d-reports-an-unsupported-graph-index">Cell 3D reports an unsupported graph index</h2>
+<p>The current graph sidecar uses <code>schema_version = 3L</code>: one node-only Parquet file
+per sample plus <code>index.rds</code>, with no stored node IDs. Version 2 sample Parquet
+sidecars remain readable but cannot be extended by the preparer; rebuild in a
+new directory to get smaller version 3 files. Old version 1 per-cell RDS assets
+are not compatible.
+Do not change the version field by hand or delete the old directory to bypass
+the check. Preserve it and run <code>scripts/prepare_hybrid_bundle.R</code> with a new
+output directory, then deploy the new bundle and its sidecars together. There
+is no automatic destructive migration.</p>
+<h2 id="cell-3d-is-missing-arrowdplyr-or-is-slow-on-first-load">Cell 3D is missing Arrow/dplyr or is slow on first load</h2>
+<p>Install <code>arrow</code> and <code>dplyr</code> in the R environment running Shiny. Frozen reports
+still work without these optional graph-query dependencies. No pixelatorR or
+source PXL access is needed for viewing a plain bundle's prepared nodes.</p>
+<p>The first selection from a sample may checksum its whole Parquet file. Later
+selections reuse validation for the unchanged file and use Arrow to filter the
+cell and prune unrelated row groups before collecting nodes. A checksum scan
+does not collect the full sample into R. Keep deployed assets read-only; do not
+disable validation to remove the initial disk scan.</p>
+<h2 id="graph-preparation-stops-with-exit-137-and-no-r-error">Graph preparation stops with exit 137 and no R error</h2>
+<p>Check the host's resource limits before assuming the graph data is corrupt.
+Use <code>ulimit -t</code> or scheduler diagnostics to check the CPU-time allowance. A full
+export can hit a time limit even with bounded memory. Do not change shared-host
+limits. Resume completed samples or submit smaller, sequential cell batches
+through the existing preparer:</p>
+<pre><code class="language-bash">Rscript --vanilla scripts/prepare_cell_graph_assets.R \
+  output/proxiomevis_demo_v1.rds /path/to/pxl_directory \
+  output/hybrid_demo/graphs pixelgen-demo-v1-d20537e8d79c4e12 cells.txt
+</code></pre>
+<p><code>cells.txt</code> contains one exact prepared cell ID per line. Use the dataset ID
+from your source contract for non-demo data. Each invocation validates and
+retains previously published cells, atomically rewrites affected sample files
+with the combined selection, and updates the same index. Run batches
+sequentially, never against the same directory
+concurrently. Exit 137 can also indicate a memory limit or an external kill;
+check the scheduler/system diagnostics rather than repeatedly restarting a
+healthy process.</p>
+<h2 id="a-worker-cannot-start-or-reports-a-missing-package">A worker cannot start or reports a missing package</h2>
+<p>The analysis subprocess uses the app's R installation and library paths. New
+tests require pixelatorR, Seurat, and SeuratObject; spatial querying also needs
+Arrow and dplyr. The report-only viewer does not install these optional packages.
+See <a href="../hybrid-analysis/#dependencies-and-preparation">Hybrid analysis</a>.</p>
+<p>Missing worker dependencies or sidecars do not invalidate the frozen reports.
+Install the required packages in the correct environment, then retry the
+explicit comparison. The app does not substitute a different test.</p>
+<h2 id="the-worker-is-busy-times-out-or-rejects-a-large-selection">The worker is busy, times out, or rejects a large selection</h2>
+<p>Only one background analysis runs at a time <strong>per Shiny R process</strong>, shared by
+that process's sessions. Busy requests are rejected with a retry message, not
+queued. Retry after the current job finishes or is cancelled. Closing a session
+cancels its running analysis.</p>
+<p>Each job has a 120-second timeout and limits of 2,000 selected cells, 160 markers,
+1,000 unordered colocalization pairs, and 1 million retained score rows. Select
+fewer cells or markers to reduce work; colocalization is limited to 45 markers
+because 46 produce more than 1,000 pairs. The app never silently downsamples a
+request. Deployment-level RAM/CPU quotas are still needed: these workload limits
+are not a memory guarantee, and multiple Shiny processes each have their own
+worker limit.</p>
+<h2 id="a-new-result-has-missing-statistics-or-differs-from-the-report">A new result has missing statistics or differs from the report</h2>
+<p>Abundance requires at least 3 selected cells per condition. Spatial features
+require at least 20 retained observations per group for self-proximity, or 40
+for colocalization. Inspect <code>n_cells_a/b</code>, <code>n_scored_a/b</code>, and <code>status</code> in the
+result table. Missing or filtered scores are not imputed as zeros, so selecting
+enough cells does not guarantee every feature is testable.</p>
+<p>New tests use the submitted cells and eligible selected-marker testing family.
+Restricting markers can change BH-adjusted p-values even when raw p-values agree
+with the report. Changing controls does not change the completed result until
+another run; check its recorded scope and downloaded provenance. Neither result
+supports population-level inference from cells in a single donor.</p>
+<h2 id="the-bundle-or-sidecar-checksum-does-not-match">The bundle or sidecar checksum does not match</h2>
+<p>Reload the trusted dataset if its RDS changed after the app loaded it. Requests
+are pinned to that loaded file's checksum, not just its dataset name. Sidecars
+must match the bundle's data and prepared source inputs; do not mix files from
+different preparation runs or edit checksums to suppress the error. Prepare a
+new matching bundle in a separate directory when source data changes, and
+deploy it read-only with its sidecars.</p>
+<h2 id="a-graph-is-too-large-or-the-3d-panel-is-blank">A graph is too large or the 3D panel is blank</h2>
+<p>The viewer refuses cells above 200,000 nodes. Select a smaller cell to continue;
+no nodes are silently dropped. The sidecar and viewer are nodes only: there are
+no stored edges, edge controls, or marker-count matrices.</p>
+<p>Plotly 3D requires a browser with working WebGL. Check browser GPU/WebGL support
+when graph coverage and node totals load but the canvas stays blank. The coordinates
+are abstract graph-layout positions, not physical microscopy coordinates.</p>
+<h2 id="the-port-is-unavailable">The port is unavailable</h2>
+<p>Use another local port, for example:</p>
+<pre><code class="language-bash">Rscript --vanilla -e 'shiny::runApp(&quot;.&quot;, host=&quot;127.0.0.1&quot;, port=3839)'
+</code></pre>
+<p>For a shared deployment, keep Shiny behind the environment's authenticated
+proxy. Do not expose the server-local RDS path control or unrestricted RDS
+uploads to untrusted users.</p>
+<h2 id="the-server-path-field-is-missing">The server-path field is missing</h2>
+<p>This is the secure default. Configure <code>PROXIOME_PRECOMPUTED_RDS</code> before startup.
+A trusted local operator can set <code>PROXIOME_ALLOW_LOCAL_LOAD=true</code> to expose the
+field temporarily. Do not use that flag on a public app.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../hybrid-analysis/" class="btn btn-neutral float-left" title="Hybrid analysis"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright &copy; 2026 CCRSF-IFX</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/CCRSF-IFX/ProxiomeVis.git" class="fa fa-code-fork" style="color: #fcfcfc"> CCRSF-IFX/ProxiomeVis</a>
+        </span>
+    
+    
+      <span><a href="../hybrid-analysis/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
