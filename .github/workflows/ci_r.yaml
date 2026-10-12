@@ -43,7 +43,7 @@ jobs:
       - name: Install test and runtime packages
         run: >-
           Rscript --vanilla -e
-          'install.packages(c("testthat", "shiny", "bslib", "ggplot2", "plotly",
+          'install.packages(c("testthat", "shiny", "bslib", "ggplot2", "plotly", "threejs",
           "DT", "SeuratObject", "Matrix", "jsonlite", "data.table", "ggrepel",
           "scales", "tibble", "pheatmap", "yaml", "withr", "htmltools",
           "callr", "promises", "later", "digest", "arrow", "dplyr", "DBI", "duckdb"),
