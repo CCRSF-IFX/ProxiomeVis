@@ -71,10 +71,11 @@ their directory if they moved. The deployed output contains `analysis.rds`,
 `proximity/`, and `graphs/`; keep the relative directory layout intact. Full graph
 preparation can be lengthy and is resumable, but do not run two preparers in the
 same output directory. The graph sidecar is one node-only Parquet file per
-prepared sample plus a version 2 index, not per-cell RDS files. Source and layout
-provenance belong in that index; Parquet rows contain only cell/node IDs,
-coordinates, and marker identities. Rebuild old version 1 graph exports in a
-new directory rather than changing their version field. See
+prepared sample plus a version 3 index, not per-cell RDS files. Source and layout
+provenance belong in that index; Parquet rows contain only cell IDs,
+coordinates, and marker identities. Version 2 remains readable without loading
+node IDs. Rebuild older graph exports in a new directory to obtain version 3;
+do not change their version field by hand. See
 [Getting started](getting-started.md) for startup and
 [Hybrid analysis](hybrid-analysis.md) for sidecar schemas and dependencies.
 

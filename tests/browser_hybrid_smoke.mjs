@@ -184,7 +184,7 @@ try {
   assert.match(graph.source_pxl_md5, /^[a-f0-9]{32}$/);
   assert.equal(await evaluate("document.getElementById('report-graph-edges') === null"), true);
   const nodeCsv = (await download('report-graph-nodes_csv')).trim().split('\n');
-  assert.equal(nodeCsv[0], '"cell_id","node_id","x","y","z","markers"');
+  assert.equal(nodeCsv[0], '"cell_id","x","y","z","markers"');
   const nodes = nodeCsv.length - 1;
   assert.equal(await evaluate("document.getElementById('report-graph-plot').data.filter(t => t.mode === 'markers').reduce((n,t) => n + t.x.length,0)"), nodes);
   assert.equal(await evaluate("document.getElementById('report-graph-plot').data.every(t => t.mode === 'markers')"), true);

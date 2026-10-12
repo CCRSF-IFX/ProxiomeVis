@@ -27,9 +27,11 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
 
 This exports a plain-R `analysis.rds`, observed proximity rows in `proximity/`,
 and node-only 3D tables in `graphs/`: one Parquet file per prepared sample and a
-version 2 `index.rds`. Each row contains a cell ID, node ID, 3D coordinates, and
+version 3 `index.rds`. Each row contains a cell ID, 3D coordinates, and
 marker identities; no edges or marker counts are exported. Rerunning reuses
 validated completed sample files.
+Existing version 2 graph sidecars remain readable, but upgrading to the smaller
+version 3 files requires preparation in a new output directory.
 Supply the source PXL directory as the optional third argument if paths moved.
 Keep the bundle and sidecar directories together when copying to a server.
 

@@ -149,6 +149,21 @@ test_that("graph preparation failure does not publish a new application bundle",
   expect_identical(tools::md5sum(fixture$bundle_path), original)
 })
 
+test_that("version 2 graph upgrade rejects before proximity preparation or bundle writes", {
+  fixture <- hybrid_preparation_fixture()
+  graph_dir <- file.path(fixture$output, "graphs")
+  dir.create(graph_dir)
+  graph_index <- file.path(graph_dir, "index.rds")
+  saveRDS(list(schema_version = 2L), graph_index)
+  environment(fixture$build)$read_cell_graph_index <- function(...) list(schema_version = 2L)
+  original <- tools::md5sum(c(fixture$bundle_path, fixture$manifest_path, graph_index))
+  expect_error(fixture$build(fixture$input, fixture$output), "new directory")
+  expect_null(fixture$calls$export)
+  expect_null(fixture$calls$graph)
+  expect_identical(fixture$calls$prepare, 0L)
+  expect_identical(tools::md5sum(names(original)), original)
+})
+
 test_that("sidecar and source mismatches fail before export without rewriting files", {
   for (failure in c("dataset", "partition", "source")) {
     fixture <- hybrid_preparation_fixture()

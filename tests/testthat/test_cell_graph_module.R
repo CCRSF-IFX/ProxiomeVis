@@ -12,7 +12,7 @@ cell_graph_module_fixture <- function() {
                                   sample_id = data$metadata$sample_id)
   samples <- lapply(1:2, function(i) {
     mapping <- data$cell_sources[i, ]
-    nodes <- data.frame(cell_id = mapping$component, node_id = c("node1", "node2"),
+    nodes <- data.frame(cell_id = mapping$component,
                         x = c(0, 1), y = c(1, 0), z = c(0, 0))
     nodes$markers <- list(character(), "A")
     temporary <- tempfile(tmpdir = directory)
@@ -26,7 +26,7 @@ cell_graph_module_fixture <- function() {
                source_pxl_md5 = paste(rep("a", 32), collapse = ""), layout = "wpmds_3d",
                n_nodes = 2L, n_cells = 1L)
   })
-  index <- list(schema_version = 2L, dataset_id = data$contract$dataset_id,
+  index <- list(schema_version = 3L, dataset_id = data$contract$dataset_id,
                 n_total_cells = nrow(data$metadata), coverage = "selected_cells",
                 cells = data.frame(cell_id = data$cell_sources$component[1:2],
                   source_cell_id = data$cell_sources$original_id[1:2],
@@ -69,11 +69,11 @@ test_that("a report-only dataset and missing graph directory give validation mes
     expect_match(output$summary, "marker identities; nodes only", fixed = TRUE)
     expect_no_error(output$plot)
     exported <- utils::read.csv(output$nodes_csv, stringsAsFactors = FALSE)
-    expect_identical(names(exported), c("cell_id", "node_id", "x", "y", "z", "markers"))
+    expect_identical(names(exported), c("cell_id", "x", "y", "z", "markers"))
     expect_length(jsonlite::fromJSON(exported$markers[1L]), 0L)
     expect_identical(jsonlite::fromJSON(exported$markers[2L]), "A")
     provenance <- jsonlite::read_json(output$provenance_json)
-    expect_equal(provenance$schema_version, 2L)
+    expect_equal(provenance$schema_version, 3L)
     expect_false(any(c("nodes", "counts", "edges") %in% names(provenance)))
     expect_false(session$isClosed())
   })

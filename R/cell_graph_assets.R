@@ -1,7 +1,10 @@
 cell_graph_error <- function(message) stop(message, call. = FALSE)
 
-cell_graph_schema <- function() {
-  arrow::schema(cell_id = arrow::utf8(), node_id = arrow::utf8(), x = arrow::float64(),
+cell_graph_schema <- function(version = 3L) {
+  if (identical(version, 2L)) return(arrow::schema(
+    cell_id = arrow::utf8(), node_id = arrow::utf8(), x = arrow::float64(),
+    y = arrow::float64(), z = arrow::float64(), markers = arrow::list_of(arrow::utf8())))
+  arrow::schema(cell_id = arrow::utf8(), x = arrow::float64(),
                 y = arrow::float64(), z = arrow::float64(), markers = arrow::list_of(arrow::utf8()))
 }
 
@@ -21,7 +24,7 @@ read_cell_graph_index <- function(asset_dir, dataset_id, cell_ids = NULL) {
   path <- normalizePath(file.path(root, "index.rds"), mustWork = TRUE)
   if (!startsWith(path, paste0(root, .Platform$file.sep))) cell_graph_error("Cell graph index is outside its directory.")
   index <- readRDS(path)
-  if (!is.list(index) || !identical(index$schema_version, 2L)) {
+  if (!is.list(index) || !(identical(index$schema_version, 2L) || identical(index$schema_version, 3L))) {
     cell_graph_error("Unsupported cell graph schema. Rebuild sample Parquet assets into a new directory; legacy RDS assets are not modified.")
   }
   cell_fields <- c("cell_id", "source_cell_id", "sample", "n_nodes")
@@ -64,13 +67,11 @@ read_cell_graph_index <- function(asset_dir, dataset_id, cell_ids = NULL) {
 }
 
 validate_cell_graph_asset <- function(asset) {
-  fields <- c("cell_id", "node_id", "x", "y", "z", "markers")
-  if (!is.list(asset) || !identical(asset$schema_version, 2L) ||
+  fields <- c("cell_id", "x", "y", "z", "markers")
+  if (!is.list(asset) || !identical(asset$schema_version, 3L) ||
       !is.character(asset$cell_id) || length(asset$cell_id) != 1L || is.na(asset$cell_id) || !nzchar(asset$cell_id) ||
       !is.data.frame(asset$nodes) || !identical(names(asset$nodes), fields) ||
-      !nrow(asset$nodes) || !is.character(asset$nodes$node_id) ||
-      anyNA(asset$nodes$node_id) || anyDuplicated(asset$nodes$node_id) ||
-      any(!nzchar(asset$nodes$node_id)) ||
+      !nrow(asset$nodes) ||
       !is.character(asset$nodes$cell_id) || anyNA(asset$nodes$cell_id) ||
       !all(asset$nodes$cell_id == asset$cell_id) ||
       !all(vapply(asset$nodes[c("x", "y", "z")], is.numeric, logical(1))) ||
@@ -79,7 +80,7 @@ validate_cell_graph_asset <- function(asset) {
       !all(vapply(asset$nodes$markers, function(markers) {
         is.character(markers) && !anyNA(markers) && all(nzchar(markers)) && !anyDuplicated(markers)
       }, logical(1)))) {
-    cell_graph_error("Cell graph asset has invalid coordinates, node identities, or marker identities.")
+    cell_graph_error("Cell graph asset has invalid coordinates, cell identities, or marker identities.")
   }
   invisible(asset)
 }
@@ -114,15 +115,16 @@ load_cell_graph_asset <- function(index, asset_dir, cell_id, max_nodes = 200000L
   if (nrow(sample) != 1L) cell_graph_error("Cell graph sample provenance is missing.")
   file <- cell_graph_verified_file(index, asset_dir, sample)
   dataset <- arrow::open_dataset(file, format = "parquet")
-  if (!dataset$schema$Equals(cell_graph_schema(), check_metadata = FALSE)) {
-    cell_graph_error("Sample Parquet must contain only cell_id, node_id, x, y, z, and list<string> markers.")
+  if (!dataset$schema$Equals(cell_graph_schema(index$schema_version), check_metadata = FALSE)) {
+    cell_graph_error("Sample Parquet does not match its graph schema version; version 3 requires only cell_id, x, y, z, and list<string> markers.")
   }
   selected_cell <- cell_id
   query <- dplyr::filter(dataset, .data$cell_id == .env$selected_cell)
+  query <- dplyr::select(query, dplyr::all_of(cell_graph_schema()$names))
   nodes <- as.data.frame(dplyr::collect(utils::head(query, max_nodes + 1)))
   nodes$markers <- lapply(nodes$markers, as.character)
   if (nrow(nodes) > max_nodes) limit_error()
-  asset <- list(schema_version = 2L, dataset_id = index$dataset_id, cell_id = cell_id,
+  asset <- list(schema_version = 3L, dataset_id = index$dataset_id, cell_id = cell_id,
                 source_cell_id = entry$source_cell_id, sample = entry$sample,
                 source_pxl = sample$source_pxl, source_pxl_md5 = sample$source_pxl_md5,
                 layout = sample$layout, graph_projection = sample$graph_projection, nodes = nodes,
@@ -153,7 +155,7 @@ plot_cell_graph_asset <- function(asset, markers = character()) {
   node_markers <- vapply(nodes$markers, function(value) {
     if (!length(value)) "None" else paste(htmltools::htmlEscape(value), collapse = "<br>")
   }, character(1))
-  hover <- paste0("Node: ", htmltools::htmlEscape(nodes$node_id), "<br>Markers: ", node_markers)
+  hover <- paste0("Markers: ", node_markers)
   plot <- plotly::plot_ly()
   for (value in sort(unique(code))) {
     keep <- code == value
@@ -186,7 +188,10 @@ prepare_cell_graph_assets <- function(object, pxl_dir, output_dir, cells = colna
   }
   index <- if (file.exists(file.path(output_dir, "index.rds"))) {
     read_cell_graph_index(output_dir, dataset_id, colnames(object))
-  } else list(schema_version = 2L, dataset_id = dataset_id, cells = NULL, samples = NULL)
+  } else list(schema_version = 3L, dataset_id = dataset_id, cells = NULL, samples = NULL)
+  if (!identical(index$schema_version, 3L)) {
+    cell_graph_error("Existing version 2 graph assets are read-only. Prepare version 3 assets into a new directory; existing files are not modified.")
+  }
   mapping <- pixelatorR::FSMap(object)
   defaults <- object@misc$proxiomevis$defaults
   sample_column <- if (is.null(defaults$sample_column)) "sample_alias" else defaults$sample_column
@@ -287,7 +292,13 @@ prepare_cell_graph_assets <- function(object, pxl_dir, output_dir, cells = colna
           "WHERE l.component = ", id, " AND l.layout = ", sql_string(layout),
           " AND l.graph_projection = ", sql_string(projection), " ORDER BY node_id")
         nodes <- as.data.frame(db$query(query))
-        validate_cell_graph_asset(list(schema_version = 2L, cell_id = cell, nodes = nodes))
+        # Source IDs are needed for marker joins and uniqueness checks, not display.
+        if (!is.character(nodes$node_id) || anyNA(nodes$node_id) ||
+            anyDuplicated(nodes$node_id) || any(!nzchar(nodes$node_id))) {
+          cell_graph_error("Source layout contains invalid or duplicate node identities.")
+        }
+        nodes$node_id <- NULL
+        validate_cell_graph_asset(list(schema_version = 3L, cell_id = cell, nodes = nodes))
         table <- arrow::Table$create(nodes, schema = schema)
         writer$WriteTable(table, chunk_size = nrow(nodes))
         new_cells <- rbind(new_cells, data.frame(cell_id = cell, source_cell_id = as.character(ids$original_id[i]),
@@ -331,7 +342,7 @@ prepare_cell_graph_assets <- function(object, pxl_dir, output_dir, cells = colna
     temporary_index <- tempfile("index-", tmpdir = output_dir, fileext = ".rds")
     saveRDS(index, temporary_index)
     if (!file.rename(temporary_index, file.path(output_dir, "index.rds"))) cell_graph_error("Could not finalize graph index.")
-    # Only superseded v2 output is removed, after its replacement index is durable.
+    # Only superseded output is removed, after its replacement index is durable.
     if (!is.null(old_file)) unlink(old_file)
     index <- read_cell_graph_index(output_dir, dataset_id, colnames(object))
   }

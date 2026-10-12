@@ -122,7 +122,7 @@ analysis. RDS inputs and sidecars must still come from trusted preparation.
 ### Node-only 3D sidecar
 
 The graph directory contains one Parquet file per prepared sample and a small
-`index.rds` with `schema_version = 2L`. This graph-index version is separate from
+`index.rds` with `schema_version = 3L`. This graph-index version is separate from
 the application bundle version and the frozen-report contract version.
 
 Parquet contains exactly these columns:
@@ -130,9 +130,15 @@ Parquet contains exactly these columns:
 | Column | Contents |
 | --- | --- |
 | `cell_id` | Exact current cell ID in the application bundle |
-| `node_id` | Source layout node ID, unique within its cell |
 | `x`, `y`, `z` | Finite prepared 3D graph-layout coordinates |
 | `markers` | List of marker identities present at that node; no counts |
+
+Source node IDs are used only during preparation to join marker identities and
+reject duplicate layout nodes, then discarded before writing Parquet. Hover
+shows marker identities; node CSV exports contain the same five columns above.
+Keep the source PXL for node-level traceability: exported rows no longer carry
+source node IDs. Existing version 2 Parquet files remain readable; Arrow excludes
+their node-ID column before loading, and the displayed asset uses version 3.
 
 All source layout nodes are retained, including nodes without a highlighted
 marker. No edges, marker-count matrices, dataset metadata, or repeated source
@@ -183,8 +189,10 @@ previously prepared and newly requested cells, atomically rewrites affected
 sample files, and updates the index. Unaffected, validated sample files are
 reused. Run preparers sequentially against a given directory. Version 1 per-cell
 RDS graph indexes are rejected with a rebuild instruction: preserve the old
-directory and prepare version 2 assets in a new one. The preparer does not
-perform an automatic destructive migration.
+directory and prepare version 3 assets in a new one. Version 2 sample Parquet
+sidecars are read-only: rebuild in a new directory to remove their stored node
+IDs. The preparer does not perform an automatic destructive migration or mix
+schema versions within one graph directory.
 
 ## Dependencies and preparation
 

@@ -1,22 +1,26 @@
 source(file.path("..", "..", "R", "cell_graph_assets.R"))
 
 graph_asset_fixture <- function(cell = "cell1") {
-  nodes <- data.frame(cell_id = cell, node_id = paste0("node", 1:4), x = as.double(1:4),
+  nodes <- data.frame(cell_id = cell, x = as.double(1:4),
                       y = c(0, 1, 0, 1), z = c(1, 1, 2, 2))
   nodes$markers <- list(character(), "CD81", "CD82", c("CD81", "CD82"))
-  list(schema_version = 2L, dataset_id = "fixture-v1", cell_id = cell,
+  list(schema_version = 3L, dataset_id = "fixture-v1", cell_id = cell,
        source_cell_id = sub("cell", "original", cell), sample = "sample1", source_pxl = "sample.pxl",
        source_pxl_md5 = paste(rep("a", 32), collapse = ""), layout = "coarsened_pmds_3d",
        graph_projection = "full", nodes = nodes,
        interpretation = "Abstract graph coordinates, not physical cell positions; all source layout nodes retained.")
 }
 
-write_graph_fixture <- function(root, assets = list(graph_asset_fixture())) {
+write_graph_fixture <- function(root, assets = list(graph_asset_fixture()), version = 3L) {
   temporary <- tempfile(tmpdir = root)
-  schema <- cell_graph_schema()
+  schema <- cell_graph_schema(version)
   sink <- arrow::FileOutputStream$create(temporary)
   writer <- arrow::ParquetFileWriter$create(schema, sink, arrow::ParquetWriterProperties$create(schema$names))
-  for (asset in assets) writer$WriteTable(arrow::Table$create(asset$nodes, schema = schema), nrow(asset$nodes))
+  for (asset in assets) {
+    nodes <- asset$nodes
+    if (identical(version, 2L)) nodes$node_id <- paste0("node", seq_len(nrow(nodes)))
+    writer$WriteTable(arrow::Table$create(nodes[schema$names], schema = schema), nrow(nodes))
+  }
   writer$Close()
   sink$close()
   md5 <- unname(tools::md5sum(temporary))
@@ -25,7 +29,7 @@ write_graph_fixture <- function(root, assets = list(graph_asset_fixture())) {
   first <- assets[[1]]
   cells <- do.call(rbind, lapply(assets, function(asset) data.frame(
     cell_id = asset$cell_id, source_cell_id = asset$source_cell_id, sample = asset$sample, n_nodes = nrow(asset$nodes))))
-  index <- list(schema_version = 2L, dataset_id = "fixture-v1", n_total_cells = 2L,
+  index <- list(schema_version = version, dataset_id = "fixture-v1", n_total_cells = 2L,
                 coverage = if (length(assets) == 2L) "all_cells" else "selected_cells", cells = cells,
                 samples = data.frame(sample = first$sample, source_pxl = first$source_pxl,
                   source_pxl_md5 = first$source_pxl_md5, layout = first$layout, graph_projection = first$graph_projection,
@@ -44,12 +48,25 @@ testthat::test_that("Arrow filters the selected cell from one sample file and en
   reader <- arrow::ParquetFileReader$create(file.path(root, index$samples$file))
   testthat::expect_equal(reader$num_row_groups, 2L)
   testthat::expect_true(reader$GetSchema()$Equals(cell_graph_schema(), check_metadata = FALSE))
+  testthat::expect_identical(reader$GetSchema()$names, c("cell_id", "x", "y", "z", "markers"))
   testthat::expect_error(load_cell_graph_asset(index, root, "missing"), "No prepared")
   testthat::expect_error(load_cell_graph_asset(index, root, "cell1", max_nodes = 2), "no nodes were silently removed")
   index$cells$n_nodes[1] <- 1L
   testthat::expect_error(load_cell_graph_asset(index, root, "cell1", max_nodes = 2), "no nodes were silently removed")
   testthat::expect_error(load_cell_graph_asset(index, root, "cell1"), "row count")
   testthat::expect_error(load_cell_graph_asset(index, root, "cell1", max_nodes = NA_real_), "positive integer")
+})
+
+testthat::test_that("version 2 remains readable without loading or exporting source node IDs", {
+  root <- withr::local_tempdir()
+  index <- write_graph_fixture(root, version = 2L)
+  before <- tools::md5sum(list.files(root, full.names = TRUE))
+  asset <- load_cell_graph_asset(index, root, "cell1")
+  testthat::expect_equal(asset, graph_asset_fixture())
+  testthat::expect_false("node_id" %in% names(asset$nodes))
+  testthat::expect_identical(tools::md5sum(names(before)), before)
+  index$schema_version <- 3L
+  testthat::expect_error(load_cell_graph_asset(index, root, "cell1"), "does not match")
 })
 
 testthat::test_that("trusted indexes reject legacy schemas, bad totals, unknown cells and escaped paths", {
@@ -102,8 +119,11 @@ testthat::test_that("coordinates and lossless marker identity lists are validate
   asset$nodes$markers[[1]] <- NA_character_
   testthat::expect_error(validate_cell_graph_asset(asset), "marker identities")
   asset <- graph_asset_fixture()
-  asset$nodes$node_id[1] <- asset$nodes$node_id[2]
-  testthat::expect_error(validate_cell_graph_asset(asset), "node identities")
+  asset$nodes$cell_id[1] <- "another-cell"
+  testthat::expect_error(validate_cell_graph_asset(asset), "cell identities")
+  asset <- graph_asset_fixture()
+  asset$nodes$node_id <- paste0("node", 1:4)
+  testthat::expect_error(validate_cell_graph_asset(asset), "invalid coordinates")
 })
 
 testthat::test_that("node-only Plotly preserves every node, combinations, identities and escaped hover", {
@@ -116,6 +136,7 @@ testthat::test_that("node-only Plotly preserves every node, combinations, identi
     text <- unlist(lapply(plot$x$data, `[[`, "text"))
     testthat::expect_true(any(grepl("Markers: CD81<br>CD82", text, fixed = TRUE)))
     testthat::expect_false(any(grepl("CD81: 1", text, fixed = TRUE)))
+    testthat::expect_false(any(grepl("Node:", text, fixed = TRUE)))
     testthat::expect_true(all(vapply(plot$x$data, function(trace) trace$mode == "markers", logical(1))))
   }
   both <- plotly::plotly_build(plot_cell_graph_asset(asset, c("CD81", "CD82")))
@@ -124,10 +145,8 @@ testthat::test_that("node-only Plotly preserves every node, combinations, identi
   testthat::expect_identical(serialize(asset, NULL), original)
   testthat::expect_error(plot_cell_graph_asset(asset, "unknown"), "up to three")
   testthat::expect_error(plot_cell_graph_asset(asset, rep("CD81", 4)), "up to three")
-  asset$nodes$node_id[1] <- "<node>"
   asset$nodes$markers[[1]] <- "<marker>"
   text <- unlist(lapply(plotly::plotly_build(plot_cell_graph_asset(asset, "<marker>"))$x$data, `[[`, "text"))
-  testthat::expect_true(any(grepl("&lt;node&gt;", text, fixed = TRUE)))
   testthat::expect_true(any(grepl("&lt;marker&gt;", text, fixed = TRUE)))
 })
 
@@ -153,7 +172,9 @@ testthat::test_that("preparation extends samples atomically, resumes and respect
     if (fail) stop("synthetic interruption")
     cell <- if (grepl("original1", sql, fixed = TRUE)) "cell1" else "cell2"
     calls <<- c(calls, cell)
-    graph_asset_fixture(cell)$nodes
+    nodes <- graph_asset_fixture(cell)$nodes
+    nodes$node_id <- paste0("node", seq_len(nrow(nodes)))
+    nodes
   })
   testthat::local_mocked_bindings(FSMap = function(object) mapping,
     PixelDB = list(new = function(path) db), .package = "pixelatorR")
@@ -169,6 +190,13 @@ testthat::test_that("preparation extends samples atomically, resumes and respect
   second <- suppressMessages(prepare_cell_graph_assets(object, pxl_dir, asset_dir, dataset_id = "fixture-v1"))
   testthat::expect_identical(second$coverage, "all_cells")
   testthat::expect_identical(calls, c("cell1", "cell2"))
+  legacy_dir <- file.path(root, "legacy")
+  dir.create(legacy_dir)
+  write_graph_fixture(legacy_dir, version = 2L)
+  legacy_hashes <- tools::md5sum(list.files(legacy_dir, full.names = TRUE))
+  testthat::expect_error(prepare_cell_graph_assets(object, pxl_dir, legacy_dir,
+    dataset_id = "fixture-v1"), "new directory")
+  testthat::expect_identical(tools::md5sum(names(legacy_hashes)), legacy_hashes)
   testthat::expect_false(file.exists(file.path(asset_dir, first$samples$file)))
   testthat::expect_equal(load_cell_graph_asset(second, asset_dir, "cell2")$source_cell_id, "original2")
   testthat::expect_equal(arrow::ParquetFileReader$create(file.path(asset_dir, second$samples$file))$num_row_groups, 2L)
@@ -218,9 +246,11 @@ testthat::test_that("real DuckDB extraction preserves large IDs, multi-marker me
     PixelDB = list(new = function(path) db), .package = "pixelatorR")
   index <- suppressMessages(prepare_cell_graph_assets(object, pxl_dir, file.path(root, "graphs"), dataset_id = "fixture-v1"))
   asset <- load_cell_graph_asset(index, file.path(root, "graphs"), "cell'1")
-  testthat::expect_identical(asset$nodes$node_id, c("2-umi2", "3-umi1", "9007199254740993-umi1"))
+  testthat::expect_false("node_id" %in% names(asset$nodes))
   testthat::expect_identical(asset$nodes$markers, list("CD45", character(), c("CD,81", "CD;82")))
-  testthat::expect_identical(names(asset$nodes), c("cell_id", "node_id", "x", "y", "z", "markers"))
+  testthat::expect_identical(names(asset$nodes), c("cell_id", "x", "y", "z", "markers"))
+  testthat::expect_identical(arrow::ParquetFileReader$create(
+    file.path(root, "graphs", index$samples$file))$GetSchema()$names, names(asset$nodes))
   testthat::expect_equal(asset$nodes$x, c(4, 7, 1))
   testthat::expect_identical(asset$layout, "coarsened_pmds_3d")
   testthat::expect_identical(asset$graph_projection, "full")
@@ -228,4 +258,9 @@ testthat::test_that("real DuckDB extraction preserves large IDs, multi-marker me
   testthat::expect_error(suppressMessages(prepare_cell_graph_assets(object, pxl_dir,
     file.path(root, "changed-source-graphs"), dataset_id = "fixture-v1")), "changed during preparation")
   testthat::expect_length(list.files(file.path(root, "changed-source-graphs")), 0L)
+  mutate_source <- FALSE
+  DBI::dbExecute(connection, "INSERT INTO layouts SELECT * FROM layouts LIMIT 1")
+  testthat::expect_error(suppressMessages(prepare_cell_graph_assets(object, pxl_dir,
+    file.path(root, "duplicate-graphs"), dataset_id = "fixture-v1")), "duplicate node identities")
+  testthat::expect_length(list.files(file.path(root, "duplicate-graphs")), 0L)
 })

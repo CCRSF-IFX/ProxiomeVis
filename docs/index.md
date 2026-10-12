@@ -18,7 +18,7 @@ The app does not open PXL files or recalculate proximity scores. A preparation
 workflow builds a compact plain-R bundle and optional disk-backed proximity and
 graph sidecars. Sessions share the startup bundle read-only within each R process;
 analysis workers load only a bounded selection of observed scores. The graph
-sidecar uses one Parquet file per sample and a version 2 index. Arrow selects one
+sidecar uses one Parquet file per sample and a version 3 index. Arrow selects one
 cell's nodes for viewing; no edges or marker-count matrices are stored there.
 
 ## Interpretation boundary

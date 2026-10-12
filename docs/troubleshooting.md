@@ -71,8 +71,11 @@ standalone proximity preparer refuses to overwrite a nonempty directory.
 
 ## Cell 3D reports an unsupported graph index
 
-The current graph sidecar uses `schema_version = 2L`: one node-only Parquet file
-per sample plus `index.rds`. Old version 1 per-cell RDS assets are not compatible.
+The current graph sidecar uses `schema_version = 3L`: one node-only Parquet file
+per sample plus `index.rds`, with no stored node IDs. Version 2 sample Parquet
+sidecars remain readable but cannot be extended by the preparer; rebuild in a
+new directory to get smaller version 3 files. Old version 1 per-cell RDS assets
+are not compatible.
 Do not change the version field by hand or delete the old directory to bypass
 the check. Preserve it and run `scripts/prepare_hybrid_bundle.R` with a new
 output directory, then deploy the new bundle and its sidecars together. There

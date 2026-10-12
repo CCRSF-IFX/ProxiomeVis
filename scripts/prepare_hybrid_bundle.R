@@ -31,7 +31,10 @@ build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = 
   }
   graph_dir <- file.path(output_dir, "graphs")
   if (graphs && file.exists(file.path(graph_dir, "index.rds"))) {
-    read_cell_graph_index(graph_dir, data$contract$dataset_id, data$metadata$component)
+    graph_index <- read_cell_graph_index(graph_dir, data$contract$dataset_id, data$metadata$component)
+    if (!identical(graph_index$schema_version, 3L)) {
+      stop("Prepare version 3 graph assets into a new directory; existing version 2 files are not modified.", call. = FALSE)
+    }
   }
   proximity_dir <- file.path(output_dir, "proximity")
   manifest_path <- file.path(proximity_dir, "manifest.rds")

@@ -45,7 +45,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
 
 The result is `output/hybrid_demo/analysis.rds`, `proximity/` (partitioned
 Parquet), and `graphs/` (one node-only Parquet file per prepared sample plus a
-version 2 `index.rds`). Keep these together
+version 3 `index.rds`; no stored node IDs). Keep these together
 when deploying. The optional third argument overrides the source PXL directory;
 a fourth argument lists selected graph cells, one exact ID per line. This limits
 only 3D preparation, not the reports or proximity data. See
