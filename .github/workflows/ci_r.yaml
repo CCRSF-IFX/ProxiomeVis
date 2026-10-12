@@ -46,7 +46,8 @@ jobs:
           'install.packages(c("testthat", "shiny", "bslib", "ggplot2", "plotly",
           "DT", "SeuratObject", "Matrix", "jsonlite", "data.table", "ggrepel",
           "scales", "tibble", "pheatmap", "yaml", "withr", "htmltools",
-          "callr", "promises", "later", "digest", "arrow", "dplyr", "DBI", "duckdb"))'
+          "callr", "promises", "later", "digest", "arrow", "dplyr", "DBI", "duckdb"),
+          repos = c(CRAN = Sys.getenv("RSPM", "https://cloud.r-project.org")))'
 
       - name: Run unit tests
         run: Rscript --vanilla tests/testthat.R
