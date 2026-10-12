@@ -196,6 +196,67 @@ read_proximity_subset <- function(data, asset_root, request) {
   scores
 }
 
+validate_graph_markers <- function(markers, available) {
+  if (!is.character(markers) || length(markers) < 2L || anyNA(markers) ||
+      any(!nzchar(trimws(markers))) || anyDuplicated(markers)) {
+    stop("graph_markers must contain at least two distinct, nonempty marker names.", call. = FALSE)
+  }
+  unknown <- setdiff(markers, available)
+  if (length(unknown)) stop("Unknown graph markers: ", paste(unknown, collapse = ", "), call. = FALSE)
+  sort(markers, method = "radix")
+}
+
+select_marker_graph_cells <- function(data, asset_root, markers) {
+  markers <- validate_graph_markers(markers, rownames(data$abundance))
+  prepared <- validated_proximity_partitions(data, asset_root, data$metadata$component)
+  spill <- tempfile("proxiomevis-graph-ranking-")
+  dir.create(spill)
+  on.exit(unlink(spill, recursive = TRUE), add = TRUE)
+  connection <- DBI::dbConnect(duckdb::duckdb(), config = list(threads = "1",
+    memory_limit = "512MB", temp_directory = spill))
+  on.exit(DBI::dbDisconnect(connection, shutdown = TRUE), add = TRUE, after = FALSE)
+  DBI::dbWriteTable(connection, "metadata", data$metadata[c("component", "donor", "celltype", "condition")])
+  paths <- paste(DBI::dbQuoteString(connection, prepared$paths), collapse = ",")
+  marker_sql <- paste(DBI::dbQuoteString(connection, markers), collapse = ",")
+  # Rank on disk; only the selected cell union enters R memory.
+  DBI::dbExecute(connection, paste0("CREATE VIEW scores AS SELECT p.component, m.donor, m.celltype, m.condition, ",
+    "least(p.marker_1,p.marker_2) AS marker_1, greatest(p.marker_1,p.marker_2) AS marker_2, p.log2_ratio ",
+    "FROM read_parquet([", paths, "]) p JOIN metadata m USING (component) ",
+    "WHERE p.marker_1 IN (", marker_sql, ") AND p.marker_2 IN (", marker_sql, ") ",
+    "AND p.marker_1 <> p.marker_2"))
+  duplicates <- DBI::dbGetQuery(connection, paste(
+    "SELECT 1 FROM scores GROUP BY component, marker_1, marker_2 HAVING count(*) > 1 LIMIT 1"))
+  if (nrow(duplicates)) stop("Duplicate proximity observations for an unordered marker pair.", call. = FALSE)
+  message("Ranking graph cells: top 2 and bottom 2 per different-marker pair among ",
+    paste(markers, collapse = ", "), ", within donor × cell type × condition.")
+  selected <- DBI::dbGetQuery(connection, paste0(
+    "WITH ranked AS (SELECT *, ",
+    "row_number() OVER (PARTITION BY donor, celltype, condition, marker_1, marker_2 ",
+    "ORDER BY log2_ratio DESC, component ASC) AS top_rank, ",
+    "row_number() OVER (PARTITION BY donor, celltype, condition, marker_1, marker_2 ",
+    "ORDER BY log2_ratio ASC, component ASC) AS bottom_rank ",
+    "FROM scores WHERE isfinite(log2_ratio)) ",
+    "SELECT component, bool_or(top_rank <= 2) AS colocalization_top, ",
+    "bool_or(bottom_rank <= 2) AS colocalization_bottom ",
+    "FROM ranked WHERE top_rank <= 2 OR bottom_rank <= 2 ",
+    "GROUP BY component ORDER BY component"))
+  if (!nrow(selected)) stop("No finite different-marker proximity scores are available for the selected graph markers.", call. = FALSE)
+  selected <- merge(selected, data$metadata[c("component", "sample_id", "donor", "celltype", "condition")],
+    by = "component", sort = TRUE)
+  summary <- do.call(rbind, lapply(sort(unique(data$metadata$sample_id)), function(sample) {
+    rows <- selected[selected$sample_id == sample, , drop = FALSE]
+    data.frame(sample_id = sample, total_cells = sum(data$metadata$sample_id == sample),
+      colocalization_top_cells = sum(rows$colocalization_top),
+      colocalization_bottom_cells = sum(rows$colocalization_bottom), selected_cells = nrow(rows))
+  }))
+  list(cells = selected$component, selected = selected, summary = summary,
+    parameters = list(markers = markers, strata = c("donor", "celltype", "condition"),
+      colocalization = "Top 2 and bottom 2 per unordered different-marker pair; self-pairs excluded",
+      metric = "log2_ratio", ties = "Exact cell ID ascending in each tail; at most 2 per tail",
+      filtering = "Finite observed scores only; no imputation or abundance cutoff",
+      proximity_manifest_md5 = unname(tools::md5sum(prepared$manifest_path))))
+}
+
 rank_cell_proximity <- function(data, asset_root, donor, celltype, condition, marker_1, marker_2) {
   if (!requireNamespace("arrow", quietly = TRUE) || !requireNamespace("dplyr", quietly = TRUE)) {
     stop("Install arrow and dplyr to rank cells from the proximity sidecar.", call. = FALSE)

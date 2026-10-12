@@ -67,6 +67,11 @@ This structure includes a version number.
 The script uses the demo directory structure and its `d1` and `d2` results.
 The application reader uses a versioned data format, not the demo directory structure.
 
+Optional arguments select the UMAP, PCA, metadata columns, assay, and abundance layer.
+For example, append `--umap umap --celltype-column celltype` when these names match your input.
+The [preparation options](docs/precomputed-results.md#prepare-the-frozen-results) table gives all nine arguments and their defaults.
+These arguments do not calculate new report results.
+
 The script reads the CCA object and tertiary results from `../pixelgen_demo_data`.
 It does not change this source dataset.
 It writes only the specified `OUTPUT_RDS` file.
@@ -97,6 +102,20 @@ An optional fourth argument specifies a text file with the selected cell IDs.
 Each line must contain one cell ID that matches an ID in the dataset.
 This selection changes only graph preparation.
 It does not change the precomputed results or proximity data.
+
+Alternatively, append `--graph-markers CD19,CD37,CD53,CD81,CD82` to select cells by their observed proximity scores.
+The script ranks cells separately within each donor, cell type, and condition.
+It selects the top 2 and bottom 2 cells for each different-marker pair among the specified markers.
+It excludes self-marker pairs.
+It exports the union of these cells without duplicates.
+Each selected cell retains its complete 3D layout, including nodes for other markers.
+Five markers give ten different-marker pairs and at most 40 selected cells per donor, cell type, and condition.
+Do not combine this option with a cell-ID text file.
+
+Use a new output directory if existing graphs contain cells outside the selection.
+The script writes per-sample counts to `graph_export_summary.tsv` and reports them in the console.
+It also saves the selected cell IDs and ranking settings.
+See [ranked graph export](docs/precomputed-results.md#export-only-ranked-cells-for-3d) for details.
 
 [Getting started](docs/getting-started.md#2-prepare-the-hybrid-application-bundle) gives the argument details.
 

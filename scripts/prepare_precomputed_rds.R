@@ -421,7 +421,18 @@ load_report <- function(paths, abundance_samples) {
   )
 }
 
-build_precomputed_rds <- function(input_rds, analysis_dir, output_rds) {
+build_precomputed_rds <- function(input_rds, analysis_dir, output_rds,
+    reduction = "umap.cca", pca_reduction = "pca", celltype_column = "celltype_broad",
+    cluster_column = "cluster", donor_column = "donor", condition_column = "condition",
+    sample_column = "sample_alias", assay = "PNA", abundance_layer = "data") {
+  defaults <- list(reduction = reduction, pca_reduction = pca_reduction,
+    celltype_column = celltype_column, cluster_column = cluster_column, donor_column = donor_column,
+    condition_column = condition_column, sample_column = sample_column, assay = assay,
+    abundance_layer = abundance_layer)
+  if (any(!vapply(defaults, function(x) is.character(x) && length(x) == 1L &&
+      !is.na(x) && nzchar(trimws(x)), logical(1)))) {
+    preparation_error("Reduction, metadata, assay, and layer settings must be nonempty strings.")
+  }
   arguments <- c(input_rds, analysis_dir, output_rds)
   if (length(arguments) != 3L || anyNA(arguments) || any(!nzchar(arguments))) {
     preparation_error("input_rds, analysis_dir, and output_rds must be nonempty paths.")
@@ -450,11 +461,6 @@ build_precomputed_rds <- function(input_rds, analysis_dir, output_rds) {
   if (length(missing)) preparation_error("Missing demo analysis sources: ", paste(basename(missing), collapse = ", "))
   object <- readRDS(input_rds)
   if (!inherits(object, "Seurat")) preparation_error("input_rds must contain a Seurat object.")
-  defaults <- list(
-    reduction = "umap.cca", pca_reduction = "pca", celltype_column = "celltype_broad",
-    cluster_column = "cluster", donor_column = "donor", condition_column = "condition",
-    sample_column = "sample_alias", assay = "PNA", abundance_layer = "data"
-  )
   required_metadata <- unlist(defaults[c("celltype_column", "cluster_column", "donor_column",
                                          "condition_column", "sample_column")], use.names = FALSE)
   if (!all(required_metadata %in% names(object@meta.data))) {
@@ -462,7 +468,11 @@ build_precomputed_rds <- function(input_rds, analysis_dir, output_rds) {
                       paste(setdiff(required_metadata, names(object@meta.data)), collapse = ", "))
   }
   if (!all(c(defaults$reduction, defaults$pca_reduction) %in% names(object@reductions))) {
-    preparation_error("Input RDS is missing the CCA UMAP or PCA reduction.")
+    preparation_error("Input RDS is missing the selected UMAP or PCA reduction.")
+  }
+  if (!defaults$assay %in% names(object@assays)) preparation_error("Input RDS is missing the selected assay.")
+  if (!defaults$abundance_layer %in% SeuratObject::Layers(object[[defaults$assay]])) {
+    preparation_error("Input RDS is missing the selected abundance layer.")
   }
   features <- rownames(object[[defaults$assay]])
 
@@ -523,6 +533,7 @@ build_precomputed_rds <- function(input_rds, analysis_dir, output_rds) {
     "pixelgen-demo-v", contract_environment$PROXIOMEVIS_SCHEMA_VERSION, "-",
     substr(md5_text(c(
       paste0("builder_version=", PRECOMPUTED_BUILDER_VERSION),
+      paste(names(defaults), unlist(defaults, use.names = FALSE), sep = "="),
       paste(identity_rows$role, identity_rows$size_bytes, identity_rows$md5, sep = "=")
     )), 1L, 16L)
   )
@@ -596,10 +607,18 @@ build_precomputed_rds <- function(input_rds, analysis_dir, output_rds) {
 }
 
 if (sys.nframe() == 0L) {
-  arguments <- commandArgs(trailingOnly = TRUE)
-  if (length(arguments) != 3L) {
-    preparation_error("Usage: Rscript scripts/prepare_precomputed_rds.R INPUT_RDS ANALYSIS_DIR OUTPUT_RDS")
-  }
-  output <- build_precomputed_rds(arguments[[1L]], arguments[[2L]], arguments[[3L]])
+  source(file.path(dirname(.preparation_script_file), "..", "R", "preparation_cli.R"))
+  option_names <- c(umap = "reduction", pca = "pca_reduction", "celltype-column" = "celltype_column",
+    "cluster-column" = "cluster_column", "donor-column" = "donor_column",
+    "condition-column" = "condition_column", "sample-column" = "sample_column",
+    assay = "assay", "abundance-layer" = "abundance_layer")
+  usage <- paste("Usage: Rscript scripts/prepare_precomputed_rds.R INPUT_RDS ANALYSIS_DIR OUTPUT_RDS",
+    paste(paste0("[--", names(option_names), " VALUE]"), collapse = " "))
+  args <- commandArgs(trailingOnly = TRUE)
+  if (identical(args, "--help")) { cat(usage, "\n"); quit(status = 0L) }
+  parsed <- parse_preparation_cli(args, setNames(vector("list", length(option_names)), names(option_names)), 3L, usage)
+  settings <- parsed$options[!vapply(parsed$options, is.null, logical(1))]
+  names(settings) <- unname(option_names[names(settings)])
+  output <- do.call(build_precomputed_rds, c(as.list(parsed$positional), settings))
   message("Wrote validated precomputed RDS: ", output)
 }

@@ -182,3 +182,97 @@ test_that("sidecar and source mismatches fail before export without rewriting fi
     expect_identical(tools::md5sum(names(original)), original)
   }
 })
+
+test_that("ranked export writes only selected graph cells and accurate per-sample logs", {
+  skip_if_not_installed("duckdb"); skip_if_not_installed("arrow"); skip_if_not_installed("pixelatorR")
+  fixture <- hybrid_preparation_fixture()
+  env <- environment(fixture$build)
+  data <- env$read_precomputed_rds(fixture$input)
+  meta <- data$metadata
+  manifest <- fixture$manifest
+  manifest$schema_version <- 1L
+  manifest$dataset_id <- data$contract$dataset_id
+  for (i in seq_along(fixture$partitions)) {
+    cells <- meta$component[meta$sample_id == manifest$partitions$sample_id[[i]]]
+    arrow::write_parquet(rbind(
+      data.frame(component = cells, marker_1 = "A", marker_2 = "B", log2_ratio = c(1, 2, NA, NA)),
+      data.frame(component = cells, marker_1 = "A", marker_2 = "C", log2_ratio = seq_along(cells)),
+      data.frame(component = cells, marker_1 = "A", marker_2 = "A", log2_ratio = seq_along(cells))),
+      fixture$partitions[[i]])
+  }
+  manifest$partitions$md5 <- unname(tools::md5sum(fixture$partitions))
+  saveRDS(manifest, fixture$manifest_path)
+  mapping <- data.frame(pxl_file = unname(fixture$sources))
+  mapping$id_map <- lapply(names(fixture$sources), function(sample) {
+    cells <- meta$component[meta$sample_id == sample]
+    data.frame(current_id = cells, original_id = cells)
+  })
+  db <- list(close = function() invisible(NULL), query = function(sql) {
+    if (startsWith(sql, "SET ")) return(invisible(NULL))
+    if (startsWith(sql, "SELECT DISTINCT")) return(data.frame(layout = "coarsened_pmds_3d", graph_projection = "full"))
+    cell <- sub(".*SELECT '(cell[0-9]+)' AS cell_id.*", "\\1", sql)
+    stopifnot(cell %in% meta$component)
+    nodes <- data.frame(cell_id = cell, node_id = c("1-umi1", "2-umi2"), x = c(0, 1), y = c(1, 0), z = c(0, 1))
+    nodes$markers <- list("A", "C")
+    nodes
+  })
+  testthat::local_mocked_bindings(FSMap = function(object) mapping,
+    PixelDB = list(new = function(path) db), .package = "pixelatorR")
+  env$prepare_cell_graph_assets <- prepare_cell_graph_assets
+  env$write_precomputed_bundle <- write_precomputed_bundle
+  original <- tools::md5sum(c(fixture$input, fixture$sources, fixture$partitions, fixture$manifest_path))
+  expect_message(fixture$build(fixture$input, fixture$output, graph_markers = c("A", "B")), "3D export")
+  selection <- readRDS(file.path(fixture$output, "graph_selection.rds"))
+  expect_length(selection$cells, 8L)
+  expect_true(all(selection$selected$colocalization_top & selection$selected$colocalization_bottom))
+  expect_identical(selection$parameters$markers, c("A", "B"))
+  summary <- read.delim(file.path(fixture$output, "graph_export_summary.tsv"))
+  expect_equal(summary$total_cells, rep(4, 4))
+  expect_equal(summary$selected_cells, rep(2, 4))
+  expect_identical(summary$exported_cells, summary$selected_cells)
+  expect_setequal(read.delim(file.path(fixture$output, "graph_selected_cells.tsv"))$component, selection$cells)
+  index <- read_cell_graph_index(file.path(fixture$output, "graphs"), data$contract$dataset_id, meta$component)
+  expect_setequal(index$cells$cell_id, selection$cells)
+  for (file in index$samples$file) {
+    nodes <- arrow::read_parquet(file.path(fixture$output, "graphs", file))
+    expect_true(all(nodes$cell_id %in% selection$cells))
+    expect_false("node_id" %in% names(nodes))
+    expect_true("C" %in% unlist(nodes$markers))
+    expect_equal(nrow(nodes), 2L * length(unique(nodes$cell_id)))
+  }
+  expect_equal(nrow(read_precomputed_rds(fixture$bundle_path)$metadata), nrow(meta))
+  expect_identical(tools::md5sum(names(original)), original)
+  expect_message(fixture$build(fixture$input, fixture$output, graph_markers = c("A", "B")), "Reusing sample")
+  expect_error(fixture$build(fixture$input, fixture$output), "selected graph export")
+  expect_message(fixture$build(fixture$input, fixture$output, graph_markers = c("A", "B", "C")), "Prepared application bundle")
+  bundle_hash <- tools::md5sum(fixture$bundle_path)
+  expect_error(fixture$build(fixture$input, fixture$output, graph_markers = c("A", "B")), "outside the ranked selection")
+  expect_identical(tools::md5sum(fixture$bundle_path), bundle_hash)
+})
+
+test_that("marker options reject conflicting or invalid requests before writing outputs", {
+  fixture <- hybrid_preparation_fixture()
+  expect_error(fixture$build(fixture$input, fixture$output, graph_markers = "A"), "at least two distinct")
+  expect_error(fixture$build(fixture$input, fixture$output, graph_markers = c("A", "unknown")), "Unknown graph markers")
+  expect_error(fixture$build("missing", fixture$output, graph_markers = c("A", "B"), graphs = FALSE), "requires graphs")
+  expect_error(fixture$build("missing", fixture$output, graph_markers = c("A", "B"), graph_cells = "cell1"), "cannot be combined")
+  expect_null(fixture$calls$graph)
+  expect_null(fixture$calls$export)
+})
+
+test_that("the marker CLI parses lists and validates them before changing outputs", {
+  fixture <- hybrid_preparation_fixture()
+  repository <- normalizePath(file.path("..", ".."), mustWork = TRUE)
+  original <- tools::md5sum(c(fixture$input, fixture$bundle_path, fixture$manifest_path))
+  cases <- c("A, unknown" = "Unknown graph markers: unknown", "A,A" = "at least two distinct",
+    "A,B," = "missing after the final comma", "A,,B" = "at least two distinct")
+  for (markers in names(cases)) {
+    result <- callr::rscript(file.path(repository, "scripts", "prepare_hybrid_bundle.R"),
+      cmdargs = c(fixture$input, fixture$output, "--graph-markers", markers),
+      wd = repository, env = c(OPENBLAS_NUM_THREADS = "1", OMP_NUM_THREADS = "1", ARROW_NUM_THREADS = "1"),
+      fail_on_status = FALSE, show = FALSE)
+    expect_identical(result$status, 1L)
+    expect_match(result$stderr, cases[[markers]])
+  }
+  expect_identical(tools::md5sum(names(original)), original)
+})

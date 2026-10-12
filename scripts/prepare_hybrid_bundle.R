@@ -3,9 +3,17 @@
 source(file.path("R", "precomputed_contract.R"))
 source(file.path("R", "proximity_store.R"))
 source(file.path("R", "cell_graph_assets.R"))
+source(file.path("R", "preparation_cli.R"))
 
-build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = TRUE, graph_cells = NULL) {
+build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = TRUE, graph_cells = NULL,
+                                graph_markers = NULL) {
+  if (!is.null(graph_markers)) {
+    if (!isTRUE(graphs) || !is.null(graph_cells)) {
+      stop("graph_markers requires graphs = TRUE and cannot be combined with graph_cells.", call. = FALSE)
+    }
+  }
   data <- read_precomputed_rds(input_rds)
+  if (!is.null(graph_markers)) graph_markers <- validate_graph_markers(graph_markers, rownames(data$abundance))
   if (!is.null(graph_cells)) {
     if (!isTRUE(graphs)) stop("graph_cells requires graphs = TRUE.", call. = FALSE)
     if (!is.character(graph_cells) || !length(graph_cells) || anyNA(graph_cells) ||
@@ -30,6 +38,11 @@ build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = 
     stop("Write the application bundle separately from the source RDS.", call. = FALSE)
   }
   graph_dir <- file.path(output_dir, "graphs")
+  if (graphs && is.null(graph_markers) && file.exists(file.path(output_dir, "graph_selection.rds"))) {
+    stop("This directory contains a selected graph export. Supply --graph-markers or choose a new output directory.",
+      call. = FALSE)
+  }
+  graph_index <- NULL
   if (graphs && file.exists(file.path(graph_dir, "index.rds"))) {
     graph_index <- read_cell_graph_index(graph_dir, data$contract$dataset_id, data$metadata$component)
     if (!identical(graph_index$schema_version, 3L)) {
@@ -54,15 +67,42 @@ build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = 
   } else {
     prepare_proximity_store(data, sources, proximity_dir)
   }
+  selection <- NULL
+  if (!is.null(graph_markers)) {
+    selection <- select_marker_graph_cells(data, proximity_dir, graph_markers)
+    graph_cells <- selection$cells
+    if (!is.null(graph_index) && !all(graph_index$cells$cell_id %in% graph_cells)) {
+      stop("Existing graphs include cells outside the ranked selection. Choose a new output directory; no graphs were removed.",
+        call. = FALSE)
+    }
+  }
   assets <- list(proximity = list(path = "proximity", manifest = "manifest.rds"))
   if (graphs) assets$graphs <- list(path = "graphs", index = "index.rds")
   if (graphs) {
     if (!requireNamespace("pixelatorR", quietly = TRUE)) stop("Install pixelatorR for graph preparation.")
     object <- readRDS(input_rds)
     if (!inherits(object, "Seurat")) stop("Graph preparation needs the source Seurat RDS with its exact FSMap.")
-    prepare_cell_graph_assets(object, pxl_dir, graph_dir,
+    index <- prepare_cell_graph_assets(object, pxl_dir, graph_dir,
       cells = if (is.null(graph_cells)) colnames(object) else graph_cells,
       dataset_id = data$contract$dataset_id)
+    if (!is.null(selection)) {
+      if (!setequal(index$cells$cell_id, selection$cells)) {
+        stop("Exported graph cells do not match the ranked selection.", call. = FALSE)
+      }
+      selection$summary$exported_cells <- vapply(selection$summary$sample_id,
+        function(sample) sum(index$cells$sample == sample), integer(1))
+      saveRDS(selection, file.path(output_dir, "graph_selection.rds"))
+      utils::write.table(selection$selected, file.path(output_dir, "graph_selected_cells.tsv"),
+        sep = "\t", quote = TRUE, row.names = FALSE)
+      utils::write.table(selection$summary, file.path(output_dir, "graph_export_summary.tsv"),
+        sep = "\t", quote = TRUE, row.names = FALSE)
+      for (i in seq_len(nrow(selection$summary))) {
+        row <- selection$summary[i, ]
+        message("3D export ", row$sample_id, ": ", row$exported_cells, "/", row$total_cells,
+          " cells (union; colocalization top=", row$colocalization_top_cells,
+          ", bottom=", row$colocalization_bottom_cells, ").")
+      }
+    }
   }
   write_precomputed_bundle(data, path, assets = assets)
   message("Prepared application bundle: ", path)
@@ -71,9 +111,14 @@ build_hybrid_bundle <- function(input_rds, output_dir, pxl_dir = NULL, graphs = 
 
 if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
-  if (!length(args) %in% c(2L, 3L, 4L)) {
-    stop("Usage: Rscript scripts/prepare_hybrid_bundle.R PRECOMPUTED_RDS OUTPUT_DIR [PXL_DIR [GRAPH_CELLS_TXT]]", call. = FALSE)
-  }
+  usage <- paste("Usage: Rscript scripts/prepare_hybrid_bundle.R PRECOMPUTED_RDS OUTPUT_DIR",
+    "[PXL_DIR [GRAPH_CELLS_TXT]] [--graph-markers MARKER1,MARKER2,...]")
+  if (identical(args, "--help")) { cat(usage, "\n"); quit(status = 0L) }
+  parsed <- parse_preparation_cli(args, list("graph-markers" = NULL), 2:4, usage)
+  args <- parsed$positional
+  markers <- parsed$options[["graph-markers"]]
+  if (!is.null(markers) && grepl(",\\s*$", markers)) stop("A graph marker is missing after the final comma.", call. = FALSE)
   build_hybrid_bundle(args[[1L]], args[[2L]], if (length(args) >= 3L) args[[3L]] else NULL,
-    graph_cells = if (length(args) == 4L) readLines(args[[4L]], warn = FALSE) else NULL)
+    graph_cells = if (length(args) == 4L) readLines(args[[4L]], warn = FALSE) else NULL,
+    graph_markers = if (is.null(markers)) NULL else trimws(strsplit(markers, ",", fixed = TRUE)[[1L]]))
 }

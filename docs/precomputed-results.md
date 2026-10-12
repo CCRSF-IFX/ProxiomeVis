@@ -24,6 +24,32 @@ The arguments are:
 3. `OUTPUT_RDS`: the legacy frozen-results Seurat RDS; normally
    `output/proxiomevis_demo_v1.rds`.
 
+Optional settings follow the paths as `--option VALUE`. Omit an option to use its default:
+
+| Option | Default |
+| --- | --- |
+| `--umap` | `umap.cca` |
+| `--pca` | `pca` |
+| `--celltype-column` | `celltype_broad` |
+| `--cluster-column` | `cluster` |
+| `--donor-column` | `donor` |
+| `--condition-column` | `condition` |
+| `--sample-column` | `sample_alias` |
+| `--assay` | `PNA` |
+| `--abundance-layer` | `data` |
+
+These names must exist in the input object. The selected settings are saved in
+the RDS contract and included in its dataset identity. For example, append
+`--umap umap --celltype-column celltype --sample-column sample_id` to the command
+if your input uses those names. Run the script with `--help` to list its options.
+The same settings are named R arguments to `build_precomputed_rds()`; use
+`reduction`, `pca_reduction`, and underscores instead of hyphens for the column/layer arguments.
+
+These options map input fields; they do not recompute or relabel frozen report
+results. The analysis directory must still follow the demo report layout, and
+its provenance must match the input RDS. Selected annotations, sample identities,
+and abundance values must correspond to the saved analysis.
+
 The `output/` directory is gitignored. Build or deliver the RDS separately on
 the deployment host rather than committing it with the application source.
 
@@ -78,6 +104,61 @@ node IDs. Rebuild older graph exports in a new directory to obtain version 3;
 do not change their version field by hand. See
 [Getting started](getting-started.md) for startup and
 [Hybrid analysis](hybrid-analysis.md) for sidecar schemas and dependencies.
+
+### Export only ranked cells for 3D
+
+Append `--graph-markers` and a comma-separated marker list to the **hybrid bundle** command to limit graph export:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ARROW_NUM_THREADS=1 \
+  Rscript --vanilla scripts/prepare_hybrid_bundle.R \
+  output/proxiomevis_demo_v1.rds output/hybrid_ranked \
+  --graph-markers CD19,CD37,CD53,CD81,CD82
+```
+
+Within each **donor × cell type × condition**, the exporter selects:
+
+- The top 2 and bottom 2 cells for every different-marker pair among the specified markers (colocalization).
+- The union of these cells, without duplicate graph exports.
+
+Self-marker pairs are excluded. Both markers in each pair must appear in the
+list. At least two distinct known marker names are required; names are case-sensitive.
+Omitting the option keeps the existing all-cell or explicit cell-list export.
+Each selected cell retains its complete layout and all node-marker identities,
+including markers outside the selection list. No node filtering is performed.
+
+Ranking uses finite observed `log2_ratio` scores from the proximity sidecar.
+Reversed marker orders represent the same pair. Duplicate observations for one
+cell and unordered pair are rejected. Ties use ascending exact cell IDs in each
+tail; groups with fewer than two scores contribute all available cells. Missing
+scores are not replaced with zero. Like the application's ranking, this does not
+apply the differential-test abundance cutoff. No finite scores means export
+stops with an error. The top/bottom count is fixed at two, not configurable.
+
+Two is a **per-pair, per-tail** limit, not a total-cell limit. Five markers give
+ten different-marker pairs and at most 40 cells per donor/type/condition stratum.
+Overlapping selections reduce this count. A small stratum can still contribute
+all its cells. Ranking runs in DuckDB with one thread and a
+512 MB database memory limit, using temporary disk space for large sorts; this
+is not a limit on total process memory. Only selected cell IDs and flags enter R.
+
+The bundle root also contains:
+
+| File | Contents |
+| --- | --- |
+| `graph_export_summary.tsv` | Total, selected, and exported cells per sample, including zero-export samples; separate tail counts before the union |
+| `graph_selected_cells.tsv` | Exported cell IDs, sample/donor/type/condition, and flags identifying the selecting tails |
+| `graph_selection.rds` | The selection, summary, ranking parameters, and source proximity-manifest checksum |
+
+The console reports exported counts after graph preparation. Tail counts overlap
+and must not be added to obtain the union count. The proximity sidecar, application
+metadata, and frozen results retain all cells.
+
+Do not combine `--graph-markers` with the fourth positional cell-list argument.
+Use a new output directory when existing graphs include cells outside the new
+selection. Matching partial exports can resume; the exporter does not delete
+previously prepared cells. Supply the ranking option again when resuming a ranked
+directory. From R, use `build_hybrid_bundle(..., graph_markers = c("CD19", "CD37", "CD53", "CD81", "CD82"))`.
 
 The plain R list has these fields:
 
