@@ -89,13 +89,6 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               DT::DTOutput(ns("results_table"))
             ),
             bslib::nav_panel(
-              "Volcano rows",
-              precomputed_download_group(
-                shiny::downloadButton(ns("download_filtered_report_csv"), "Filtered volcano table CSV", class = "btn-sm btn-outline-primary")
-              ),
-              DT::DTOutput(ns("report_volcano_table"))
-            ),
-            bslib::nav_panel(
               "Sample support",
               precomputed_download_group(
                 shiny::downloadButton(ns("download_samples_csv"), "Sample support CSV", class = "btn-sm btn-outline-primary")

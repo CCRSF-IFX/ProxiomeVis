@@ -1177,12 +1177,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (length(i) == 1L && i > 0 && i <= nrow(rows))
         select_feature(report_feature_key(rows$marker_1[i], rows$marker_2[i]))
     })
-    shiny::observeEvent(input$report_volcano_table_rows_selected, {
-      rows <- report_volcano_display()
-      i <- input$report_volcano_table_rows_selected
-      if (length(i) == 1L && i > 0 && i <= nrow(rows))
-        select_feature(report_feature_key(rows$marker_1[i], rows$marker_2[i]))
-    })
     output$feature_context <- shiny::renderUI({
       pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
       if (length(pair) != 2L) return(shiny::tags$p("Click a plot or table row to inspect a feature."))
@@ -1320,13 +1314,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       report_volcano_plotly(plot, source = session$ns("volcano"))
     })
 
-    report_volcano_display <- shiny::reactive(
-      precomputed_display_rows(report_scope()$rows, input$fdr_filter, input$fdr_cutoff))
-    output$report_volcano_table <- DT::renderDT({
-      shiny::validate(shiny::need(nrow(report_volcano_display()) > 0L, "No stored rows match this display scope."))
-      DT::datatable(report_volcano_display(), rownames = FALSE, filter = "top",
-        selection = "single", options = list(pageLength = 15, scrollX = TRUE))
-    })
     output$download_report_volcano_svg <- shiny::downloadHandler(
       filename = function() paste0(precomputed_safe_filename(
         report_scope()$readout, report_scope()$donor, report_scope()$celltype,
@@ -1514,14 +1501,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       content = function(file) utils::write.csv(
         precomputed_searched_rows(display_results(), input$results_table_rows_all,
           input$results_table_search, input$results_table_search_columns),
-        file, row.names = FALSE, na = "")
-    )
-    output$download_filtered_report_csv <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
-        scope()$comparison, scope()$readout, "filtered-report-rows"), ".csv"),
-      content = function(file) utils::write.csv(
-        precomputed_searched_rows(report_volcano_display(), input$report_volcano_table_rows_all,
-          input$report_volcano_table_search, input$report_volcano_table_search_columns),
         file, row.names = FALSE, na = "")
     )
     spatial_rows <- shiny::reactive({

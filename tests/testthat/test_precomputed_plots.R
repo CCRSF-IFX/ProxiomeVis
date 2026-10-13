@@ -147,10 +147,13 @@ test_that("the report UI groups stored views under shared navigation and selecti
   expect_false(grepl('id="report-report_donor"', ui, fixed = TRUE))
   expect_false(grepl('id="report-spatial_donor"', ui, fixed = TRUE))
   for (id in c("effect_detail", "report_volcano_plot", "volcano_distribution", "spatial_report_plot",
-               "results_table", "report_volcano_table", "fdr_controls")) {
+               "results_table", "fdr_controls")) {
     expect_equal(sum(gregexpr(paste0('id="report-', id, '"'), ui, fixed = TRUE)[[1L]] > 0L), 1L)
   }
   expect_match(ui, "Exploratory component-level test", fixed = TRUE)
+  expect_false(grepl('data-value="Volcano rows"', ui, fixed = TRUE))
+  expect_false(grepl('id="report-report_volcano_table"', ui, fixed = TRUE))
+  expect_false(grepl('id="report-download_filtered_report_csv"', ui, fixed = TRUE))
 })
 
 test_that("report cell-type choices retain source scopes that were not tested", {

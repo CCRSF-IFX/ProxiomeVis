@@ -272,7 +272,7 @@ The three subtabs are:
 
 | Subtab | Contents |
 | --- | --- |
-| Tables | Searchable result and volcano rows, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
+| Tables | Searchable results, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
 | Volcano | One donor and one cell type's original stored test with hover and zoom, beside a violin/boxplot that updates when a point is clicked |
 | Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects; disabled for abundance |
 
