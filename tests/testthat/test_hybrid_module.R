@@ -52,7 +52,7 @@ test_that("completed analyses retain their submitted scope when controls change"
   current <- shiny::reactiveVal(hybrid_module_fixture())
   probe <- hybrid_module_probe()
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
-                                             code_dir = tempdir(), active = shiny::reactive(FALSE)), {
+                                             code_dir = tempdir()), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
                       readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)
@@ -78,7 +78,7 @@ test_that("dataset replacement cancels the worker and hides a late result even f
   current <- shiny::reactiveVal(hybrid_module_fixture())
   probe <- hybrid_module_probe()
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
-                                             code_dir = tempdir(), active = shiny::reactive(FALSE)), {
+                                             code_dir = tempdir()), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
                       readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)
@@ -95,47 +95,26 @@ test_that("dataset replacement cancels the worker and hides a late result even f
   })
 })
 
-test_that("invalid selected cell IDs are rejected rather than silently discarded", {
-  current <- shiny::reactiveVal(hybrid_module_fixture())
-  probe <- hybrid_module_probe()
-  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
-                                             code_dir = tempdir(), active = shiny::reactive(FALSE)), {
-    session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
-                      readout = "abundance", acknowledge = TRUE)
-    valid <- current()$metadata$component[c(1:3, 43:45)]
-    selected_cells(c(valid, "unknown-cell"))
-    session$setInputs(run = 1L)
-    expect_length(probe$state$jobs, 0L)
-    expect_match(output$status, "selected|selection|scope|unique", ignore.case = TRUE)
-    selected_cells(c(valid, valid[1L]))
-    session$setInputs(run = 2L)
-    expect_length(probe$state$jobs, 0L)
-    expect_match(output$status, "selected|selection|scope|unique", ignore.case = TRUE)
-  })
-})
+
 
 test_that("all readouts run without marker or cell dropdown inputs", {
   for (readout in c("abundance", "self_proximity", "colocalization")) {
     current <- shiny::reactiveVal(hybrid_module_fixture())
     probe <- hybrid_module_probe()
     shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
-                                               code_dir = tempdir(), active = shiny::reactive(FALSE)), {
+                                               code_dir = tempdir()), {
       session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
                         readout = readout, acknowledge = TRUE)
       session$setInputs(min_cells_per_group = 35L)
-      selected_cells(current()$metadata$component[c(1:40, 43:82)])
+      session$setInputs(cells = "obsolete-cell-selection")
       session$setInputs(run = 1L)
       expect_length(probe$state$jobs, 1L)
       submitted <- probe$state$jobs[[1L]]$request
       expect_identical(submitted$markers, c("A", "B", "C"))
       expect_identical(submitted$min_cells_per_group, if (readout == "abundance") 3L else 35L)
-      expect_length(submitted$group_a_cells, 40L)
-      expect_length(submitted$group_b_cells, 40L)
-      session$setInputs(clear_selection = 1L)
-      expect_length(selected_metadata()$component, 84L)
-      selected_cells(current()$metadata$component[1:3])
-      session$setInputs(donor = "D2")
-      expect_length(selected_cells(), 0L)
+      expect_length(submitted$group_a_cells, 42L)
+      expect_length(submitted$group_b_cells, 42L)
+      expect_match(output$selection_summary, "42 target cells; 42 reference cells", fixed = TRUE)
       probe$state$jobs[[1L]]$resolve(hybrid_module_result(submitted))
       settle_module_task(session, task)
       if (readout != "abundance") expect_match(output$result_scope, "Minimum observed cells per condition: 35")
@@ -147,7 +126,7 @@ test_that("worker failures are actionable and cancellation covers buttons and cl
   current <- shiny::reactiveVal(hybrid_module_fixture())
   probe <- hybrid_module_probe()
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
-                                             code_dir = tempdir(), active = shiny::reactive(FALSE)), {
+                                             code_dir = tempdir()), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
                       readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)

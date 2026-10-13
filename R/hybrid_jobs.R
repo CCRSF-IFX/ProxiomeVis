@@ -36,7 +36,7 @@ start_hybrid_job <- function(bundle_path, request, code_dir, manager) {
         if (cancelled || expired) {
           if (process$is_alive()) process$kill()
           stop(if (cancelled) "Analysis cancelled." else
-            "Analysis exceeded the time limit. Select fewer cells in the embedding.", call. = FALSE)
+            "Analysis exceeded the time limit. Use precomputed results or run this comparison offline.", call. = FALSE)
         }
         if (process$is_alive()) {
           later::later(poll, delay = 0.2)

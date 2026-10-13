@@ -192,7 +192,7 @@ read_proximity_subset <- function(data, asset_root, request, marker_1 = request$
     dplyr::filter(query, marker_1 != marker_2)
   }
   scores <- as.data.frame(dplyr::collect(utils::head(query, HYBRID_LIMITS$rows + 1L)))
-  if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; select fewer cells in the embedding.", call. = FALSE)
+  if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; use precomputed results or run this comparison offline.", call. = FALSE)
   if (anyDuplicated(scores[c("component", "marker_1", "marker_2")])) stop("Duplicate proximity observations.", call. = FALSE)
   attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),
     observed_rows = nrow(scores), donor_isotype_fraction_cutoff = cutoff,

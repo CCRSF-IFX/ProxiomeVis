@@ -996,8 +996,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       shiny::req(value, value$contract, value$metadata, value$embeddings)
       value
     })
-    hybrid_analysis_server("analysis", current_data, job_manager, code_dir,
-      active = shiny::reactive(identical(input$report_page, "Custom analysis")))
+    hybrid_analysis_server("analysis", current_data, job_manager, code_dir)
     graph_selection <- shiny::reactiveVal(NULL)
     cell_graph_server("graph", current_data,
       active = shiny::reactive(identical(input$report_page, "Cell 3D")), selection = graph_selection)

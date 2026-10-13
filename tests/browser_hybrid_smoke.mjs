@@ -117,34 +117,7 @@ try {
   console.log('PASS: three real background analyses, confirmation, same-session navigation, CSV/provenance');
   await checkControlContrast();
 
-  await evaluate("Plotly.relayout('report-analysis-cells_plot', {dragmode:'select'}); document.getElementById('report-analysis-cells_plot').scrollIntoView({block:'center'})");
-  const selectionBox = await evaluate(`(() => {
-    const r=document.querySelector('#report-analysis-cells_plot .nsewdrag').getBoundingClientRect();
-    return {x:r.x+2,y:r.y+2,width:r.width-4,height:r.height-4};
-  })()`);
-  await call('Input.dispatchMouseEvent', {type:'mousePressed',x:selectionBox.x,y:selectionBox.y,button:'left',clickCount:1});
-  await call('Input.dispatchMouseEvent', {type:'mouseMoved',x:selectionBox.x+selectionBox.width,y:selectionBox.y+selectionBox.height,button:'left',buttons:1});
-  await call('Input.dispatchMouseEvent', {type:'mouseReleased',x:selectionBox.x+selectionBox.width,y:selectionBox.y+selectionBox.height,button:'left',clickCount:1});
-  await waitFor("JSON.parse(Shiny.shinyapp.$inputValues['plotly_selected-report-analysis-cells'] || '[]').length > 200");
-  console.log('PASS: mouse-driven embedding box selection reaches Shiny');
-
-  const selected = await evaluate(`(() => {
-    const plot = document.getElementById('report-analysis-cells_plot');
-    const points = plot.data.flatMap((trace, curveNumber) =>
-      trace.key.slice(0, 100).map((key, pointNumber) => ({
-        curveNumber, pointNumber, x: trace.x[pointNumber], y: trace.y[pointNumber]
-      })));
-    plot.emit('plotly_selected', {points});
-    return points.map(point => plot.data[point.curveNumber].key[point.pointNumber]);
-  })()`);
-  await waitFor("document.getElementById('report-analysis-selection_summary').textContent.includes('100 target cells; 100 reference cells')");
-  await run();
-  const subset = JSON.parse(await download('report-analysis-provenance_json'));
-  assert.equal(subset.request.group_a_cells.length, 100);
-  assert.equal(subset.request.group_b_cells.length, 100);
-  assert.deepEqual([...subset.request.group_a_cells, ...subset.request.group_b_cells].sort(), selected.sort());
   await screenshot('hybrid-analysis');
-  console.log('PASS: embedding-selected cells define a new, recorded cohort');
 
   await evaluate("document.getElementById('report-analysis-run').click()");
   await waitFor("document.getElementById('report-analysis-run').disabled");

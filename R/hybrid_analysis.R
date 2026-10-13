@@ -48,7 +48,8 @@ validate_hybrid_request <- function(data, request, limits = HYBRID_LIMITS) {
     stop("This readout requires at least ", min_cells, " selected cells in each condition.", call. = FALSE)
   }
   if (length(c(group_a_cells, group_b_cells)) > limits$cells) {
-    stop("Select at most ", limits$cells, " cells in total.", call. = FALSE)
+    stop("The comparison must contain at most ", limits$cells,
+      " cells in total. Use precomputed results or run this comparison offline.", call. = FALSE)
   }
   markers <- request$markers
   if (is.null(markers) || identical(markers, character())) markers <- rownames(data$abundance)
