@@ -224,7 +224,7 @@ These P values do not give population-level evidence of treatment effects.
 Cells are not independent biological replicates.
 
 To select a feature, click a volcano point, spatial pair, or result-table row.
-The shared detail panel shows the selected feature.
+The shared detail panel shows the selected feature in Tables and Volcano.
 The order of markers in a pair does not change the selection.
 
 The volcano and spatial plots have hover and zoom functions.

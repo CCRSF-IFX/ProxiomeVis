@@ -145,7 +145,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               shiny::downloadButton(ns("download_spatial_csv"), "Displayed spatial rows CSV", class = "btn-sm btn-outline-primary")
             ),
             shiny::tags$p(class = "small text-muted",
-              "Hover for values and availability; click a marker pair to inspect it below. Marker order and scales follow the frozen report alignment."),
+              "Hover for values and availability; click a marker pair to select it for inspection in Tables or Volcano. Marker order and scales follow the frozen report alignment."),
             shiny::div(class = "spatial-plot",
               shiny::div(id = ns("spatial_loading"), class = "spatial-loading alert alert-info",
                 role = "status", `aria-live` = "polite",
@@ -156,6 +156,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           )
         )
       ),
+      shiny::conditionalPanel("input.results_view != 'Spatial matrix'", ns = ns,
       bslib::card(full_screen = TRUE,
         class = "mt-3", bslib::card_header("Selected feature — shared across views"),
         bslib::layout_columns(
@@ -174,7 +175,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           shiny::conditionalPanel("input.results_view != 'Volcano'", ns = ns,
             plotly::plotlyOutput(ns("effect_detail"), height = "390px"))
         )
-      )
+      ))
     ),
     bslib::nav_panel("Custom analysis", hybrid_analysis_ui(ns("analysis"))),
     bslib::nav_panel("Cell 3D", cell_graph_ui(ns("graph"))),
