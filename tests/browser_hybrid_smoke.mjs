@@ -98,7 +98,6 @@ try {
   await select('report-analysis-celltype', 'CD4 T');
   await select('report-analysis-target', 'PHA');
   await select('report-analysis-reference', 'unstim');
-  await select('report-analysis-markers', ['CD45', 'HLA-ABC', 'B2M', 'CD4']);
   await evaluate("document.getElementById('report-analysis-run').click()");
   await waitFor("document.getElementById('report-analysis-status').textContent.includes('Confirm the exploratory')");
   await evaluate("document.getElementById('report-analysis-acknowledge').click()");
@@ -126,7 +125,7 @@ try {
   await call('Input.dispatchMouseEvent', {type:'mousePressed',x:selectionBox.x,y:selectionBox.y,button:'left',clickCount:1});
   await call('Input.dispatchMouseEvent', {type:'mouseMoved',x:selectionBox.x+selectionBox.width,y:selectionBox.y+selectionBox.height,button:'left',buttons:1});
   await call('Input.dispatchMouseEvent', {type:'mouseReleased',x:selectionBox.x+selectionBox.width,y:selectionBox.y+selectionBox.height,button:'left',clickCount:1});
-  await waitFor("Shiny.shinyapp.$inputValues['report-analysis-cells']?.length > 200");
+  await waitFor("JSON.parse(Shiny.shinyapp.$inputValues['plotly_selected-report-analysis-cells'] || '[]').length > 200");
   console.log('PASS: mouse-driven embedding box selection reaches Shiny');
 
   const selected = await evaluate(`(() => {
@@ -138,7 +137,7 @@ try {
     plot.emit('plotly_selected', {points});
     return points.map(point => plot.data[point.curveNumber].key[point.pointNumber]);
   })()`);
-  await waitFor(`Shiny.shinyapp.$inputValues['report-analysis-cells']?.length === ${selected.length}`);
+  await waitFor("document.getElementById('report-analysis-selection_summary').textContent.includes('100 target cells; 100 reference cells')");
   await run();
   const subset = JSON.parse(await download('report-analysis-provenance_json'));
   assert.equal(subset.request.group_a_cells.length, 100);

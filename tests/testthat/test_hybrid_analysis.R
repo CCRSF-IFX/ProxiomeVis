@@ -23,12 +23,41 @@ test_that("requests bind every cell to one donor, cell type and comparison", {
   bad <- hybrid_request(); bad$markers <- "absent"
   expect_error(validate_hybrid_request(data, bad), "known markers")
   expect_error(validate_hybrid_request(data, hybrid_request(), modifyList(HYBRID_LIMITS, list(cells = 80L))), "at most 80")
-  expect_error(validate_hybrid_request(data, hybrid_request("colocalization"), modifyList(HYBRID_LIMITS, list(pairs = 0L))), "marker pairs")
+  bad <- hybrid_request("colocalization"); bad$markers <- "A"
+  expect_error(validate_hybrid_request(data, bad), "at least two")
   selected <- hybrid_request(); selected$group_a_cells <- request$group_a_cells[1:3]
   selected$group_b_cells <- request$group_b_cells[1:3]
   expect_length(validate_hybrid_request(data, selected)$group_a_cells, 3L)
   selected$readout <- "self_proximity"
   expect_error(validate_hybrid_request(data, selected), "at least 20")
+})
+
+test_that("all-marker colocalization accepts a full panel beyond one batch", {
+  data <- hybrid_fixture()
+  data$abundance <- matrix(0, nrow = 160, ncol = nrow(data$metadata),
+    dimnames = list(paste0("marker", seq_len(160)), data$metadata$component))
+  request <- hybrid_request("colocalization")
+  request$markers <- NULL
+  validated <- validate_hybrid_request(data, request)
+  expect_length(validated$markers, 160L)
+  expect_equal(nrow(hybrid_feature_table(validated)), 12720L)
+})
+
+test_that("spatial observation thresholds are validated and survive worker validation", {
+  data <- hybrid_fixture()
+  for (readout in c("self_proximity", "colocalization")) {
+    request <- hybrid_request(readout)
+    request$min_cells_per_group <- 10
+    validated <- validate_hybrid_request(data, request)
+    expect_identical(validated$min_cells, 10L)
+    expect_identical(validate_hybrid_request(data, validated)$min_cells_per_group, 10L)
+    for (bad in list(NA_real_, Inf, 0, -1, 1.5, "10", c(10, 20), 1001)) {
+      request$min_cells_per_group <- bad
+      expect_error(validate_hybrid_request(data, request), "whole number")
+    }
+    request$min_cells_per_group <- 43
+    expect_error(validate_hybrid_request(data, request), "at least 43")
+  }
 })
 
 test_that("replacing a bundle with the same dataset ID rejects the pinned request", {
@@ -84,7 +113,7 @@ test_that("spatial tests retain missingness and report support separately", {
   path <- tempfile(fileext = ".rds"); saveRDS(data, path)
   runner <- run_hybrid_analysis
   environment(runner) <- list2env(list(read_precomputed_rds = function(path) readRDS(path),
-    read_proximity_subset = function(data, asset_root, request) scores), parent = environment(run_hybrid_analysis))
+    read_proximity_subset = function(data, asset_root, request, marker_1) scores[scores$marker_1 %in% marker_1, ]), parent = environment(run_hybrid_analysis))
   result <- runner(path, request, asset_root = tempdir())
   expect_identical(result$results$n_scored_a, c(42L, 12L))
   expect_identical(result$results$n_cells_a, c(42L, 42L))
@@ -99,6 +128,10 @@ test_that("spatial tests retain missingness and report support separately", {
   expect_equal(result$results$p_adj[1L], expected$p_adj)
   expect_equal(result$results$p_value[1L], stats::wilcox.test(scores$log2_ratio[scores$marker_1 == "A" & scores$condition == "TRT"],
     scores$log2_ratio[scores$marker_1 == "A" & scores$condition == "NC"], exact = FALSE)$p.value)
+  request$min_cells_per_group <- 10L
+  relaxed <- runner(path, request, asset_root = tempdir())
+  expect_identical(relaxed$results$status, c("tested", "tested"))
+  expect_identical(relaxed$provenance$request$min_cells_per_group, 10L)
 })
 
 test_that("selected colocalization uses observed pair scores and selected-family BH", {
@@ -107,22 +140,23 @@ test_that("selected colocalization uses observed pair scores and selected-family
   input <- hybrid_request("colocalization"); input$markers <- c("A", "B", "C")
   request <- validate_hybrid_request(data, input)
   cells <- c(request$group_a_cells, request$group_b_cells)
-  scores <- data.frame(component = rep(cells, 2L), marker_1 = "A",
+  scores <- data.frame(component = rep(cells, 2L), marker_1 = rep(c("A", "B"), each = length(cells)),
     marker_2 = rep(c("B", "C"), each = length(cells)),
     log2_ratio = c(seq_along(cells) / 10, rep(c(0, 0, 1, 2), 21L)))
   path <- tempfile(fileext = ".rds"); saveRDS(data, path)
   runner <- run_hybrid_analysis
   environment(runner) <- list2env(list(read_precomputed_rds = function(path) readRDS(path),
-    read_proximity_subset = function(data, asset_root, request) scores), parent = environment(run_hybrid_analysis))
+    HYBRID_LIMITS = modifyList(HYBRID_LIMITS, list(pairs = 3L)),
+    read_proximity_subset = function(data, asset_root, request, marker_1) scores[scores$marker_1 %in% marker_1, ]), parent = environment(run_hybrid_analysis))
   result <- runner(path, request, asset_root = tempdir())
   expected_p <- vapply(c("B", "C"), function(marker) {
     a <- scores$log2_ratio[scores$marker_2 == marker & scores$component %in% request$group_a_cells]
     b <- scores$log2_ratio[scores$marker_2 == marker & scores$component %in% request$group_b_cells]
     stats::wilcox.test(a, b, exact = FALSE)$p.value
   }, numeric(1))
-  expect_equal(result$results$p_value[1:2], unname(expected_p), tolerance = 1e-12)
-  expect_equal(result$results$p_adj[1:2], unname(p.adjust(expected_p, "BH")), tolerance = 1e-12)
-  expect_identical(result$results$status, c("tested", "tested", "insufficient_observed_scores"))
+  expect_equal(result$results$p_value[c(1, 3)], unname(expected_p), tolerance = 1e-12)
+  expect_equal(result$results$p_adj[c(1, 3)], unname(p.adjust(expected_p, "BH")), tolerance = 1e-12)
+  expect_identical(result$results$status, c("tested", "insufficient_observed_scores", "tested"))
   expect_identical(result$provenance$tested_features, 2L)
-  expect_equal(result$results$n_scored_a, c(42L, 42L, 0L))
+  expect_equal(result$results$n_scored_a, c(42L, 0L, 42L))
 })

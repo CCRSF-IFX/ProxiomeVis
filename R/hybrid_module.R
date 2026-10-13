@@ -8,16 +8,20 @@ hybrid_analysis_ui <- function(id) {
       shiny::selectInput(ns("celltype"), "One cell type", choices = character()),
       shiny::selectInput(ns("target"), "Target condition", choices = character()),
       shiny::selectInput(ns("reference"), "Reference condition", choices = character()),
-      shiny::selectizeInput(ns("markers"), "Markers to test", choices = character(), multiple = TRUE),
-      shiny::selectizeInput(ns("cells"), "Cell subset (empty = all in scope)",
-                           choices = character(), multiple = TRUE),
+      shiny::conditionalPanel("input.readout !== 'abundance'", ns = ns,
+        shiny::numericInput(ns("min_cells_per_group"), "Minimum observed cells per condition",
+          value = 20L, min = 1L, max = 1000L, step = 1L),
+        shiny::tags$p(class = "small text-muted",
+          "Isotype-background filtering is enabled using the prepared donor cutoff. The minimum applies to each marker or pair after filtering (min_cells_per_group).")
+      ),
+      shiny::tags$p(class = "small text-muted", "All dataset markers are tested. Spatial tests use available cell-level scores."),
       shiny::actionButton(ns("clear_selection"), "Use all cells in scope", class = "btn-sm"),
       shiny::textOutput(ns("selection_summary")),
       shiny::checkboxInput(ns("acknowledge"), "I understand this is exploratory within-donor analysis.", FALSE),
       bslib::input_task_button(ns("run"), "Run comparison"),
       shiny::actionButton(ns("cancel"), "Cancel running analysis", class = "btn-sm btn-outline-secondary"),
       shiny::tags$p(class = "small text-muted",
-        "Limits: 2,000 cells, 160 markers, 1,000 pairs, 1 million score rows, 120 seconds. Minimum cells per group: abundance 3, self-proximity 20, colocalization 40."),
+        "Limits: 2,000 cells, 160 markers, 120 seconds. Spatial tests run in batches of at most 1,000 pairs and 1 million score rows. Abundance requires 3 cells per condition. Spatial minimum defaults: self-clustering 20, colocalization 40."),
       shiny::tags$div(class = "alert alert-warning small",
         "Cells from one donor are not independent biological replicates. Selecting cells using the same marker or embedding can bias tests. These results do not establish population-level significance.")
     ),
@@ -65,7 +69,8 @@ plot_hybrid_volcano <- function(result) {
 hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::reactive(TRUE)) {
   shiny::moduleServer(id, function(input, output, session) {
     job <- NULL
-    message <- shiny::reactiveVal("Choose a scope and markers, then run a comparison.")
+    message <- shiny::reactiveVal("Choose a scope, then run a comparison across all dataset markers.")
+    selected_cells <- shiny::reactiveVal(character())
     validation_error <- shiny::reactiveVal(NULL)
     last_request <- shiny::reactiveVal(NULL)
     task <- shiny::ExtendedTask$new(function(path, request) {
@@ -74,15 +79,17 @@ hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::
     }) |> bslib::bind_task_button("run")
     session$onSessionEnded(function() if (!is.null(job)) job$cancel())
 
+    shiny::observeEvent(input$readout, {
+      shiny::updateNumericInput(session, "min_cells_per_group",
+        value = if (identical(input$readout, "colocalization")) 40L else 20L)
+    })
+
     shiny::observeEvent(data(), {
       value <- data()
       if (!is.null(job)) job$cancel()
       last_request(NULL)
       shiny::updateSelectInput(session, "donor", choices = sort(unique(value$metadata$donor)))
-      markers <- rownames(value$abundance)
-      preferred <- intersect(c("CD3e", "CD4", "CD8", "CD19", "CD14", "CD28", "CD69", "HLA-DR"), markers)
-      if (!length(preferred)) preferred <- head(markers, 6L)
-      shiny::updateSelectizeInput(session, "markers", choices = markers, selected = preferred, server = TRUE)
+      selected_cells(character())
     })
     shiny::observeEvent(list(data(), input$donor), {
       meta <- data()$metadata
@@ -101,10 +108,10 @@ hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::
       target <- head(setdiff(conditions, reference), 1L)
       shiny::updateSelectInput(session, "reference", choices = conditions, selected = reference)
       shiny::updateSelectInput(session, "target", choices = conditions, selected = target)
-      shiny::updateSelectizeInput(session, "cells", choices = scope()$component, selected = character(), server = TRUE)
+      selected_cells(character())
     })
     shiny::observeEvent(input$clear_selection, {
-      shiny::updateSelectizeInput(session, "cells", selected = character())
+      selected_cells(character())
     })
     output$availability <- shiny::renderUI({
       value <- data()
@@ -128,17 +135,16 @@ hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::
     })
     selection_event <- shiny::reactive({
       shiny::req(active())
-      scope()
       plotly::event_data("plotly_selected", source = session$ns("cells"))
     })
     shiny::observeEvent(selection_event(), {
       selection <- plotly::event_data("plotly_selected", source = session$ns("cells"))
-      ids <- intersect(as.character(selection$key), scope()$component)
-      if (length(ids)) shiny::updateSelectizeInput(session, "cells", selected = ids)
+      ids <- as.character(selection$key)
+      if (length(ids)) selected_cells(ids)
     })
     selected_metadata <- shiny::reactive({
       meta <- scope()
-      if (length(input$cells)) meta <- meta[meta$component %in% input$cells, , drop = FALSE]
+      if (length(selected_cells())) meta <- meta[meta$component %in% selected_cells(), , drop = FALSE]
       meta
     })
     output$selection_summary <- shiny::renderText({
@@ -153,16 +159,17 @@ hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::
         if (!isTRUE(input$acknowledge)) stop("Confirm the exploratory-analysis notice before running.", call. = FALSE)
         value <- data()
         if (is.null(value$bundle_path)) stop("No saved application bundle is available.", call. = FALSE)
-        if (!length(input$markers)) stop("Choose at least one marker to test.", call. = FALSE)
-        if (length(input$cells) && (!is.character(input$cells) || anyNA(input$cells) ||
-            anyDuplicated(input$cells) || !all(input$cells %in% scope()$component))) {
+        cells <- selected_cells()
+        if (length(cells) && (!is.character(cells) || anyNA(cells) ||
+            anyDuplicated(cells) || !all(cells %in% scope()$component))) {
           stop("The cell selection is stale or invalid. Select unique cells from the current scope.", call. = FALSE)
         }
         meta <- selected_metadata()
         request <- validate_hybrid_request(value, list(
           dataset_id = value$contract$dataset_id, bundle_md5 = value$bundle_md5, readout = input$readout,
           donor = input$donor, celltype = input$celltype, target = input$target, reference = input$reference,
-          markers = input$markers, group_a_cells = meta$component[meta$condition == input$target],
+          min_cells_per_group = input$min_cells_per_group,
+          markers = rownames(value$abundance), group_a_cells = meta$component[meta$condition == input$target],
           group_b_cells = meta$component[meta$condition == input$reference]
         ))
         last_request(request)
@@ -189,10 +196,12 @@ hybrid_analysis_server <- function(id, data, manager, code_dir, active = shiny::
     output$result_scope <- shiny::renderText({
       result()
       request <- last_request()
-      paste(request$donor, request$celltype, request$readout,
+      paste(c(request$donor, request$celltype, request$readout,
         paste(request$target, "minus", request$reference),
         paste(length(request$group_a_cells), "vs", length(request$group_b_cells), "selected cells"),
-        "BH adjustment applies to this requested feature family; frozen report results are unchanged.", sep = " | ")
+        if (request$readout != "abundance") paste0("Minimum observed cells per condition: ", request$min_cells,
+          "; isotype-background cutoff: ", signif(result()$provenance$filters$donor_isotype_fraction_cutoff, 4)),
+        "BH adjustment applies to this requested feature family; frozen report results are unchanged."), collapse = " | ")
     })
     output$volcano <- plotly::renderPlotly(plot_hybrid_volcano(result()))
     output$results_table <- DT::renderDT({

@@ -31,7 +31,8 @@ hybrid_module_result <- function(request) {
   list(results = data.frame(feature_id = request$markers, effect_size = 0.2, p_value = 0.01,
                             p_adj = 0.02, n_cells_a = length(request$group_a_cells),
                             n_cells_b = length(request$group_b_cells)),
-       provenance = list(dataset_id = request$dataset_id, bundle_md5 = request$bundle_md5, request = request))
+       provenance = list(dataset_id = request$dataset_id, bundle_md5 = request$bundle_md5, request = request,
+                         filters = list(donor_isotype_fraction_cutoff = 0.001)))
 }
 
 settle_module_task <- function(session, task) {
@@ -53,18 +54,18 @@ test_that("completed analyses retain their submitted scope when controls change"
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
                                              code_dir = tempdir(), active = shiny::reactive(FALSE)), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
-                      readout = "abundance", markers = c("A", "B"), acknowledge = TRUE)
+                      readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)
     expect_length(probe$state$jobs, 1L)
     submitted <- probe$state$jobs[[1L]]$request
     expect_identical(submitted$bundle_md5, current()$bundle_md5)
-    session$setInputs(markers = "C", target = "NC", reference = "TRT")
+    session$setInputs(target = "NC", reference = "TRT")
     probe$state$jobs[[1L]]$resolve(hybrid_module_result(submitted))
     settle_module_task(session, task)
     expect_identical(result()$provenance$request, submitted)
     expect_identical(last_request(), submitted)
     expect_match(output$result_scope, "TRT minus NC", fixed = TRUE)
-    expect_identical(result()$results$feature_id, c("A", "B"))
+    expect_identical(result()$results$feature_id, c("A", "B", "C"))
     session$setInputs(acknowledge = FALSE, run = 2L)
     expect_length(probe$state$jobs, 1L)
     expect_match(output$status, "Confirm the exploratory")
@@ -79,7 +80,7 @@ test_that("dataset replacement cancels the worker and hides a late result even f
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
                                              code_dir = tempdir(), active = shiny::reactive(FALSE)), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
-                      readout = "abundance", markers = "A", acknowledge = TRUE)
+                      readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)
     submitted <- probe$state$jobs[[1L]]$request
     replacement <- current()
@@ -100,15 +101,46 @@ test_that("invalid selected cell IDs are rejected rather than silently discarded
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
                                              code_dir = tempdir(), active = shiny::reactive(FALSE)), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
-                      readout = "abundance", markers = "A", acknowledge = TRUE)
+                      readout = "abundance", acknowledge = TRUE)
     valid <- current()$metadata$component[c(1:3, 43:45)]
-    session$setInputs(cells = c(valid, "unknown-cell"), run = 1L)
+    selected_cells(c(valid, "unknown-cell"))
+    session$setInputs(run = 1L)
     expect_length(probe$state$jobs, 0L)
     expect_match(output$status, "selected|selection|scope|unique", ignore.case = TRUE)
-    session$setInputs(cells = c(valid, valid[1L]), run = 2L)
+    selected_cells(c(valid, valid[1L]))
+    session$setInputs(run = 2L)
     expect_length(probe$state$jobs, 0L)
     expect_match(output$status, "selected|selection|scope|unique", ignore.case = TRUE)
   })
+})
+
+test_that("all readouts run without marker or cell dropdown inputs", {
+  for (readout in c("abundance", "self_proximity", "colocalization")) {
+    current <- shiny::reactiveVal(hybrid_module_fixture())
+    probe <- hybrid_module_probe()
+    shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+                                               code_dir = tempdir(), active = shiny::reactive(FALSE)), {
+      session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
+                        readout = readout, acknowledge = TRUE)
+      session$setInputs(min_cells_per_group = 35L)
+      selected_cells(current()$metadata$component[c(1:40, 43:82)])
+      session$setInputs(run = 1L)
+      expect_length(probe$state$jobs, 1L)
+      submitted <- probe$state$jobs[[1L]]$request
+      expect_identical(submitted$markers, c("A", "B", "C"))
+      expect_identical(submitted$min_cells_per_group, if (readout == "abundance") 3L else 35L)
+      expect_length(submitted$group_a_cells, 40L)
+      expect_length(submitted$group_b_cells, 40L)
+      session$setInputs(clear_selection = 1L)
+      expect_length(selected_metadata()$component, 84L)
+      selected_cells(current()$metadata$component[1:3])
+      session$setInputs(donor = "D2")
+      expect_length(selected_cells(), 0L)
+      probe$state$jobs[[1L]]$resolve(hybrid_module_result(submitted))
+      settle_module_task(session, task)
+      if (readout != "abundance") expect_match(output$result_scope, "Minimum observed cells per condition: 35")
+    })
+  }
 })
 
 test_that("worker failures are actionable and cancellation covers buttons and closed sessions", {
@@ -117,7 +149,7 @@ test_that("worker failures are actionable and cancellation covers buttons and cl
   shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
                                              code_dir = tempdir(), active = shiny::reactive(FALSE)), {
     session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
-                      readout = "abundance", markers = "A", acknowledge = TRUE)
+                      readout = "abundance", acknowledge = TRUE)
     session$setInputs(run = 1L)
     probe$state$jobs[[1L]]$reject(simpleError("Install pixelatorR in the analysis worker to run differential tests."))
     expect_warning(settle_module_task(session, task), "Install pixelatorR")

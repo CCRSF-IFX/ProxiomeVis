@@ -3872,13 +3872,13 @@
       "checksum": "1cc92c92e23ea63247a309d7b04b0300"
     },
     "R/hybrid_analysis.R": {
-      "checksum": "3c0a254a59f4a09f8948388669417689"
+      "checksum": "31458582e998de9526857b55fc54d618"
     },
     "R/hybrid_jobs.R": {
-      "checksum": "47857a81cd4e2f6bc948ef7880fbd5ae"
+      "checksum": "1e47b39eac125a040ecdb358d7f0fe3d"
     },
     "R/hybrid_module.R": {
-      "checksum": "6fa48efe11f35ea2ea44c6c4bfed837e"
+      "checksum": "a67c50fd0629877b0dcb9a3bfd854648"
     },
     "R/precomputed_contract.R": {
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
@@ -3893,7 +3893,7 @@
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
     },
     "R/proximity_store.R": {
-      "checksum": "26da7608ea6c5e3862075d96597addbd"
+      "checksum": "7cfa8624f30dafe71c64d00ffafad8d2"
     },
     "R/report_plot_sources.R": {
       "checksum": "fad39fdf893504a3f063f10240080694"
@@ -3902,7 +3902,7 @@
       "checksum": "6937ff3c1d3e7d2bc9750012d135925d"
     },
     "README.md": {
-      "checksum": "c6897cfc8030bf4508d255d470ece9ab"
+      "checksum": "9068ee154cf9e3dd6e671cc2fa971652"
     },
     "screenshots/proxiomevis-abundance-attempt.png": {
       "checksum": "4d372592d7e03b454f776237076dc2cd"
@@ -4370,7 +4370,7 @@
       "checksum": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "tests/browser_hybrid_smoke.mjs": {
-      "checksum": "c25d759cfcc89e097a06aeba21d55545"
+      "checksum": "7a762ba7d1ca321d9c2df2554d0160ab"
     },
     "tests/browser_renderer_benchmark.mjs": {
       "checksum": "fcd3a85bc384d0bd4c4e3118a2c99b98"
@@ -4406,13 +4406,13 @@
       "checksum": "4c40a4bd4e4cb34e01c522c8ceadad10"
     },
     "tests/testthat/test_hybrid_analysis.R": {
-      "checksum": "c7ca80fc6c242c13219ca1d7cac17a1f"
+      "checksum": "7b80c025903adca9d74c10d731850eb9"
     },
     "tests/testthat/test_hybrid_jobs.R": {
       "checksum": "81aeea9cfd4de864bb21d38231508401"
     },
     "tests/testthat/test_hybrid_module.R": {
-      "checksum": "3f6d63ccfdfd097578088d8f03f8b296"
+      "checksum": "4f5e4f0dbf27f44e7deebe1cd49711e9"
     },
     "tests/testthat/test_hybrid_preparation.R": {
       "checksum": "383dbca3f92ff560c6ee3e93d4b254c9"
@@ -4430,7 +4430,7 @@
       "checksum": "270bf4910b58507aff584ad0e37e0f4a"
     },
     "tests/testthat/test_proximity_store.R": {
-      "checksum": "1bd3c793618654abf1c5ae3fe6e07c3e"
+      "checksum": "15058e60236c0444e76d4bd06447b8e3"
     },
     "tests/testthat/test_ranked_graph_selection.R": {
       "checksum": "879785d942ad84a867ba809588570c4f"

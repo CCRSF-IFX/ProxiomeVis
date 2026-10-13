@@ -11,6 +11,36 @@ test_that("asset resolvers reject traversal and escaped partitions", {
   expect_error(resolve_hybrid_asset(path, list(path = "escape")), "inside")
 })
 
+test_that("sidecar background filtering matches FilterProximityScores at the cutoff", {
+  skip_if_not_installed("pixelatorR")
+  data <- hybrid_fixture()
+  root <- withr::local_tempdir()
+  connection <- DBI::dbConnect(duckdb::duckdb(), config = list(threads = "1"))
+  withr::defer(DBI::dbDisconnect(connection, shutdown = TRUE))
+  raw <- data.frame(component = data$metadata$component, marker_1 = "A", marker_2 = "B",
+    log2_ratio = seq_len(84), p1 = rep(c(0.0005, 0.001, 0.1), 28),
+    p2 = rep(c(0.1, 0.01, 0.0005), 28))
+  DBI::dbWriteTable(connection, "scores", raw)
+  expected <- dplyr::collect(pixelatorR::FilterProximityScores(dplyr::tbl(connection, "scores"),
+    background_threshold_pct = 0.001))
+  stored <- raw[c("component", "marker_1", "marker_2", "log2_ratio")]
+  stored$min_marker_fraction <- pmin(raw$p1, raw$p2)
+  path <- file.path(root, "scores.parquet")
+  arrow::write_parquet(stored, path)
+  manifest_path <- file.path(root, "manifest.rds")
+  manifest <- list(donor_cutoffs = c(D1 = 0.001))
+  saveRDS(manifest, manifest_path)
+  reader <- read_proximity_subset
+  environment(reader) <- list2env(list(validated_proximity_partitions = function(...) {
+    list(paths = path, manifest_path = manifest_path, manifest = manifest)
+  }), parent = environment(read_proximity_subset))
+  actual <- reader(data, root, hybrid_request("colocalization"))
+  expect_setequal(actual$component, expected$component)
+  expect_equal(nrow(actual), 28L)
+  expect_true(attr(actual, "provenance")$background_filter_enabled)
+  expect_equal(attr(actual, "provenance")$background_threshold_pct, 0.001)
+})
+
 test_that("PXL preparation maps cells and matches finite observed score filtering", {
   skip_if_not_installed("duckdb")
   skip_if_not_installed("arrow")
@@ -39,6 +69,8 @@ test_that("PXL preparation maps cells and matches finite observed score filterin
   expect_true(all(scores$component %in% data$metadata$component))
   expect_true(all(scores$marker_1 == "A" & scores$marker_2 == "B"))
   expect_equal(scores$log2_ratio, rep(2, 84L))
+  expect_equal(read_proximity_subset(data, out, request, marker_1 = "A"), scores)
+  expect_equal(nrow(read_proximity_subset(data, out, request, marker_1 = "B")), 0L)
   pinned <- data
   pinned$contract$proximity_source$pxl_manifest <- data.frame(
     sample_alias = manifest$partitions$sample_id, pxl_md5 = manifest$partitions$source_pxl_md5)

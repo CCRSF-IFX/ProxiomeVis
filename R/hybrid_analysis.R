@@ -1,5 +1,5 @@
 HYBRID_LIMITS <- list(cells = 2000L, markers = 160L, pairs = 1000L, rows = 1000000L)
-HYBRID_ANALYSIS_VERSION <- "1"
+HYBRID_ANALYSIS_VERSION <- "2"
 
 validate_hybrid_request <- function(data, request, limits = HYBRID_LIMITS) {
   if (!is.list(request)) stop("An analysis request must be a list.", call. = FALSE)
@@ -35,6 +35,15 @@ validate_hybrid_request <- function(data, request, limits = HYBRID_LIMITS) {
   group_a_cells <- select_cells("group_a_cells", request$target)
   group_b_cells <- select_cells("group_b_cells", request$reference)
   min_cells <- switch(request$readout, abundance = 3L, self_proximity = 20L, colocalization = 40L)
+  if (request$readout != "abundance" && !is.null(request$min_cells_per_group)) {
+    min_cells <- request$min_cells_per_group
+  }
+  if (!is.numeric(min_cells) || length(min_cells) != 1L || !is.finite(min_cells) ||
+      min_cells < 1 || min_cells > limits$cells / 2 || min_cells != floor(min_cells)) {
+    stop("Minimum observed cells per condition must be a whole number between 1 and ",
+      floor(limits$cells / 2), ".", call. = FALSE)
+  }
+  min_cells <- as.integer(min_cells)
   if (min(length(group_a_cells), length(group_b_cells)) < min_cells) {
     stop("This readout requires at least ", min_cells, " selected cells in each condition.", call. = FALSE)
   }
@@ -47,15 +56,14 @@ validate_hybrid_request <- function(data, request, limits = HYBRID_LIMITS) {
       !all(markers %in% rownames(data$abundance))) stop("Choose known markers.", call. = FALSE)
   markers <- sort(unique(markers), method = "radix")
   if (length(markers) > limits$markers) stop("Too many selected markers.", call. = FALSE)
-  if (request$readout == "colocalization" &&
-      (length(markers) < 2L || choose(length(markers), 2) > limits$pairs)) {
-    stop("Select at least two markers and at most ", limits$pairs, " marker pairs (45 markers by default).", call. = FALSE)
+  if (request$readout == "colocalization" && length(markers) < 2L) {
+    stop("Colocalization requires at least two dataset markers.", call. = FALSE)
   }
   list(dataset_id = data$contract$dataset_id, bundle_md5 = data$bundle_md5,
        readout = request$readout, donor = request$donor, celltype = request$celltype,
        target = request$target, reference = request$reference, markers = markers,
        group_a_cells = group_a_cells, group_b_cells = group_b_cells,
-       min_cells = min_cells)
+       min_cells = min_cells, min_cells_per_group = min_cells)
 }
 
 hybrid_feature_table <- function(request) {
@@ -108,28 +116,41 @@ run_hybrid_analysis <- function(bundle_path, request, asset_root = NULL) {
     if (is.null(asset_root)) {
       asset_root <- resolve_hybrid_asset(bundle_path, data$assets$proximity)
     }
-    scores <- read_proximity_subset(data, asset_root, request)
-    filter_provenance <- attr(scores, "provenance")
-    scores$condition <- ifelse(scores$component %in% request$group_a_cells, request$target, request$reference)
-    score_keys <- paste(scores$marker_1, scores$marker_2, sep = "\r")
+    # Partition by the first canonical marker; each pair belongs to exactly one batch.
+    batch_size <- max(1L, floor(min(HYBRID_LIMITS$pairs, HYBRID_LIMITS$rows / length(cells)) /
+      if (request$readout == "colocalization") length(request$markers) else 1L))
+    batches <- split(request$markers, ceiling(seq_along(request$markers) / batch_size))
     result_keys <- paste(results$marker_1, results$marker_2, sep = "\r")
-    for (group in c("a", "b")) {
-      counts <- table(score_keys[scores$condition == if (group == "a") request$target else request$reference])
-      values <- as.integer(counts[result_keys])
-      values[is.na(values)] <- 0L
-      results[[paste0("n_scored_", group)]] <- values
+    for (batch in batches) {
+      scores <- read_proximity_subset(data, asset_root, request, marker_1 = batch)
+      provenance <- attr(scores, "provenance")
+      if (is.null(filter_provenance)) {
+        filter_provenance <- provenance
+      } else {
+        filter_provenance$observed_rows <- filter_provenance$observed_rows + provenance$observed_rows
+      }
+      scores$condition <- ifelse(scores$component %in% request$group_a_cells, request$target, request$reference)
+      score_keys <- paste(scores$marker_1, scores$marker_2, sep = "\r")
+      in_batch <- results$marker_1 %in% batch
+      for (group in c("a", "b")) {
+        counts <- table(score_keys[scores$condition == if (group == "a") request$target else request$reference])
+        values <- as.integer(counts[result_keys])
+        values[is.na(values)] <- 0L
+        results[[paste0("n_scored_", group)]][in_batch] <- values[in_batch]
+      }
+      eligible <- in_batch & results$n_scored_a >= request$min_cells & results$n_scored_b >= request$min_cells
+      if (any(eligible)) {
+        tested <- pixelatorR::DifferentialProximityAnalysis(
+          scores, contrast_column = "condition", targets = request$target, reference = request$reference,
+          proximity_metric = "log2_ratio", metric_type = if (request$readout == "self_proximity") "self" else "co",
+          p_adjust_method = "BH", min_cells_per_group = request$min_cells, verbose = FALSE)
+        index <- match(paste(tested$marker_1, tested$marker_2, sep = "\r"), result_keys)
+        results$effect_size[index] <- tested$diff_median
+        results$p_value[index] <- tested$p
+      }
     }
-    eligible <- results$n_scored_a >= request$min_cells & results$n_scored_b >= request$min_cells
-    if (any(eligible)) {
-      tested <- pixelatorR::DifferentialProximityAnalysis(
-        scores, contrast_column = "condition", targets = request$target, reference = request$reference,
-        proximity_metric = "log2_ratio", metric_type = if (request$readout == "self_proximity") "self" else "co",
-        p_adjust_method = "BH", min_cells_per_group = request$min_cells, verbose = FALSE)
-      index <- match(paste(tested$marker_1, tested$marker_2, sep = "\r"), result_keys)
-      results$effect_size[index] <- tested$diff_median
-      results$p_value[index] <- tested$p
-      results$p_adj[index] <- tested$p_adj
-    }
+    tested <- is.finite(results$p_value)
+    results$p_adj[tested] <- stats::p.adjust(results$p_value[tested], method = "BH")
     method <- "pixelatorR::DifferentialProximityAnalysis; two-sided tie-corrected rank test; target minus reference median log2 ratio"
   }
   results$status <- ifelse(results$n_scored_a < request$min_cells | results$n_scored_b < request$min_cells,

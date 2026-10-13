@@ -249,10 +249,21 @@ These views do not load graph sidecars.
 1. Select one donor.
 2. Select one cell type.
 3. Select two conditions.
-4. Select the markers.
-5. If necessary, select cells with the embedding lasso, embedding box, or searchable cell selector.
+4. If necessary, select cells with the embedding lasso or box. Otherwise, use all cells in the selected scope.
+5. For clustering or colocalization, set **Minimum observed cells per condition** if necessary.
 6. Select the checkbox for the exploratory-analysis notice.
-7. Start the analysis.
+7. Click **Run comparison**.
+
+The analysis tests all dataset markers, or all different-marker pairs for colocalization.
+Spatial tests require sufficient observed scores in each condition.
+The minimum defaults to 20 for clustering and 40 for colocalization.
+This control sets `DifferentialProximityAnalysis(min_cells_per_group = ...)`, the current name for the minimum-observation parameter.
+Isotype-background filtering is always enabled for these tests.
+The sidecar query applies the same rule as `FilterProximityScores(background_threshold_pct = isotype_control_fraction_cutoff)`.
+Both marker fractions must be at least the prepared donor cutoff.
+The minimum observation count applies after this filter.
+The worker reads spatial scores in batches and applies BH adjustment across all tested features in the comparison.
+Click **Use all cells in scope** to clear a cell selection.
 
 The analysis worker runs in an isolated R process.
 You can use other tabs while the analysis runs.
@@ -368,8 +379,8 @@ If a worker is active, the application rejects a second job with a retry message
 | Time | 120 seconds |
 | Cells | 2,000 |
 | Markers | 160 |
-| Pairs | 1,000 |
-| Collected score rows | 1 million |
+| Pairs per spatial batch | 1,000 |
+| Collected score rows per spatial batch | 1 million |
 
 These limits do not guarantee a maximum for total memory use.
 Set CPU and memory limits in the server environment.

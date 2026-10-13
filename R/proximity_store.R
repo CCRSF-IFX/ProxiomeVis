@@ -170,7 +170,7 @@ validated_proximity_partitions <- function(data, asset_root, cells) {
   list(paths = unname(paths), manifest = manifest, manifest_path = manifest_path)
 }
 
-read_proximity_subset <- function(data, asset_root, request) {
+read_proximity_subset <- function(data, asset_root, request, marker_1 = request$markers) {
   request <- validate_hybrid_request(data, request)
   cells <- c(request$group_a_cells, request$group_b_cells)
   prepared <- validated_proximity_partitions(data, asset_root, cells)
@@ -179,8 +179,12 @@ read_proximity_subset <- function(data, asset_root, request) {
     stop("Missing donor filtering cutoff in proximity manifest.", call. = FALSE)
   }
   markers <- request$markers
+  first_markers <- marker_1
   query <- arrow::open_dataset(prepared$paths)
+  # FilterProximityScores(background_threshold_pct = cutoff) uses pmin(p1, p2) >= cutoff.
+  # The sidecar stores that minimum, so apply the identical filter before collection.
   query <- dplyr::filter(query, component %in% cells, marker_1 %in% markers, marker_2 %in% markers,
+                         marker_1 %in% first_markers,
                          min_marker_fraction >= cutoff, is.finite(log2_ratio))
   query <- if (request$readout == "self_proximity") {
     dplyr::filter(query, marker_1 == marker_2)
@@ -188,10 +192,13 @@ read_proximity_subset <- function(data, asset_root, request) {
     dplyr::filter(query, marker_1 != marker_2)
   }
   scores <- as.data.frame(dplyr::collect(utils::head(query, HYBRID_LIMITS$rows + 1L)))
-  if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; select fewer cells or markers.", call. = FALSE)
+  if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; select fewer cells in the embedding.", call. = FALSE)
   if (anyDuplicated(scores[c("component", "marker_1", "marker_2")])) stop("Duplicate proximity observations.", call. = FALSE)
   attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),
     observed_rows = nrow(scores), donor_isotype_fraction_cutoff = cutoff,
+    background_filter_enabled = TRUE,
+    background_filter = "FilterProximityScores equivalent: min_marker_fraction >= background_threshold_pct",
+    background_threshold_pct = cutoff,
     filtering = "Both markers pass a donor-wide pinned isotype threshold; only finite observed log2 ratios are tested.")
   scores
 }
