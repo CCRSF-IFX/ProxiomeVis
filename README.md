@@ -184,6 +184,10 @@ The navigation bar contains these tabs:
 - **Precomputed results**
 - **Custom analysis**
 - **Cell 3D**
+- **Documentation**
+
+The **Documentation** tab contains operating instructions, statistical limits, and a link to the GitHub repository.
+This tab is available without a loaded dataset.
 
 The **Dataset** button is at the top right.
 This button opens dataset information and, when enabled, controls to load an approved file from the server.

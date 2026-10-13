@@ -1,3 +1,13 @@
+test_that("documentation is available without a dataset", {
+  html <- as.character(precomputed_ui("report"))
+  expect_match(html, "Documentation", fixed = TRUE)
+  expect_match(html, "ProxiomeVis documentation", fixed = TRUE)
+  expect_match(html, 'href="https://github.com/CCRSF-IFX/ProxiomeVis"', fixed = TRUE)
+  expect_match(html, 'rel="noopener noreferrer"', fixed = TRUE)
+  expect_match(html, "Cells are not independent biological replicates.", fixed = TRUE)
+  expect_match(html, "Download rotating GIF", fixed = TRUE)
+})
+
 test_that("the hosted app rejects visitor-selected server paths", {
   previous_directory <- setwd(file.path("..", ".."))
   on.exit(setwd(previous_directory), add = TRUE)

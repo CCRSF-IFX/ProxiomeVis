@@ -3887,7 +3887,7 @@
       "checksum": "cce0d11cd69aa3af0b0c174e8796540e"
     },
     "R/precomputed_ui.R": {
-      "checksum": "431fcc21820f0245eb70a1667cbcece3"
+      "checksum": "de5ebd2615c1ea33cebc6cb9eda1a171"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
@@ -3902,7 +3902,7 @@
       "checksum": "2f5eadfead99624e4d8951af1151d8a1"
     },
     "README.md": {
-      "checksum": "8485cd6bb461d4d3094edb1a720936c6"
+      "checksum": "bad4bf1da248b27aebd548d176ae9ce7"
     },
     "screenshots/proxiomevis-abundance-attempt.png": {
       "checksum": "4d372592d7e03b454f776237076dc2cd"
@@ -4394,7 +4394,7 @@
       "checksum": "c3858a0ea4a51caebe46eb2ef8bb0455"
     },
     "tests/testthat/test_app.R": {
-      "checksum": "c9868fbce20528bb7bf83e1e5bcca613"
+      "checksum": "fb459d40db1bee64f40ffca6ba3b2b31"
     },
     "tests/testthat/test_cell_graph_assets.R": {
       "checksum": "128ef5ac964cb100ba71ea078f5fb652"
