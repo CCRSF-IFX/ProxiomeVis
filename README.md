@@ -190,6 +190,14 @@ This button opens dataset information and, when enabled, controls to load an app
 The sidecar status identifies the configured files.
 The application validates each sidecar when it uses the file.
 
+### Embeddings
+
+Select one stored embedding from the **Embedding** list.
+Use **Split by** to show all cells together, or separate panels for each donor or sample alias.
+The sample alias uses the sample column configured in the RDS.
+Split panels use the same axes and color scale.
+The SVG download uses the current embedding, color, and split selections.
+
 ### Precomputed results
 
 The **Tables**, **Summary**, **Volcano**, and **Spatial matrix** views use the same selections.

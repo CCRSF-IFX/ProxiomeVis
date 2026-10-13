@@ -37,8 +37,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(
           title = "Embedding controls", width = 300,
-          shiny::selectInput(ns("umap_reduction"), "UMAP / annotation reduction", choices = character()),
-          shiny::selectInput(ns("pca_reduction"), "PCA reduction", choices = character()),
+          shiny::selectInput(ns("embedding_reduction"), "Embedding", choices = character()),
+          shiny::selectInput(ns("embedding_split"), "Split by", choices = c(
+            "None" = "none", "Donor" = "donor", "Sample alias" = "sample_id")),
           shiny::selectInput(ns("embedding_color"), "Color cells by", choices = c(
             "Cell type" = "celltype", "Cluster" = "cluster", "Condition" = "condition",
             "Donor" = "donor", "Marker abundance" = "abundance"), selected = "celltype"),
@@ -48,23 +49,13 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           shiny::tags$p(class = "text-muted small",
             "Embedding colors are annotations or normalized abundance from the loaded RDS; no spatial file is read.")
         ),
-        bslib::layout_columns(
-          col_widths = c(6, 6), fill = FALSE,
           bslib::card(full_screen = TRUE,
-            bslib::card_header("UMAP / annotation embedding"),
+            bslib::card_header("Embedding"),
             precomputed_download_group(
-              shiny::downloadButton(ns("download_umap_svg"), "SVG", class = "btn-sm btn-outline-primary")
+              shiny::downloadButton(ns("download_embedding_svg"), "SVG", class = "btn-sm btn-outline-primary")
             ),
-            plotly::plotlyOutput(ns("umap_plot"), height = "620px")
-          ),
-          bslib::card(full_screen = TRUE,
-            bslib::card_header("PCA embedding"),
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_pca_svg"), "SVG", class = "btn-sm btn-outline-primary")
-            ),
-            plotly::plotlyOutput(ns("pca_plot"), height = "620px")
+            plotly::plotlyOutput(ns("embedding_plot"), height = "620px")
           )
-        )
       )
     ),
     bslib::nav_panel(

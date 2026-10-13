@@ -90,11 +90,13 @@ try {
   console.log('PASS: demo load, QC, provenance, locked server path');
 
   await tab('Embeddings');
-  await waitFor("document.getElementById('report-umap_plot')?.data?.length > 0");
-  assert.equal(await evaluate("document.getElementById('report-umap_reduction').value"), 'umap.cca');
+  await waitFor("document.getElementById('report-embedding_plot')?.data?.length > 0");
+  assert.equal(await evaluate("document.getElementById('report-embedding_reduction').value"), 'umap.cca');
+  await select('embedding_split', 'donor');
+  await select('embedding_split', 'sample_id');
   await select('embedding_color', 'abundance');
-  await download('download_umap_svg', /<svg/);
-  console.log('PASS: default UMAP/PCA, marker abundance, SVG download');
+  await download('download_embedding_svg', /<svg/);
+  console.log('PASS: single embedding, split controls, marker abundance, SVG download');
 
   await evaluate("document.getElementById('dataset').click()");
   await waitFor("document.getElementById('shiny-modal')?.innerText.includes('Proximity sidecar')");

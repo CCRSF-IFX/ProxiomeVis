@@ -136,7 +136,7 @@ test_that("the report UI groups stored views under shared navigation and selecti
   skip_if_not_installed("bslib")
   ui <- as.character(precomputed_ui("report"))
   expect_match(ui, 'id="report-results_view"', fixed = TRUE)
-  expect_match(ui, "Tables &amp; methods", fixed = TRUE)
+  expect_match(ui, 'data-value="Tables"', fixed = TRUE)
   expect_match(ui, "Spatial matrix", fixed = TRUE)
   expect_match(ui, 'id="report-donor_control"', fixed = TRUE)
   expect_match(ui, 'id="report-explore_3d"', fixed = TRUE)

@@ -261,7 +261,8 @@ plot_precomputed_embedding <- function(
   abundance = NULL,
   marker = NULL,
   colors = NULL,
-  title = NULL
+  title = NULL,
+  split_by = "none"
 ) {
   plot_data <- precomputed_embedding_data(metadata, embedding, color_by, abundance, marker)
   if (nrow(plot_data) == 0L) {
@@ -274,6 +275,15 @@ plot_precomputed_embedding <- function(
     "<br>", plot_data$color_label, ": ",
     if (numeric_color) format(round(plot_data$color_value, 3), trim = TRUE) else plot_data$color_value
   )
+  if (split_by != "none") {
+    if (!split_by %in% c("donor", "sample_id") || !split_by %in% names(metadata)) {
+      stop("Choose donor or sample alias to split the embedding.", call. = FALSE)
+    }
+    plot_data$split_group <- precomputed_nonempty_text(
+      metadata[[split_by]][match(plot_data$component, metadata$component)], "Unknown")
+    plot_data$hover <- paste0(plot_data$hover, "<br>",
+      if (split_by == "donor") "Donor" else "Sample alias", ": ", plot_data$split_group)
+  }
   p <- ggplot2::ggplot(
     plot_data,
     ggplot2::aes(x = embedding_x, y = embedding_y, color = color_value, text = hover)
@@ -289,6 +299,7 @@ plot_precomputed_embedding <- function(
     ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.title = ggplot2::element_text(face = "bold"))
 
+  if (split_by != "none") p <- p + ggplot2::facet_wrap(~split_group, ncol = 2)
   if (numeric_color) {
     p + ggplot2::scale_color_gradientn(
       colors = c("#edf7f4", "#78aeb2", "#f0b45b", "#c7503e"),
@@ -1018,10 +1029,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       value <- current_data()
       embedding_names <- names(value$embeddings)
       defaults <- value$contract$defaults
-      umap_selected <- precomputed_keep_selection(defaults$reduction, embedding_names)
-      pca_selected <- precomputed_keep_selection(defaults$pca_reduction, embedding_names, umap_selected)
-      shiny::updateSelectInput(session, "umap_reduction", choices = embedding_names, selected = umap_selected)
-      shiny::updateSelectInput(session, "pca_reduction", choices = embedding_names, selected = pca_selected)
+      shiny::updateSelectInput(session, "embedding_reduction", choices = embedding_names,
+        selected = precomputed_keep_selection(defaults$reduction, embedding_names))
 
       color_choices <- c(
         "Cell type" = "celltype",
@@ -1244,10 +1253,10 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       content = function(file) writeLines(provenance_json(), file, useBytes = TRUE)
     )
 
-    embedding_ggplot <- function(reduction_input, title) {
-      shiny::reactive({
+    embedding_ggplot <- shiny::reactive({
         value <- current_data()
-        reduction <- precomputed_keep_selection(input[[reduction_input]], names(value$embeddings))
+        reduction <- precomputed_keep_selection(input$embedding_reduction, names(value$embeddings),
+          value$contract$defaults$reduction)
         embedding <- value$embeddings[[reduction]]
         color_by <- precomputed_scope_value(input$embedding_color, "celltype")
         color_values <- if (!is.null(color_by) && color_by %in% names(value$metadata)) value$metadata[[color_by]] else character()
@@ -1263,27 +1272,18 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
           abundance = value$abundance,
           marker = input$embedding_marker,
           colors = colors,
-          title = paste(title, reduction)
+          title = paste("Embedding:", reduction),
+          split_by = precomputed_scope_value(input$embedding_split, "none")
         )
       })
-    }
-    umap_ggplot <- embedding_ggplot("umap_reduction", "Embedding:")
-    pca_ggplot <- embedding_ggplot("pca_reduction", "PCA:")
-    output$umap_plot <- plotly::renderPlotly({
-      plotly::ggplotly(umap_ggplot(), tooltip = "text") |>
+    output$embedding_plot <- plotly::renderPlotly({
+      plotly::ggplotly(embedding_ggplot(), tooltip = "text") |>
         plotly::layout(autosize = TRUE, margin = list(l = 60, r = 40, t = 70, b = 60))
     })
-    output$pca_plot <- plotly::renderPlotly({
-      plotly::ggplotly(pca_ggplot(), tooltip = "text") |>
-        plotly::layout(autosize = TRUE, margin = list(l = 60, r = 40, t = 70, b = 60))
-    })
-    output$download_umap_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename("embedding", input$umap_reduction, input$embedding_color), ".svg"),
-      content = function(file) precomputed_write_svg(umap_ggplot(), file, 9, 7)
-    )
-    output$download_pca_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename("embedding", input$pca_reduction, input$embedding_color), ".svg"),
-      content = function(file) precomputed_write_svg(pca_ggplot(), file, 9, 7)
+    output$download_embedding_svg <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename("embedding", input$embedding_reduction,
+        input$embedding_color, input$embedding_split), ".svg"),
+      content = function(file) precomputed_write_svg(embedding_ggplot(), file, 9, 7)
     )
 
     report_scope <- scope
