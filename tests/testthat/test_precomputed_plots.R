@@ -137,6 +137,8 @@ test_that("the report UI groups stored views under shared navigation and selecti
   ui <- as.character(precomputed_ui("report"))
   expect_match(ui, 'id="report-results_view"', fixed = TRUE)
   expect_match(ui, 'data-value="Tables"', fixed = TRUE)
+  expect_false(grepl('data-value="Summary"', ui, fixed = TRUE))
+  expect_false(grepl('id="report-effect_heatmap"', ui, fixed = TRUE))
   expect_match(ui, "Spatial matrix", fixed = TRUE)
   expect_match(ui, 'id="report-donor_control"', fixed = TRUE)
   expect_match(ui, 'id="report-explore_3d"', fixed = TRUE)
@@ -144,7 +146,7 @@ test_that("the report UI groups stored views under shared navigation and selecti
   expect_match(ui, 'id="report-download_spatial_csv"', fixed = TRUE)
   expect_false(grepl('id="report-report_donor"', ui, fixed = TRUE))
   expect_false(grepl('id="report-spatial_donor"', ui, fixed = TRUE))
-  for (id in c("effect_heatmap", "effect_detail", "report_volcano_plot", "spatial_report_plot",
+  for (id in c("effect_detail", "report_volcano_plot", "volcano_distribution", "spatial_report_plot",
                "results_table", "report_volcano_table", "fdr_controls")) {
     expect_equal(sum(gregexpr(paste0('id="report-', id, '"'), ui, fixed = TRUE)[[1L]] > 0L), 1L)
   }

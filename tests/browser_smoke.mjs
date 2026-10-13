@@ -106,21 +106,19 @@ try {
   await tab('Precomputed results');
   await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
   assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Summary\"]') === null"), true);
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('aria-disabled')"), 'true');
   await download('download_detail_svg', /<svg/);
-  await tab('Summary');
   await select('donor', 'd1');
   await select('celltype', 'CD4 T');
   for (const readout of ['abundance', 'self_proximity', 'colocalization']) {
     await select('readout', readout);
-    await waitFor("document.getElementById('report-effect_heatmap')?.data?.length > 0");
-    await tab('Tables');
     await waitFor("document.querySelector('#report-results_table table tbody tr') !== null");
     await evaluate("document.querySelector('#report-results_table table tbody tr').click()");
     await settled();
     await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
     assert.match(await evaluate("document.getElementById('report-effect_detail').layout.title.text"), /cell-level distribution/);
     await download('download_results_csv', /effect_size/);
-    await tab('Summary');
   }
   assert.match(await evaluate("document.getElementById('report-result_summary').innerText"), /Donor: d1.*CD4 T/);
   assert.match(await evaluate("document.getElementById('report-result_summary').innerText"), /not donor-population inference/);
@@ -133,24 +131,25 @@ try {
     assert.equal(await evaluate("document.getElementById('report-report_volcano_plot')._context.scrollZoom"), true);
     await evaluate("(()=>{const p=document.getElementById('report-report_volcano_plot');const i=p.data.findIndex(t=>t.mode==='markers'&&t.x.length);Plotly.Fx.hover(p,[{curveNumber:i,pointNumber:0}]);})()");
     await waitFor("document.querySelector('#report-report_volcano_plot .hoverlayer')?.textContent.includes('Adjusted P value:')");
+    const key = await clickFeature('report-report_volcano_plot');
+    await waitFor("document.getElementById('report-volcano_distribution')?.data?.some(x => x.type === 'box')");
+    await waitFor(JSON.stringify(JSON.parse(key))+".every(marker => document.getElementById('report-volcano_distribution').layout.title.text.includes(marker))");
+    assert.equal(await evaluate("(()=>{const v=document.getElementById('report-report_volcano_plot').closest('.card').getBoundingClientRect();const d=document.getElementById('report-volcano_distribution').closest('.card').getBoundingClientRect();return v.right<=d.left+2&&Math.abs(v.top-d.top)<20;})()"), true);
+    await download('download_detail_svg', /<svg/);
     await download('download_report_volcano_svg', /<svg/);
     await download('download_report_volcano_csv', /exploratory_component_level/);
   }
   async function clickFeature(id) {
-    const key = await evaluate("(()=>{const p=document.getElementById("+JSON.stringify(id)+");const i=p.data.findIndex(t=>t.mode==='markers'&&t.x.length&&t.key?.length);const d=p.data[i];p.emit('plotly_click',{points:[{curveNumber:i,pointNumber:0,x:d.x[0],y:d.y[0],data:d,fullData:p._fullData[i]}]});return d.key[0];})()");
+    const key = await evaluate("(()=>{const p=document.getElementById("+JSON.stringify(id)+");const current=Shiny.shinyapp.$inputValues['report-detail_feature'];const i=p.data.findIndex(t=>t.mode==='markers'&&t.x.length&&t.key?.some(k=>k!==current));const d=p.data[i];const n=d.key.findIndex(k=>k!==current);p.emit('plotly_click',{points:[{curveNumber:i,pointNumber:n,x:d.x[n],y:d.y[n],data:d,fullData:p._fullData[i]}]});return d.key[n];})()");
     await waitFor("Shiny.shinyapp.$inputValues['report-detail_feature'] === "+JSON.stringify(key));
+    await settled();
     return key;
   }
   const selectedKey = await clickFeature('report-report_volcano_plot');
   await fullscreenZoom('report-report_volcano_plot');
-  console.log('PASS: volcano hover/zoom configuration, original exports, linked feature click');
-  await tab('Summary');
-  assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-detail_feature']"), selectedKey);
-  const heatmapKey = await evaluate("(()=>{const p=document.getElementById('report-effect_heatmap');const i=p.data.findIndex(t=>t.type==='heatmap'&&t.key?.length);const d=p.data[i];const row=Math.max(0,d.key.findIndex(k=>k[0]!==Shiny.shinyapp.$inputValues['report-detail_feature']));p.emit('plotly_click',{points:[{curveNumber:i,pointNumber:[row,0],pointIndex:[row,0],x:d.x[0],y:d.y[row],z:d.z[row][0],data:d,fullData:p._fullData[i]}]});return d.key[row][0];})()");
-  assert.equal(JSON.parse(heatmapKey).length, 2);
-  await waitFor("Shiny.shinyapp.$inputValues['report-detail_feature'] === "+JSON.stringify(heatmapKey));
-  console.log('PASS: summary heatmap click selects the complete marker pair');
+  console.log('PASS: volcano hover/zoom, side-by-side distributions, linked feature clicks for every readout');
   await tab('Tables');
+  assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-detail_feature']"), selectedKey);
   await waitFor("document.querySelector('#report-results_table table') !== null");
   await evaluate("document.querySelector('#report-results_table table tbody tr').click()");
   await settled();
@@ -166,6 +165,7 @@ try {
   console.log('PASS: table click and zero-match CSV leaves all-rows CSV unchanged');
 
   await tab('Spatial matrix');
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('aria-disabled')"), 'false');
   await waitFor("document.getElementById('report-spatial_report_plot')?.data?.some(t=>t.mode==='markers'&&t.x.length)");
   assert.equal(await evaluate("document.getElementById('report-spatial_report_plot')._context.scrollZoom"), true);
   await clickFeature('report-spatial_report_plot');
@@ -180,6 +180,17 @@ try {
   await writeFile('output/results-explorer.png', Buffer.from((await call('Page.captureScreenshot', {format:'png'})).data,'base64'));
   console.log('PASS: spatial exploration, pair selection, profiles, original SVG and rows');
 
+  await select('readout', 'abundance');
+  await waitFor("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value') === 'Tables'");
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('tabindex')"), '-1');
+  await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').click()");
+  await settled();
+  assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
+  await select('readout', 'colocalization');
+  await tab('Spatial matrix');
+  await clickFeature('report-spatial_report_plot');
+  console.log('PASS: abundance disables Spatial matrix and returns to Tables; spatial readouts enable it');
+
   await evaluate("document.getElementById('report-explore_3d').click()");
   await waitFor("Shiny.shinyapp.$inputValues['report-report_page'] === 'Cell 3D'");
   await waitFor("Shiny.shinyapp.$inputValues['report-graph-condition'] === ''");
@@ -192,7 +203,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
   await evaluate("document.querySelector('.navbar-toggle').click()");
   await tab('Precomputed results');
-  await tab('Summary');
+  await tab('Volcano');
   await evaluate("window.scrollTo(0,0)");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2"));
   await writeFile('output/results-mobile.png', Buffer.from((await call('Page.captureScreenshot', {format:'png'})).data,'base64'));

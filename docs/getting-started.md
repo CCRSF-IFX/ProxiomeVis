@@ -99,16 +99,16 @@ In **Precomputed results**, choose one donor, cell type, comparison, and readout
 once. A single-donor dataset shows a fixed donor label instead of a redundant
 dropdown. The shared selection persists across these subtabs:
 
-- **Summary:** stored differential-effect heatmap, optionally across all cell
-  types; the original abundance heatmap is available in a collapsed section.
-- **Volcano:** donor-specific stored test with hover, feature selection, and zoom.
+- **Tables:** searchable results, sample support, original method settings,
+  CSV downloads, and a combined violin/boxplot for the selected feature.
+- **Volcano:** donor-specific stored test with hover and zoom beside the selected
+  feature's violin/boxplot. Click a volcano point to update the distribution.
 - **Spatial matrix:** interactive self-proximity and colocalization together,
   with condition-profile and differential-effect views.
-- **Tables:** searchable results, sample support,
-  original method settings, and CSV downloads.
 
 Volcano and spatial views need one cell type; they do not silently substitute
-one when **All cell types (summary)** is selected. Controls select stored rows,
+one when **All cell types** is selected. **Spatial matrix** is disabled for
+abundance; select self-clustering or colocalization to enable it. Controls select stored rows,
 never rerun a test. Positive effects mean target minus reference. Stored
 component-level P values are exploratory within one donor, not population-level
 treatment inference. Spatial condition means are not the group medians used
@@ -122,8 +122,9 @@ transfers the donor, cell type, and pair without loading a graph.
 FDR and search controls filter tables and their **Filtered table CSV** downloads.
 **All stored rows CSV** retains every stored row in the chosen scope, ignoring
 those filters. Report plots and **Original report SVG** retain the original
-thresholds; heatmap controls change only the summary display. Hidden plots are
-not rendered until needed, and precomputed views require no sidecar reads.
+thresholds. Hidden plots are not rendered until needed. Stored results need no
+sidecar reads; cell-level spatial distributions read the selected pair from the
+proximity sidecar and show an availability message when it is absent.
 
 Use **Custom analysis** for a new selected-cell comparison: choose one donor,
 one cell type, two conditions and markers; optionally lasso cells in the embedding;

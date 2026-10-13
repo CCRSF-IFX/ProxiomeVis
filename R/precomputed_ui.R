@@ -3,7 +3,8 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
   bslib::navset_bar(
     id = ns("report_page"), title = "ProxiomeVis", fillable = FALSE,
     navbar_options = bslib::navbar_options(bg = "#f8f9fa", theme = "light"),
-    header = dataset_status,
+    header = shiny::tagList(dataset_status,
+      shiny::tags$head(shiny::tags$script(src = "precomputed.js"))),
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
@@ -104,47 +105,29 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             shiny::uiOutput(ns("methods_ui"))), open = FALSE, class = "mt-3")
         ),
         bslib::nav_panel(
-          "Summary",
-          bslib::layout_column_wrap(
-            width = "220px", fill = FALSE,
-            shiny::numericInput(ns("top_features"), "Heatmap top features", value = 20, min = 2, max = 80, step = 1),
-            shiny::checkboxInput(ns("include_controls"), "Include control markers", value = FALSE)
-          ),
-          bslib::card(full_screen = TRUE,
-            bslib::card_header("Differential-effect heatmap"),
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_heatmap_svg"), "Heatmap SVG", class = "btn-sm btn-outline-primary")
-            ),
-            shiny::tags$p(class = "small text-muted", "Click a feature to inspect its stored effects below. Heatmap settings do not filter the stored results table."),
-            plotly::plotlyOutput(ns("effect_heatmap"), height = "650px")
-          ),
-          shiny::conditionalPanel("input.readout == 'abundance'", ns = ns,
-            bslib::accordion(
-              bslib::accordion_panel(
-                "Original report abundance heatmap",
-                precomputed_download_group(
-                  shiny::downloadButton(ns("download_report_abundance_heatmap_svg"), "Original report SVG", class = "btn-sm btn-outline-primary")
-                ),
-                shiny::plotOutput(ns("report_abundance_heatmap_plot"), height = "820px")
-              ), open = FALSE, class = "mt-3"
-            )
-          )
-        ),
-        bslib::nav_panel(
           "Volcano",
           shiny::tags$div(class = "alert alert-warning small mt-2",
             shiny::tags$strong("Exploratory component-level test. "),
             "Stored P values describe cells within the selected donor, not a population-level treatment effect. Table filters do not change the original report thresholds or plot."
           ),
-          bslib::card(full_screen = TRUE,
-            bslib::card_header("Stored report volcano"),
-            precomputed_download_group(
-              shiny::downloadButton(ns("download_report_volcano_svg"), "Original report SVG", class = "btn-sm btn-outline-primary"),
-              shiny::downloadButton(ns("download_report_volcano_csv"), "All stored volcano rows CSV", class = "btn-sm btn-outline-primary")
+          bslib::layout_columns(
+            col_widths = c(6, 6), fill = FALSE,
+            bslib::card(full_screen = TRUE,
+              bslib::card_header("Stored report volcano"),
+              precomputed_download_group(
+                shiny::downloadButton(ns("download_report_volcano_svg"), "Original report SVG", class = "btn-sm btn-outline-primary"),
+                shiny::downloadButton(ns("download_report_volcano_csv"), "All stored volcano rows CSV", class = "btn-sm btn-outline-primary")
+              ),
+              shiny::tags$p(class = "small text-muted",
+                "Click a point to update the cell distribution alongside. Hover for details; scroll or drag a box to zoom; double-click to reset."),
+              plotly::plotlyOutput(ns("report_volcano_plot"), height = "650px")
             ),
-            shiny::tags$p(class = "small text-muted",
-              "Hover for details; click a feature to select it across views. Scroll or drag a box to zoom; double-click to reset. SVG keeps the original report labels."),
-            plotly::plotlyOutput(ns("report_volcano_plot"), height = "650px")
+            bslib::card(full_screen = TRUE,
+              bslib::card_header("Selected feature — cell distribution"),
+              shiny::tags$p(class = "small text-muted",
+                "Violin and boxplot show available cell values, not a new test. Plotted cells can differ from the original test cohort. Spatial distributions require the proximity sidecar."),
+              plotly::plotlyOutput(ns("volcano_distribution"), height = "650px")
+            )
           )
         ),
         bslib::nav_panel(
@@ -159,7 +142,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             )
           ),
           shiny::tags$p(class = "small text-muted",
-            "This view combines self-proximity and colocalization, regardless of the Readout selection. A mean condition profile is not the quantity used for a difference-of-medians effect. No proximity is recalculated."),
+            "Available for spatial readouts; combines self-proximity and colocalization. A mean condition profile is not the quantity used for a difference-of-medians effect. No proximity is recalculated."),
           bslib::card(full_screen = TRUE,
             bslib::card_header("Aligned spatial matrix"),
             precomputed_download_group(
@@ -178,7 +161,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           col_widths = c(4, 8), fill = FALSE,
           shiny::tagList(
             shiny::selectizeInput(ns("detail_feature"), "Marker / pair", choices = character()),
-            shiny::conditionalPanel("input.results_view != 'Tables'", ns = ns,
+            shiny::conditionalPanel("input.results_view == 'Spatial matrix'", ns = ns,
               shiny::radioButtons(ns("detail_display"), "Detail display", choices = c(
                 "Stored effects" = "effects", "Condition values, when stored" = "conditions"), selected = "effects")
             ),
@@ -187,7 +170,8 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             shiny::tags$p(class = "small text-muted mt-2", "Transfers the selected scope and pair. Choose a condition and one highlight marker, then click Display to load a graph."),
             shiny::downloadButton(ns("download_detail_svg"), "Feature detail SVG", class = "btn-sm btn-outline-primary")
           ),
-          plotly::plotlyOutput(ns("effect_detail"), height = "390px")
+          shiny::conditionalPanel("input.results_view != 'Volcano'", ns = ns,
+            plotly::plotlyOutput(ns("effect_detail"), height = "390px"))
         )
       )
     ),

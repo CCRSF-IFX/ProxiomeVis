@@ -3884,10 +3884,10 @@
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
     },
     "R/precomputed_module.R": {
-      "checksum": "6b0535140c9f2cc19ab98bf3432b7c82"
+      "checksum": "6b55237b209e5a9652455f578ffceede"
     },
     "R/precomputed_ui.R": {
-      "checksum": "ca605ec5bbde7618532e59b8f0abc890"
+      "checksum": "43ea7452accd1240c6f0dfc0e514b36f"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
@@ -4449,6 +4449,9 @@
     },
     "www/cell-graph.js": {
       "checksum": "bf421e2036be43e8146df2d2aea928d0"
+    },
+    "www/precomputed.js": {
+      "checksum": "77327d95a4d62d85eaa146586cf11cb8"
     },
     "www/proixome.css": {
       "checksum": "e37788eaf0189a243b5e06c158ab1b15"

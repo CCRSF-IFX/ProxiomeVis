@@ -268,28 +268,36 @@ dropdown, but every result view still uses one donor's original stored contrast.
 The descriptive cross-donor rows remain preserved in the contract; they are not
 required or substituted for donor-specific effects by this interface.
 
-The four subtabs are:
+The three subtabs are:
 
 | Subtab | Contents |
 | --- | --- |
-| Summary | Differential effects for the selected cell type, or across all cell types; optional original abundance heatmap |
-| Volcano | One donor and one cell type's original stored test with hover, zoom, and feature selection |
-| Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects |
 | Tables | Searchable result and volcano rows, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
+| Volcano | One donor and one cell type's original stored test with hover and zoom, beside a violin/boxplot that updates when a point is clicked |
+| Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects; disabled for abundance |
 
-Choosing **All cell types (summary)** is supported by the heatmap and tables.
+Choosing **All cell types** is supported by the tables and faceted distributions.
 Volcano and spatial views then ask for one cell type rather than silently
 choosing a different scope. Comparison labels retain target/reference direction:
 a positive effect means target exceeds reference. Results come from stored
 rows; these controls do not reopen PXL, recalculate proximity, rerun eligibility
 filters, or fit a new test.
 
-Click a heatmap tile, volcano point, spatial marker pair, or result-table row
-to select the same feature in the detail panel shared by all four views.
+Click a volcano point, spatial marker pair, or result-table row
+to select the same feature across all three views.
 Pair keys are order-independent. The panel shows the selected scope's stored
 effect, available probabilities, and cell support; condition values are shown
 only if present in the contract. A feature without a stored test is labeled as
 such instead of being converted to a zero effect.
+
+Tables and Volcano show combined violin/boxplots of cell-level values by
+condition. Volcano places the distribution beside the clicked plot on wide
+screens and below it on narrow screens. Abundance uses stored normalized values;
+self-proximity and colocalization use observed scores from the proximity sidecar.
+Missing scores are excluded, not replaced with zero. These descriptive plots do
+not rerun tests or apply the original abundance cutoff, so plotted cell counts
+can differ from the stored test counts. If the sidecar is unavailable, the
+distribution shows an explanation and the stored volcano remains available.
 
 **Explore cells in 3D** transfers that donor, cell type, and pair. The user must
 choose a condition from the comparison and one highlight marker, then click
@@ -305,8 +313,9 @@ of a population-level treatment effect. Cells from one donor are not independent
 biological replicates. The same limitation applies to a dataset containing only
 one donor; no combined or pooled test is invented.
 
-The spatial matrix deliberately combines self-proximity and colocalization,
-independent of the readout control used by the other subtabs. Hover exposes the
+The spatial matrix combines self-proximity and colocalization when either
+spatial readout is selected. The tab is disabled for abundance; switching to
+abundance while viewing it returns to Tables. Hover exposes the
 pair, stored value, and availability; click selects the pair for detail. The
 marker order and aligned scales follow the frozen report. Condition profiles
 show stored population means with the upstream missing-as-zero policy, while
@@ -325,19 +334,19 @@ original report plots. When no adjusted P values were stored, these controls
 are unavailable rather than fabricated. Table searches and FDR filters affect
 the corresponding **Filtered table CSV**, including all matching rows rather
 than just the current page. **All stored rows CSV** ignores both filters and
-exports the selected donor/cell-type/comparison/readout scope. Heatmap feature
-counts and control-marker display options affect only the summary display.
+exports the selected donor/cell-type/comparison/readout scope.
 
 **Original report SVG** preserves the upstream report plotting strategy and
 thresholds. The interactive spatial view also offers its displayed rows as CSV.
-The methods section exposes stored effect metrics, original settings, test
+The selected-feature SVG exports the displayed distribution from Tables or
+Volcano. The methods section exposes stored effect metrics, original settings, test
 methods, and multiple-testing information where available; it does not infer
 missing method details.
 
 Plot outputs are suspended while their subtab is hidden; shared selections and
-the selected feature persist while navigating. Prepared views read only the
-loaded RDS. Sidecars are used for explicit cell-level ranking, graph display,
-or custom spatial analysis, not merely for viewing a stored result.
+the selected feature persist while navigating. Stored results read only the
+loaded RDS. Sidecars supply cell-level spatial distributions, ranking, graph
+display, or custom spatial analysis; they are not needed to view a stored result.
 
 ## Runtime and PXL files
 

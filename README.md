@@ -200,8 +200,9 @@ The SVG download uses the current embedding, color, and split selections.
 
 ### Precomputed results
 
-The **Tables**, **Summary**, **Volcano**, and **Spatial matrix** views use the same selections.
+The **Tables**, **Volcano**, and **Spatial matrix** views use the same selections.
 Under **Tables**, select a marker or pair to show its cell-level violin and boxplot by condition.
+Under **Volcano**, click a point to update the violin and boxplot beside it.
 The plot uses normalized abundance or observed proximity scores for the selected donor and cell type.
 Missing proximity scores are excluded; they are not replaced with zero.
 The plot does not calculate a new statistical test.
@@ -211,8 +212,10 @@ If the dataset has more than one donor, select one donor.
 
 The results come from the selected donor.
 They do not include results from other donors.
-The summary can show all cell types.
+The tables can show all cell types.
 One cell type is necessary for the volcano and spatial views.
+The **Spatial matrix** tab is disabled for abundance.
+Select self-clustering or colocalization to enable it.
 
 A positive effect means that the target value is larger than the reference value.
 The effect is the target value minus the reference value.
@@ -220,14 +223,12 @@ Stored component-level P values give exploratory evidence within one donor.
 These P values do not give population-level evidence of treatment effects.
 Cells are not independent biological replicates.
 
-To select a feature, click a summary tile, volcano point, spatial pair, or result-table row.
+To select a feature, click a volcano point, spatial pair, or result-table row.
 The shared detail panel shows the selected feature.
 The order of markers in a pair does not change the selection.
 
 The volcano and spatial plots have hover and zoom functions.
 The report SVG files keep the precomputed plot design and statistics.
-The precomputed abundance heatmap is static.
-The **Summary** view keeps this heatmap in a closed section.
 
 Spatial condition profiles contain means.
 Differential effects contain differences between medians.
@@ -235,9 +236,11 @@ These values describe different calculations.
 
 False discovery rate (FDR) controls and table searches change only the tables and **Filtered table CSV** exports.
 The **All stored rows CSV** export does not use these filters.
-Heatmap controls and table filters do not change the precomputed report thresholds.
+Table filters do not change the precomputed report thresholds.
 The application does not calculate hidden plots.
-These views do not load proximity or graph sidecars.
+Stored results do not require sidecars.
+Cell-level spatial distributions load the selected pair from the proximity sidecar.
+These views do not load graph sidecars.
 
 ### Custom analysis
 

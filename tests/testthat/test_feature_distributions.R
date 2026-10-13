@@ -93,7 +93,50 @@ test_that("Tables shows the distribution, follows row selection, and exports the
     expect_true(all(detail_ggplot()$data$celltype == "T"))
     session$setInputs(readout = "self_proximity")
     expect_match(detail_ggplot()$labels$title, "unavailable")
-    session$setInputs(results_view = "Summary")
+    session$setInputs(results_view = "Spatial matrix")
     expect_match(detail_ggplot()$labels$title, "stored effects")
+  })
+})
+
+test_that("Volcano clicks update adjacent distributions for all readouts and their SVG export", {
+  root <- withr::local_tempdir()
+  fixture <- ranking_fixture(root = file.path(root, "proximity"))
+  data <- fixture$data
+  data$bundle_path <- file.path(root, "analysis.rds")
+  data$assets <- list(proximity = list(path = "proximity"))
+  current <- shiny::reactiveVal(data)
+  shiny::testServer(precomputed_server, args = list(data = current), {
+    session$setInputs(readout = "abundance", donor = "D1", celltype = "B", comparison = "TRT vs NC",
+      report_page = "Precomputed results", results_view = "Volcano")
+    event_id <- paste0("plotly_click-", session$ns("volcano"))
+    session$userData$plotlyShinyEventIDs <- event_id
+    click_index <- 0L
+    click_pair <- function(pair) {
+      click_index <<- click_index + 1L
+      event <- jsonlite::toJSON(data.frame(key = report_feature_key(pair[1L], pair[2L]), pointNumber = click_index), auto_unbox = TRUE)
+      do.call(session$rootScope()$setInputs, stats::setNames(list(event), event_id))
+    }
+    for (readout in c("abundance", "self_proximity", "colocalization")) {
+      session$setInputs(readout = readout)
+      select_feature(report_feature_key("C", "C"))
+      pair <- if (readout == "colocalization") c("B", "A") else c("A", "A")
+      click_pair(pair)
+      expect_identical(selected_key(), report_feature_key("A", if (readout == "colocalization") "B" else "A"))
+      plot <- detail_ggplot()
+      expect_match(plot$labels$title, "cell-level distribution")
+      expect_equal(plot$data, detail_distribution())
+      expected <- if (readout == "abundance") as.numeric(current()$abundance["A", plot$data$component]) else c(1, 1, 3, 3)
+      expect_equal(plot$data$value, expected)
+      expect_true(any(vapply(plot$layers, function(x) inherits(x$geom, "GeomBoxplot"), logical(1))))
+      expect_gt(file.info(output$download_detail_svg)$size, 0)
+    }
+    without_sidecar <- current()
+    without_sidecar$assets <- NULL
+    current(without_sidecar)
+    session$flushReact()
+    click_pair(c("B", "A"))
+    expect_match(detail_ggplot()$labels$title, "unavailable")
+    expect_match(ggplot2::ggplot_build(detail_ggplot())$data[[1L]]$label, "require the prepared proximity sidecar")
+    expect_false(session$isClosed())
   })
 })

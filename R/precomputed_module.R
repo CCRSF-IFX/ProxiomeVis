@@ -1004,6 +1004,14 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
 
     scope <- shiny::reactive(precomputed_explorer_scope(current_data(),
       input$readout, input$donor, input$celltype, input$comparison))
+    shiny::observeEvent(list(input$readout, input$results_view), {
+      disabled <- identical(precomputed_scope_value(input$readout, "abundance"), "abundance")
+      session$sendCustomMessage("precomputed-spatial-availability",
+        list(id = session$ns("results_view"), disabled = disabled))
+      if (disabled && identical(input$results_view, "Spatial matrix")) {
+        bslib::nav_select("results_view", "Tables", session = session)
+      }
+    })
     output$donor_control <- shiny::renderUI({
       donors <- sort(unique(as.character(current_data()$metadata$donor)))
       if (length(donors) == 1L) return(shiny::tags$p(class = "pt-2", shiny::tags$strong("Donor: "), donors))
@@ -1080,7 +1088,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     shiny::observeEvent(list(current_data(), input$readout, input$donor), {
       selection <- scope()
       shiny::updateSelectInput(session, "celltype",
-        choices = c(stats::setNames(selection$celltypes, selection$celltypes), "All cell types (summary)" = PRECOMPUTED_ALL),
+        choices = c(stats::setNames(selection$celltypes, selection$celltypes), "All cell types" = PRECOMPUTED_ALL),
         selected = selection$celltype)
       shiny::updateSelectInput(session, "comparison", choices = selection$comparisons, selected = selection$comparison)
     })
@@ -1152,7 +1160,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (from_spatial) shiny::updateSelectInput(session, "readout",
         selected = if (pair[1L] == pair[2L]) "self_proximity" else "colocalization")
     }
-    for (view in c("summary", "volcano", "spatial")) local({
+    for (view in c("volcano", "spatial")) local({
       plot_view <- view
       shiny::observeEvent({
         shiny::req(session$rootScope()$input[[paste0("plotly_click-", session$ns(plot_view))]])
@@ -1307,7 +1315,9 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       )
     })
     output$report_volcano_plot <- plotly::renderPlotly({
-      report_volcano_plotly(report_volcano_ggplot(), source = session$ns("volcano"))
+      plot <- report_volcano_ggplot()
+      plot <- plot + ggplot2::labs(subtitle = paste(strwrap(plot$labels$subtitle, width = 55), collapse = "\n"))
+      report_volcano_plotly(plot, source = session$ns("volcano"))
     })
 
     report_volcano_display <- shiny::reactive(
@@ -1330,37 +1340,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         report_scope()$comparison, "stored-results"
       ), ".csv"),
       content = function(file) utils::write.csv(report_scope()$rows, file, row.names = FALSE, na = "")
-    )
-
-    report_abundance_heatmap <- shiny::reactive({
-      scope <- report_scope()
-      contract <- current_data()$contract
-      if (!identical(scope$readout, "abundance")) {
-        return(precomputed_empty_plot("Select Abundance to view its frozen report heatmap.", "Original abundance heatmap"))
-      }
-      if (is.null(contract$report$abundance_heatmaps) ||
-          !exists("plot_report_abundance_heatmap", mode = "function", inherits = TRUE)) {
-        return(precomputed_empty_plot("No frozen abundance heatmap is stored for this dataset.", "Original abundance heatmap"))
-      }
-      tryCatch(
-        get("plot_report_abundance_heatmap", mode = "function", inherits = TRUE)(
-          contract = contract,
-          donor = scope$donor,
-          celltype = scope$celltype,
-          comparison = scope$comparison
-        ),
-        error = function(error) precomputed_empty_plot(conditionMessage(error), "Original abundance heatmap")
-      )
-    })
-    output$report_abundance_heatmap_plot <- shiny::renderPlot({
-      precomputed_draw_plot_object(report_abundance_heatmap())
-    }, res = 110)
-    output$download_report_abundance_heatmap_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(
-        report_scope()$donor, report_scope()$celltype, report_scope()$comparison,
-        "abundance-report-heatmap"
-      ), ".svg"),
-      content = function(file) precomputed_write_plot_object_svg(report_abundance_heatmap(), file, 12, 9)
     )
 
     spatial_scope <- shiny::reactive({
@@ -1393,6 +1372,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       shiny::updateSelectInput(session, "spatial_panel", choices = selected$panels, selected = selected$panel)
     })
     spatial_report_ggplot <- shiny::reactive({
+      if (identical(scope()$readout, "abundance")) return(precomputed_empty_plot(
+        "Select Self-proximity or Colocalization to view the spatial matrix.", "Spatial matrix"))
       scope <- spatial_scope()
       if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
         "Select one cell type for its spatial matrix.", "Spatial matrix"))
@@ -1455,24 +1436,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       )
     })
 
-    heatmap_ggplot <- shiny::reactive({
-      readout_label <- names(PRECOMPUTED_READOUTS)[match(readout_tables()$readout, PRECOMPUTED_READOUTS)]
-      plot_precomputed_heatmap(
-        precomputed_filter_table(selected_results(), include_controls = input$include_controls),
-        top_n = input$top_features,
-        title = paste(readout_label, "stored differential effects")
-      )
-    })
-    output$effect_heatmap <- plotly::renderPlotly({
-      plot <- heatmap_ggplot()
-      rows <- scope()$rows
-      if (is.data.frame(plot$data) && nrow(plot$data) && nrow(rows)) {
-        i <- match(plot$data$feature_id, rows$feature_id)
-        plot$data$key <- report_feature_key(rows$marker_1[i], rows$marker_2[i])
-      }
-      precomputed_heatmap_plotly(plot, source = session$ns("summary"))
-    })
-
     detail_distribution <- shiny::reactive({
       selected <- scope()
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
@@ -1493,7 +1456,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       } else if (nrow(detail_results()) > 0L) {
         feature_label <- precomputed_feature_labels(detail_results())[1L]
       }
-      if (is.null(input$results_view) || identical(input$results_view, "Tables")) {
+      if (is.null(input$results_view) || input$results_view %in% c("Tables", "Volcano")) {
         tryCatch({
           rows <- detail_distribution()
           plot_precomputed_feature_distribution(rows, scope()$readout,
@@ -1517,8 +1480,16 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     output$effect_detail <- plotly::renderPlotly({
       plotly::ggplotly(detail_ggplot(), tooltip = if (is.null(input$results_view) ||
-        identical(input$results_view, "Tables")) "all" else "text") |>
+        input$results_view %in% c("Tables", "Volcano")) "all" else "text") |>
         plotly::layout(autosize = TRUE, margin = list(l = 80, r = 50, t = 100, b = 100))
+    })
+    output$volcano_distribution <- plotly::renderPlotly({
+      plot <- detail_ggplot()
+      plot <- plot + ggplot2::labs(
+        subtitle = paste(strwrap(plot$labels$subtitle, width = 55), collapse = "\n"),
+        caption = paste(strwrap(plot$labels$caption, width = 55), collapse = "\n"))
+      plotly::ggplotly(plot, tooltip = "all") |>
+        plotly::layout(autosize = TRUE, margin = list(l = 80, r = 30, t = 100, b = 100))
     })
 
     display_results <- shiny::reactive(
@@ -1593,13 +1564,9 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       filename = function() paste0(precomputed_safe_filename(scope()$readout, scope()$donor, scope()$comparison, scope()$celltype, "sample-support"), ".csv"),
       content = function(file) utils::write.csv(selected_samples(), file, row.names = FALSE, na = "")
     )
-    output$download_heatmap_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(scope()$readout, scope()$donor, scope()$comparison, scope()$celltype, "heatmap"), ".svg"),
-      content = function(file) precomputed_write_svg(heatmap_ggplot(), file, 12, 8)
-    )
     output$download_detail_svg <- shiny::downloadHandler(
       filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$detail_feature,
-        if (is.null(input$results_view) || identical(input$results_view, "Tables")) "distribution" else input$detail_display), ".svg"),
+        if (is.null(input$results_view) || input$results_view %in% c("Tables", "Volcano")) "distribution" else input$detail_display), ".svg"),
       content = function(file) precomputed_write_svg(detail_ggplot(), file, 10, 7)
     )
 
@@ -1607,7 +1574,6 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       results = selected_results,
       donor_contrasts = selected_contrasts,
       sample_support = selected_samples,
-      heatmap_plot = heatmap_ggplot,
       detail_plot = detail_ggplot
     ))
   })

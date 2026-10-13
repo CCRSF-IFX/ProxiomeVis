@@ -53,7 +53,7 @@ test_that("single-donor explorer uses stored contrasts without cross-donor resul
   manager <- new_hybrid_job_manager()
   shiny::testServer(precomputed_server, args = list(data = current, job_manager = manager), {
     session$setInputs(readout = "abundance", celltype = "B", comparison = "TRT vs NC",
-      report_page = "Precomputed results", results_view = "Summary", include_controls = TRUE)
+      report_page = "Precomputed results", results_view = "Tables", include_controls = TRUE)
     expect_identical(scope()$donor, "D1")
     expect_identical(scope()$donors, "D1")
     expect_equal(nrow(readout_tables()$results), 0L)
@@ -77,7 +77,8 @@ test_that("single-donor explorer uses stored contrasts without cross-donor resul
     expect_identical(report_scope()$celltype, "T")
     expect_identical(spatial_scope()$celltype, "T")
     expect_true(all(selected_results()$celltype == "T"))
-    session$setInputs(results_view = "Spatial matrix", spatial_kind = "profiles", spatial_panel = "Unrelated")
+    session$setInputs(readout = "colocalization", results_view = "Spatial matrix",
+      spatial_kind = "profiles", spatial_panel = "Unrelated")
     expect_setequal(spatial_scope()$panels, c("NC", "TRT"))
     expect_false(spatial_scope()$panel == "Unrelated")
     session$setInputs(celltype = "Not tested")
@@ -101,7 +102,7 @@ test_that("plot and table selections share exact pairs and transfer their scope 
   mock$sendInputMessage <- function(id, message) messages[[sub("^.*-", "", id)]] <<- message
   shiny::testServer(precomputed_server, args = list(data = current), session = mock, {
     session$setInputs(readout = "colocalization", celltype = "B", comparison = "TRT vs NC",
-      report_page = "Precomputed results", results_view = "Summary", include_controls = TRUE)
+      report_page = "Precomputed results", results_view = "Tables", include_controls = TRUE)
     select_feature('["C","A"]')
     expect_identical(selected_key(), report_feature_key("A", "C"))
     expect_identical(unique(detail_contrasts()$marker_2), "C")
@@ -185,7 +186,7 @@ test_that("filtered CSVs match FDR and table searches while all-row exports stay
     expect_equal(nrow(display_results()), 2L)
     expect_equal(nrow(read.csv(output$download_results_csv)), 2L)
     expect_equal(nrow(read.csv(output$download_report_volcano_csv)), 2L)
-    expect_setequal(heatmap_ggplot()$data$feature_id, "A")
+    session$setInputs(readout = "colocalization")
     session$setInputs(spatial_kind = "differences")
     spatial <- read.csv(output$download_spatial_csv)
     expect_equal(nrow(spatial), 4L)
@@ -203,4 +204,32 @@ test_that("searched rows distinguish no search from zero matches and reject inva
   expect_identical(precomputed_searched_rows(rows, NULL, search = "", column_search = list("", "")), rows)
   expect_identical(precomputed_searched_rows(rows, integer()), rows[FALSE, , drop = FALSE])
   expect_identical(precomputed_searched_rows(rows, c(3L, 3L, NA, 0L, -1L, 8L)), rows[3L, , drop = FALSE])
+})
+
+test_that("Spatial matrix is disabled for abundance and requests a safe tab fallback", {
+  current <- shiny::reactiveVal(results_explorer_fixture())
+  messages <- list()
+  availability <- NULL
+  mock <- shiny::MockShinySession$new()
+  mock$sendInputMessage <- function(id, message) messages[[id]] <<- message
+  mock$sendCustomMessage <- function(type, message) {
+    if (type == "precomputed-spatial-availability") availability <<- message
+  }
+  shiny::testServer(precomputed_server, args = list(data = current), session = mock, {
+    session$setInputs(readout = "abundance", celltype = "B", comparison = "TRT vs NC",
+      report_page = "Precomputed results", results_view = "Tables")
+    expect_true(availability$disabled)
+    expect_identical(availability$id, session$ns("results_view"))
+    for (readout in c("self_proximity", "colocalization")) {
+      session$setInputs(readout = readout)
+      expect_false(availability$disabled)
+    }
+    session$setInputs(results_view = "Spatial matrix")
+    session$setInputs(readout = "abundance")
+    expect_true(availability$disabled)
+    expect_identical(messages$results_view$value, "Tables")
+    expect_match(spatial_report_ggplot()$labels$title, "Spatial")
+    expect_match(ggplot2::ggplot_build(spatial_report_ggplot())$data[[1L]]$label, "[Ss]elf|[Cc]olo")
+    expect_false(session$isClosed())
+  })
 })
