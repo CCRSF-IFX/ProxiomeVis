@@ -192,7 +192,11 @@ The application validates each sidecar when it uses the file.
 
 ### Precomputed results
 
-The **Summary**, **Volcano**, **Spatial matrix**, and **Tables & methods** views use the same selections.
+The **Tables**, **Summary**, **Volcano**, and **Spatial matrix** views use the same selections.
+Under **Tables**, select a marker or pair to show its cell-level violin and boxplot by condition.
+The plot uses normalized abundance or observed proximity scores for the selected donor and cell type.
+Missing proximity scores are excluded; they are not replaced with zero.
+The plot does not calculate a new statistical test.
 These selections are the donor, cell type, comparison, and readout.
 If the dataset has one donor, the application shows the donor name as a fixed label.
 If the dataset has more than one donor, select one donor.

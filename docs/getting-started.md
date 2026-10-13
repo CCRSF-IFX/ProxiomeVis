@@ -104,7 +104,7 @@ dropdown. The shared selection persists across these subtabs:
 - **Volcano:** donor-specific stored test with hover, feature selection, and zoom.
 - **Spatial matrix:** interactive self-proximity and colocalization together,
   with condition-profile and differential-effect views.
-- **Tables & methods:** searchable results, sample support,
+- **Tables:** searchable results, sample support,
   original method settings, and CSV downloads.
 
 Volcano and spatial views need one cell type; they do not silently substitute

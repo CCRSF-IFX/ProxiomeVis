@@ -588,6 +588,67 @@ precomputed_heatmap_plotly <- function(plot, source = "A") {
     plotly::event_register("plotly_click")
 }
 
+precomputed_feature_distribution_data <- function(data, readout, donor, celltype, conditions, pair) {
+  if (!is.character(pair) || length(pair) != 2L || anyNA(pair) ||
+      !all(pair %in% rownames(data$abundance))) stop("Select a known marker or pair.", call. = FALSE)
+  if (!readout %in% c("abundance", "self_proximity", "colocalization") ||
+      (readout != "colocalization" && pair[1L] != pair[2L]) ||
+      (readout == "colocalization" && pair[1L] == pair[2L])) {
+    stop("Select a marker or pair that matches the current readout.", call. = FALSE)
+  }
+  meta <- data$metadata
+  rows <- meta[meta$donor == donor & meta$condition %in% conditions &
+    (celltype == PRECOMPUTED_ALL | meta$celltype == celltype),
+    c("component", "sample_id", "donor", "celltype", "condition"), drop = FALSE]
+  rows$value <- numeric(nrow(rows))
+  if (nrow(rows) && readout == "abundance") {
+    rows$value <- as.numeric(data$abundance[pair[1L], rows$component])
+  } else if (nrow(rows)) {
+    if (is.null(data$bundle_path) || is.null(data$assets$proximity)) {
+      stop("Cell-level spatial distributions require the prepared proximity sidecar.", call. = FALSE)
+    }
+    root <- resolve_hybrid_asset(data$bundle_path, data$assets$proximity)
+    scores <- read_proximity_feature(data, root, rows$component, pair)
+    rows$value <- scores$log2_ratio[match(rows$component, scores$component)]
+  }
+  rows <- rows[is.finite(rows$value), , drop = FALSE]
+  rows$condition <- factor(rows$condition, levels = unique(conditions))
+  rows
+}
+
+plot_precomputed_feature_distribution <- function(rows, readout, colors = NULL, title = "Cell-level distribution") {
+  if (!nrow(rows)) return(precomputed_empty_plot("No finite cell-level values are available for this selection.", title))
+  groups <- split(seq_len(nrow(rows)), interaction(rows$celltype, rows$condition, drop = TRUE))
+  violin_rows <- unlist(groups[vapply(groups, function(i) length(i) >= 2L &&
+    length(unique(rows$value[i])) >= 2L, logical(1))], use.names = FALSE)
+  counts <- do.call(rbind, lapply(groups, function(i) {
+    row <- rows[i[1L], c("celltype", "condition"), drop = FALSE]
+    row$n <- length(i)
+    row
+  }))
+  p <- ggplot2::ggplot(rows, ggplot2::aes(x = condition, y = value, fill = condition))
+  if (length(violin_rows)) {
+    p <- p + ggplot2::geom_violin(data = rows[violin_rows, , drop = FALSE], trim = TRUE,
+      scale = "width", width = 0.85, alpha = 0.5, color = "#59696B")
+    if (length(colors)) p <- p + ggplot2::scale_fill_manual(values = colors)
+  }
+  p <- p +
+    ggplot2::geom_boxplot(width = 0.16, fill = "white", alpha = 0.9, outlier.size = 1) +
+    ggplot2::geom_text(data = counts, ggplot2::aes(x = condition, y = Inf, label = paste0("n=", n)),
+      inherit.aes = FALSE, vjust = 1.4, size = 3) +
+    ggplot2::facet_wrap(~celltype) +
+    ggplot2::scale_x_discrete(drop = FALSE) +
+    ggplot2::labs(title = title, x = "Condition", fill = "Condition",
+      y = if (readout == "abundance") "Stored normalized abundance" else "Observed proximity (log2 ratio)",
+      subtitle = if (readout == "abundance") "Cell-level values; boxes show median and interquartile range. No new test is run."
+        else "Finite observed cell scores; no zero imputation or abundance cutoff. No new test is run.",
+      caption = "Violin density is shown only for groups with at least two distinct values. Cells are not independent donors.") +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank(), legend.position = "none",
+      plot.title = ggplot2::element_text(face = "bold"))
+  p
+}
+
 precomputed_effect_detail_data <- function(results, donor_contrasts) {
   results <- precomputed_as_table(results)
   donor_contrasts <- precomputed_as_table(donor_contrasts)
@@ -1404,6 +1465,15 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       precomputed_heatmap_plotly(plot, source = session$ns("summary"))
     })
 
+    detail_distribution <- shiny::reactive({
+      selected <- scope()
+      rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
+        comparison = selected$comparison, include_controls = TRUE)
+      conditions <- unique(c(as.character(rows$group_b), as.character(rows$group_a)))
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      precomputed_feature_distribution_data(current_data(), selected$readout, selected$donor,
+        selected$celltype, conditions, pair)
+    })
     detail_ggplot <- shiny::reactive({
       value <- current_data()
       contrasts <- detail_contrasts()
@@ -1415,7 +1485,14 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       } else if (nrow(detail_results()) > 0L) {
         feature_label <- precomputed_feature_labels(detail_results())[1L]
       }
-      if (identical(input$detail_display, "conditions")) {
+      if (is.null(input$results_view) || identical(input$results_view, "Tables")) {
+        tryCatch({
+          rows <- detail_distribution()
+          plot_precomputed_feature_distribution(rows, scope()$readout,
+            colors = precomputed_colors(value$contract, "condition", as.character(rows$condition)),
+            title = paste(feature_label, "cell-level distribution"))
+        }, error = function(e) precomputed_empty_plot(conditionMessage(e), "Cell-level distribution unavailable"))
+      } else if (identical(input$detail_display, "conditions")) {
         plot_precomputed_condition_detail(
           contrasts,
           colors = donor_colors,
@@ -1431,7 +1508,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }
     })
     output$effect_detail <- plotly::renderPlotly({
-      plotly::ggplotly(detail_ggplot(), tooltip = "text") |>
+      plotly::ggplotly(detail_ggplot(), tooltip = if (is.null(input$results_view) ||
+        identical(input$results_view, "Tables")) "all" else "text") |>
         plotly::layout(autosize = TRUE, margin = list(l = 80, r = 50, t = 100, b = 100))
     })
 
@@ -1512,7 +1590,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       content = function(file) precomputed_write_svg(heatmap_ggplot(), file, 12, 8)
     )
     output$download_detail_svg <- shiny::downloadHandler(
-      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$detail_feature, input$detail_display), ".svg"),
+      filename = function() paste0(precomputed_safe_filename(readout_tables()$readout, input$detail_feature,
+        if (is.null(input$results_view) || identical(input$results_view, "Tables")) "distribution" else input$detail_display), ".svg"),
       content = function(file) precomputed_write_svg(detail_ggplot(), file, 10, 7)
     )
 

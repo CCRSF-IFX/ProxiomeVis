@@ -275,7 +275,7 @@ The four subtabs are:
 | Summary | Differential effects for the selected cell type, or across all cell types; optional original abundance heatmap |
 | Volcano | One donor and one cell type's original stored test with hover, zoom, and feature selection |
 | Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects |
-| Tables & methods | Searchable result and volcano rows, sample support, exports, and method settings |
+| Tables | Searchable result and volcano rows, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
 
 Choosing **All cell types (summary)** is supported by the heatmap and tables.
 Volcano and spatial views then ask for one cell type rather than silently

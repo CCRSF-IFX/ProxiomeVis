@@ -179,7 +179,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               "Hover for values and availability; click a marker pair to inspect it below. Marker order and scales follow the frozen report alignment."),
             plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
           )
-        ),
+        )
       ),
       bslib::card(full_screen = TRUE,
         class = "mt-3", bslib::card_header("Selected feature — shared across views"),
@@ -187,8 +187,10 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           col_widths = c(4, 8), fill = FALSE,
           shiny::tagList(
             shiny::selectizeInput(ns("detail_feature"), "Marker / pair", choices = character()),
-            shiny::radioButtons(ns("detail_display"), "Detail display", choices = c(
-              "Stored effects" = "effects", "Condition values, when stored" = "conditions"), selected = "effects"),
+            shiny::conditionalPanel("input.results_view != 'Tables'", ns = ns,
+              shiny::radioButtons(ns("detail_display"), "Detail display", choices = c(
+                "Stored effects" = "effects", "Condition values, when stored" = "conditions"), selected = "effects")
+            ),
             shiny::uiOutput(ns("feature_context")),
             shiny::actionButton(ns("explore_3d"), "Explore cells in 3D", class = "btn-outline-primary"),
             shiny::tags$p(class = "small text-muted mt-2", "Transfers the selected scope and pair. Choose a condition and one highlight marker, then click Display to load a graph."),

@@ -144,7 +144,7 @@ test_that("filtered CSVs match FDR and table searches while all-row exports stay
   current <- shiny::reactiveVal(fixture)
   shiny::testServer(precomputed_server, args = list(data = current), {
     session$setInputs(readout = "abundance", celltype = "B", comparison = "TRT vs NC",
-      report_page = "Precomputed results", results_view = "Tables & methods",
+      report_page = "Precomputed results", results_view = "Tables",
       include_controls = TRUE, fdr_filter = TRUE, fdr_cutoff = 0.05)
     expect_equal(nrow(display_results()), 1L)
     expect_equal(nrow(report_volcano_display()), 1L)

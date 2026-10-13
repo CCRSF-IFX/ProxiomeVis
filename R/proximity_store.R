@@ -257,20 +257,12 @@ select_marker_graph_cells <- function(data, asset_root, markers) {
       proximity_manifest_md5 = unname(tools::md5sum(prepared$manifest_path))))
 }
 
-rank_cell_proximity <- function(data, asset_root, donor, celltype, condition, marker_1, marker_2) {
+read_proximity_feature <- function(data, asset_root, cells, pair) {
   if (!requireNamespace("arrow", quietly = TRUE) || !requireNamespace("dplyr", quietly = TRUE)) {
-    stop("Install arrow and dplyr to rank cells from the proximity sidecar.", call. = FALSE)
+    stop("Install arrow and dplyr to read cell-level proximity scores.", call. = FALSE)
   }
-  for (value in list(donor, celltype, condition, marker_1, marker_2)) {
-    if (!is.character(value) || length(value) != 1L || is.na(value) || !nzchar(value)) {
-      stop("Choose one donor, cell type, condition, and one marker in each pair selector.", call. = FALSE)
-    }
-  }
-  pair <- sort(c(marker_1, marker_2), method = "radix")
-  if (!all(pair %in% rownames(data$abundance))) stop("Choose known markers.", call. = FALSE)
-  meta <- data$metadata
-  cells <- meta$component[meta$donor == donor & meta$celltype == celltype & meta$condition == condition]
-  if (!length(cells)) stop("No cells match this donor, cell type, and condition.", call. = FALSE)
+  if (!is.character(pair) || length(pair) != 2L || anyNA(pair) ||
+      !all(pair %in% rownames(data$abundance))) stop("Choose known markers.", call. = FALSE)
   prepared <- validated_proximity_partitions(data, asset_root, cells)
   pair_a <- pair[1L]
   pair_b <- pair[2L]
@@ -283,13 +275,29 @@ rank_cell_proximity <- function(data, asset_root, donor, celltype, condition, ma
   if (nrow(scores) > length(cells) || anyDuplicated(scores$component)) {
     stop("Duplicate proximity observations for the selected unordered marker pair.", call. = FALSE)
   }
+  attr(scores, "manifest_md5") <- unname(tools::md5sum(prepared$manifest_path))
+  scores
+}
+
+rank_cell_proximity <- function(data, asset_root, donor, celltype, condition, marker_1, marker_2) {
+  for (value in list(donor, celltype, condition, marker_1, marker_2)) {
+    if (!is.character(value) || length(value) != 1L || is.na(value) || !nzchar(value)) {
+      stop("Choose one donor, cell type, condition, and one marker in each pair selector.", call. = FALSE)
+    }
+  }
+  pair <- sort(c(marker_1, marker_2), method = "radix")
+  meta <- data$metadata
+  cells <- meta$component[meta$donor == donor & meta$celltype == celltype & meta$condition == condition]
+  if (!length(cells)) stop("No cells match this donor, cell type, and condition.", call. = FALSE)
+  scores <- read_proximity_feature(data, asset_root, cells, pair)
+  manifest_md5 <- attr(scores, "manifest_md5")
   scores <- scores[order(-scores$log2_ratio, scores$component, method = "radix"), , drop = FALSE]
   result <- data.frame(rank = seq_len(nrow(scores)), component = scores$component,
     sample_id = meta$sample_id[match(scores$component, meta$component)],
     donor = rep(donor, nrow(scores)), celltype = rep(celltype, nrow(scores)),
-    condition = rep(condition, nrow(scores)), marker_1 = rep(pair_a, nrow(scores)),
-    marker_2 = rep(pair_b, nrow(scores)), log2_ratio = scores$log2_ratio)
-  attr(result, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),
+    condition = rep(condition, nrow(scores)), marker_1 = rep(pair[1L], nrow(scores)),
+    marker_2 = rep(pair[2L], nrow(scores)), log2_ratio = scores$log2_ratio)
+  attr(result, "provenance") <- list(manifest_md5 = manifest_md5,
     cohort_cells = length(cells), scored_cells = nrow(scores),
     ranking = "Descending observed log2_ratio; ties ordered by exact cell ID.",
     filtering = "Finite observed scores only; no imputation, abundance cutoff, or differential-test group-size threshold.")

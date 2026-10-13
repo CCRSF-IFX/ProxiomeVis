@@ -102,12 +102,21 @@ try {
   await evaluate("document.querySelector('#shiny-modal .modal-footer button').click()");
 
   await tab('Precomputed results');
+  await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
+  assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
+  await download('download_detail_svg', /<svg/);
+  await tab('Summary');
   await select('donor', 'd1');
   await select('celltype', 'CD4 T');
   for (const readout of ['abundance', 'self_proximity', 'colocalization']) {
     await select('readout', readout);
     await waitFor("document.getElementById('report-effect_heatmap')?.data?.length > 0");
-    await tab('Tables & methods');
+    await tab('Tables');
+    await waitFor("document.querySelector('#report-results_table table tbody tr') !== null");
+    await evaluate("document.querySelector('#report-results_table table tbody tr').click()");
+    await settled();
+    await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
+    assert.match(await evaluate("document.getElementById('report-effect_detail').layout.title.text"), /cell-level distribution/);
     await download('download_results_csv', /effect_size/);
     await tab('Summary');
   }
@@ -139,7 +148,7 @@ try {
   assert.equal(JSON.parse(heatmapKey).length, 2);
   await waitFor("Shiny.shinyapp.$inputValues['report-detail_feature'] === "+JSON.stringify(heatmapKey));
   console.log('PASS: summary heatmap click selects the complete marker pair');
-  await tab('Tables & methods');
+  await tab('Tables');
   await waitFor("document.querySelector('#report-results_table table') !== null");
   await evaluate("document.querySelector('#report-results_table table tbody tr').click()");
   await settled();
