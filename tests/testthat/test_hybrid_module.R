@@ -122,6 +122,30 @@ test_that("all readouts run without marker or cell dropdown inputs", {
   }
 })
 
+test_that("late worker completion can settle after its module session is destroyed", {
+  for (outcome in c("success", "error")) {
+    current <- shiny::reactiveVal(hybrid_module_fixture())
+    probe <- hybrid_module_probe()
+    saved <- new.env(parent = emptyenv())
+    shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+                                               code_dir = tempdir()), {
+      session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
+                        readout = "abundance", acknowledge = TRUE, run = 1L)
+      saved$task <- task
+      expect_identical(task$status(), "running")
+    })
+    expect_true(probe$state$jobs[[1L]]$cancelled)
+    if (outcome == "success") {
+      probe$state$jobs[[1L]]$resolve(hybrid_module_result(probe$state$jobs[[1L]]$request))
+      expect_warning(for (i in seq_len(10L)) later::run_now(0.01), NA)
+    } else {
+      probe$state$jobs[[1L]]$reject(simpleError("Analysis cancelled."))
+      expect_warning(for (i in seq_len(10L)) later::run_now(0.01), "Analysis cancelled")
+    }
+    expect_identical(shiny::isolate(saved$task$status()), outcome)
+  }
+})
+
 test_that("worker failures are actionable and cancellation covers buttons and closed sessions", {
   current <- shiny::reactiveVal(hybrid_module_fixture())
   probe <- hybrid_module_probe()

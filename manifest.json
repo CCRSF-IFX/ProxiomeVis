@@ -3878,7 +3878,7 @@
       "checksum": "11611edb90b7be14ef4ad648554f14e3"
     },
     "R/hybrid_module.R": {
-      "checksum": "291c3161a80490a1a8381a724c446e44"
+      "checksum": "fa73ddc2bfb0ba5bc5a309b09e17b222"
     },
     "R/precomputed_contract.R": {
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
@@ -4412,7 +4412,7 @@
       "checksum": "81aeea9cfd4de864bb21d38231508401"
     },
     "tests/testthat/test_hybrid_module.R": {
-      "checksum": "8674904b1aef4242ef43f40b47db5466"
+      "checksum": "e501dcd0626eba6ed60fa87e23d64abe"
     },
     "tests/testthat/test_hybrid_preparation.R": {
       "checksum": "383dbca3f92ff560c6ee3e93d4b254c9"

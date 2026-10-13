@@ -66,10 +66,11 @@ hybrid_analysis_server <- function(id, data, manager, code_dir) {
     message <- shiny::reactiveVal("Choose a scope, then run a comparison across all dataset markers.")
     validation_error <- shiny::reactiveVal(NULL)
     last_request <- shiny::reactiveVal(NULL)
-    task <- shiny::ExtendedTask$new(function(path, request) {
+    # Cancellation settles asynchronously, after the module's reactive state may be destroyed.
+    task <- shiny::withReactiveDomain(NULL, shiny::ExtendedTask$new(function(path, request) {
       job <<- start_hybrid_job(path, request, code_dir, manager)
       job$promise
-    }) |> bslib::bind_task_button("run")
+    })) |> bslib::bind_task_button("run")
     session$onSessionEnded(function() if (!is.null(job)) job$cancel())
 
     shiny::observeEvent(input$readout, {
