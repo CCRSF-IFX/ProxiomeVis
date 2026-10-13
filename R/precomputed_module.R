@@ -1090,6 +1090,14 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
 
     selected_key <- shiny::reactiveVal(NULL)
+    shiny::observeEvent(input$readout, {
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      if (length(pair) == 2L &&
+          xor(scope()$readout == "colocalization", pair[1L] != pair[2L])) {
+        keys <- feature_rows()$key
+        selected_key(if (length(keys)) keys[1L] else NULL)
+      }
+    })
     feature_rows <- shiny::reactive({
       rows <- scope()$rows
       if (!nrow(rows)) {

@@ -49,6 +49,34 @@ test_that("spatial distributions use observed unordered pair scores without impu
   expect_error(read(), "require the prepared proximity sidecar")
 })
 
+test_that("Tables renders spatial distributions and selects compatible features on readout changes", {
+  root <- withr::local_tempdir()
+  fixture <- ranking_fixture(root = file.path(root, "proximity"))
+  data <- fixture$data
+  data$bundle_path <- file.path(root, "analysis.rds")
+  data$assets <- list(proximity = list(path = "proximity"))
+  current <- shiny::reactiveVal(data)
+  shiny::testServer(precomputed_server, args = list(data = current), {
+    session$setInputs(readout = "abundance", donor = "D1", celltype = "B", comparison = "TRT vs NC",
+      results_view = "Tables")
+    select_feature(report_feature_key("A", "A"))
+    for (readout in c("self_proximity", "colocalization", "self_proximity")) {
+      session$setInputs(readout = readout)
+      pair <- jsonlite::fromJSON(selected_key())
+      expect_equal(pair[1L] == pair[2L], readout != "colocalization")
+      plot <- detail_ggplot()
+      expect_match(plot$labels$title, "cell-level distribution")
+      expect_equal(plot$data$value, c(1, 1, 3, 3))
+      expect_true(any(vapply(plot$layers, function(x) inherits(x$geom, "GeomViolin"), logical(1))))
+      expect_true(any(vapply(plot$layers, function(x) inherits(x$geom, "GeomBoxplot"), logical(1))))
+      expect_s3_class(plotly::plotly_build(plotly::ggplotly(plot)), "plotly")
+      expect_gt(file.info(output$download_detail_svg)$size, 0)
+    }
+    session$setInputs(readout = "abundance")
+    expect_identical(selected_key(), report_feature_key("A", "A"))
+  })
+})
+
 test_that("Tables shows the distribution, follows row selection, and exports the same plot", {
   current <- shiny::reactiveVal(precomputed_app_data(precomputed_fixture()))
   shiny::testServer(precomputed_server, args = list(data = current), {
