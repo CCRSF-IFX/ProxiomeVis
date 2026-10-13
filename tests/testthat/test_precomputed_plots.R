@@ -111,6 +111,22 @@ test_that("embedding helpers align cells and support sparse marker abundance", {
   )
 })
 
+test_that("QC table places filtering stages in columns without filling missing counts", {
+  counts <- data.frame(sample_id = c("s2", "s1", "s1", "s2", "s1"), donor = "D1",
+    condition = c("TRT", "NC", "NC", "TRT", "NC"),
+    stage = c("00_loaded", "02_after_tau_filter", "00_loaded", "03_after_isotype_filter", "01_after_n_umi_filter"),
+    n_cells_display = c(100, 60, 90, 0, 70))
+  wide <- precomputed_qc_table(counts)
+  expect_identical(names(wide), c("sample_id", "donor", "condition", "00_loaded",
+    "01_after_n_umi_filter", "02_after_tau_filter", "03_after_isotype_filter"))
+  expect_equal(nrow(wide), 2L)
+  expect_equal(wide$`00_loaded`, c(100, 90))
+  expect_equal(wide$`01_after_n_umi_filter`, c(NA, 70))
+  expect_equal(wide$`02_after_tau_filter`, c(NA, 60))
+  expect_equal(wide$`03_after_isotype_filter`, c(0, NA))
+  expect_error(precomputed_qc_table(rbind(counts, counts[1L, ])), "uniquely")
+})
+
 test_that("QC retention and unavailable paired source values have explicit plots", {
   retention <- data.frame(
     stage = rep(c("00 loaded", "01 retained"), 2),

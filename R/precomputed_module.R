@@ -350,6 +350,22 @@ precomputed_qc_counts <- function(data) {
   counts
 }
 
+precomputed_qc_table <- function(counts) {
+  ids <- c("sample_id", "donor", "condition")
+  stages <- c("00_loaded", "01_after_n_umi_filter", "02_after_tau_filter", "03_after_isotype_filter")
+  if (!all(c(ids, "stage", "n_cells_display") %in% names(counts))) return(counts)
+  rows <- unique(counts[ids])
+  if (anyDuplicated(rows$sample_id) || anyDuplicated(counts[c("sample_id", "stage")])) {
+    stop("QC counts must identify each sample and filtering stage uniquely.", call. = FALSE)
+  }
+  for (stage in stages) {
+    values <- counts[counts$stage == stage, , drop = FALSE]
+    rows[[stage]] <- values$n_cells_display[match(rows$sample_id, values$sample_id)]
+  }
+  rownames(rows) <- NULL
+  rows
+}
+
 plot_precomputed_qc_counts <- function(counts, colors = NULL) {
   counts <- precomputed_as_table(counts)
   if (nrow(counts) == 0L || !"n_cells_display" %in% names(counts)) {
@@ -1236,7 +1252,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     output$qc_table <- DT::renderDT({
       shiny::validate(shiny::need(nrow(qc_counts()) > 0L, "No stored QC counts are available."))
-      DT::datatable(qc_counts(), rownames = FALSE, filter = "top", options = list(pageLength = 12, scrollX = TRUE))
+      DT::datatable(precomputed_qc_table(qc_counts()), rownames = FALSE, filter = "top",
+        options = list(pageLength = 12, scrollX = TRUE))
     })
 
     provenance_json <- shiny::reactive({

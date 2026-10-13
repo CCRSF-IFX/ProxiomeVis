@@ -3884,7 +3884,7 @@
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
     },
     "R/precomputed_module.R": {
-      "checksum": "fb34f171f34c399a6ff90d6fc98309ba"
+      "checksum": "cce0d11cd69aa3af0b0c174e8796540e"
     },
     "R/precomputed_ui.R": {
       "checksum": "431fcc21820f0245eb70a1667cbcece3"
@@ -4421,7 +4421,7 @@
       "checksum": "3c9851ef11a638ac147290bf9cef75fc"
     },
     "tests/testthat/test_precomputed_plots.R": {
-      "checksum": "1d5d07ddcef306ef5edd87a5a33f3b11"
+      "checksum": "9a54be60a1c421bedd64d655b0c58d63"
     },
     "tests/testthat/test_preparation_cli.R": {
       "checksum": "d2cdf29fdd1cf3502e9db6040c7f4e31"
