@@ -274,7 +274,7 @@ The three subtabs are:
 | --- | --- |
 | Tables | Searchable results, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
 | Volcano | One donor and one cell type's original stored test with hover and zoom, beside a violin/boxplot that updates when a point is clicked |
-| Spatial matrix | Aligned self-proximity and colocalization, either condition profiles or differential effects; disabled for abundance |
+| Spatial patterns | Matrix of condition profiles or differential effects; colocalization network with aligned condition panels and marker/detection/mean filters; disabled for abundance |
 
 Choosing **All cell types** is supported by the tables and faceted distributions.
 Volcano and spatial views then ask for one cell type rather than silently

@@ -93,7 +93,7 @@ test_that("Tables shows the distribution, follows row selection, and exports the
     expect_true(all(detail_ggplot()$data$celltype == "T"))
     session$setInputs(readout = "self_proximity")
     expect_match(detail_ggplot()$labels$title, "unavailable")
-    session$setInputs(results_view = "Spatial matrix")
+    session$setInputs(results_view = "Spatial patterns")
     expect_match(detail_ggplot()$labels$title, "stored effects")
   })
 })

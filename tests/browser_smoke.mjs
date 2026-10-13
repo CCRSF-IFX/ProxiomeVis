@@ -107,7 +107,7 @@ try {
   await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
   assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
   assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Summary\"]') === null"), true);
-  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('aria-disabled')"), 'true');
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial patterns\"]').getAttribute('aria-disabled')"), 'true');
   await download('download_detail_svg', /<svg/);
   await select('donor', 'd1');
   await select('celltype', 'CD4 T');
@@ -164,8 +164,8 @@ try {
   await settled();
   console.log('PASS: table click and zero-match CSV leaves all-rows CSV unchanged');
 
-  await tab('Spatial matrix');
-  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('aria-disabled')"), 'false');
+  await tab('Spatial patterns');
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial patterns\"]').getAttribute('aria-disabled')"), 'false');
   await waitFor("document.getElementById('report-spatial_report_plot')?.data?.some(t=>t.mode==='markers'&&t.x.length)");
   assert.equal(await evaluate("document.getElementById('report-spatial_report_plot')._context.scrollZoom"), true);
   await clickFeature('report-spatial_report_plot');
@@ -180,16 +180,33 @@ try {
   await writeFile('output/results-explorer.png', Buffer.from((await call('Page.captureScreenshot', {format:'png'})).data,'base64'));
   console.log('PASS: spatial exploration, pair selection, profiles, original SVG and rows');
 
+  await select('spatial_view', 'network');
+  await waitFor("document.getElementById('report-network_plot')?.data?.some(t => t.mode === 'markers' && t.key?.length)");
+  await evaluate("document.getElementById('report-network_markers').selectize.setValue(['CD19','CD37','CD53','CD81','CD82'])");
+  await settled();
+  await waitFor("Shiny.shinyapp.$inputValues['report-network_markers']?.length === 5");
+  const networkKey = await clickFeature('report-network_plot');
+  assert.ok(JSON.parse(networkKey).every(marker => ['CD19','CD37','CD53','CD81','CD82'].includes(marker)));
+  await download('download_network_svg', /<svg/);
+  await download('download_network_csv', /minimum_detection_fraction/);
+  await tab('Volcano');
+  assert.equal(await evaluate("Shiny.shinyapp.$inputValues['report-detail_feature']"), networkKey);
+  await tab('Spatial patterns');
+  await select('readout', 'self_proximity');
+  await waitFor("Shiny.shinyapp.$inputValues['report-spatial_view'] === 'matrix'");
+  assert.equal(await evaluate("!!document.querySelector('#report-spatial_view input[value=network]')"), false);
+  console.log('PASS: network marker list, linked edges, exports, and matrix fallback for self-proximity');
+
   await select('readout', 'abundance');
   await waitFor("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value') === 'Tables'");
-  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').getAttribute('tabindex')"), '-1');
-  await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial matrix\"]').click()");
+  assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial patterns\"]').getAttribute('tabindex')"), '-1');
+  await evaluate("document.querySelector('#report-results_view a[data-value=\"Spatial patterns\"]').click()");
   await settled();
   assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
   await select('readout', 'colocalization');
-  await tab('Spatial matrix');
+  await tab('Spatial patterns');
   await clickFeature('report-spatial_report_plot');
-  console.log('PASS: abundance disables Spatial matrix and returns to Tables; spatial readouts enable it');
+  console.log('PASS: abundance disables Spatial patterns and returns to Tables; spatial readouts enable it');
 
   await evaluate("document.getElementById('report-explore_3d').click()");
   await waitFor("Shiny.shinyapp.$inputValues['report-report_page'] === 'Cell 3D'");

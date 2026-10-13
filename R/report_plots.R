@@ -107,6 +107,110 @@ report_spatial_plotly <- function(plot, source = "A") {
                    displaylogo = FALSE, doubleClick = "reset")
 }
 
+report_network_profiles <- function(contract, donor, celltype, comparison) {
+  if (identical(celltype, PRECOMPUTED_ALL)) stop("Select one cell type for its network.", call. = FALSE)
+  contrasts <- precomputed_filter_table(
+    precomputed_contract_table(contract, "donor_contrasts", "colocalization"),
+    donor = donor, celltype = celltype, comparison = comparison, include_controls = TRUE)
+  groups <- unique(contrasts[c("group_b", "group_a")])
+  if (nrow(groups) != 1L) stop("No unique stored condition comparison is available.", call. = FALSE)
+  conditions <- unname(unlist(groups[1L, ], use.names = FALSE))
+  rows <- precomputed_filter_table(
+    precomputed_contract_table(contract, "sample_summaries", "colocalization"),
+    donor = donor, celltype = celltype, include_controls = TRUE)
+  rows <- rows[rows$condition %in% conditions & rows$marker_1 != rows$marker_2, , drop = FALSE]
+  if (!nrow(rows)) stop("No stored colocalization profiles are available for this scope.", call. = FALSE)
+  if (anyNA(rows$metric) || any(rows$metric != "population_mean_log2_ratio_missing_zero")) {
+    stop("This network requires stored population mean log2 ratios with an explicit missing-zero policy.", call. = FALSE)
+  }
+  rows$key <- report_feature_key(rows$marker_1, rows$marker_2)
+  if (anyDuplicated(rows[c("condition", "key")])) {
+    stop("Multiple summaries exist for a condition and pair; prepare one donor-level profile per condition.", call. = FALSE)
+  }
+  rows$pct_detected <- ifelse(is.finite(rows$n_total_cells) & rows$n_total_cells > 0 &
+    is.finite(rows$n_scored_cells) & rows$n_scored_cells >= 0 & rows$n_scored_cells <= rows$n_total_cells,
+    rows$n_scored_cells / rows$n_total_cells, NA_real_)
+  rows$condition <- factor(rows$condition, levels = conditions)
+  rows
+}
+
+report_network_default_markers <- function(rows) {
+  rows <- rows[is.finite(rows$value) & is.finite(rows$pct_detected) & rows$pct_detected > 0.5, , drop = FALSE]
+  rows <- rows[order(-abs(rows$value), rows$key), , drop = FALSE]
+  head(unique(as.vector(t(as.matrix(rows[c("marker_1", "marker_2")])))), 10L)
+}
+
+plot_report_network <- function(rows, markers, min_detection = 0.5, min_mean = 0.1) {
+  if (length(markers) < 2L || length(markers) > 20L || anyNA(markers) || anyDuplicated(markers) ||
+      !all(markers %in% c(rows$marker_1, rows$marker_2))) {
+    stop("Select 2 to 20 available network markers.", call. = FALSE)
+  }
+  for (threshold in list(min_detection, min_mean)) {
+    if (!is.numeric(threshold) || length(threshold) != 1L || !is.finite(threshold) || threshold < 0) {
+      stop("Network thresholds must be finite, nonnegative numbers.", call. = FALSE)
+    }
+  }
+  if (min_detection > 1) stop("Detection fraction must be between 0 and 1.", call. = FALSE)
+  markers <- sort(markers, method = "radix")
+  candidates <- rows[rows$marker_1 %in% markers & rows$marker_2 %in% markers &
+    is.finite(rows$value) & is.finite(rows$pct_detected), , drop = FALSE]
+  edges <- candidates[candidates$pct_detected > min_detection & abs(candidates$value) > min_mean, , drop = FALSE]
+  graph <- igraph::graph_from_data_frame(unique(candidates[c("marker_1", "marker_2")]),
+    directed = FALSE, vertices = data.frame(name = markers))
+  graph <- igraph::simplify(graph)
+  # A fixed initial layout and unfiltered union keep positions stable when thresholds change.
+  initial <- igraph::layout_in_circle(graph)
+  coords <- if (igraph::ecount(graph)) igraph::layout_with_kk(graph, coords = initial) else initial
+  coords <- igraph::norm_coords(coords, xmin = -1, xmax = 1, ymin = -1, ymax = 1)
+  nodes <- data.frame(marker = markers, x = coords[, 1L], y = coords[, 2L])
+  nodes <- merge(nodes, data.frame(condition = factor(levels(rows$condition), levels = levels(rows$condition))), by = NULL)
+  edges$x <- coords[match(edges$marker_1, markers), 1L]
+  edges$y <- coords[match(edges$marker_1, markers), 2L]
+  edges$xend <- coords[match(edges$marker_2, markers), 1L]
+  edges$yend <- coords[match(edges$marker_2, markers), 2L]
+  limit <- max(c(0.1, abs(candidates$value)))
+  empty_conditions <- setdiff(levels(rows$condition), as.character(edges$condition))
+  notes <- data.frame(condition = factor(empty_conditions, levels = levels(rows$condition)),
+    label = rep("No pairs pass the display filters", length(empty_conditions)))
+  ggplot2::ggplot(edges) +
+    ggplot2::geom_segment(ggplot2::aes(x = x, y = y, xend = xend, yend = yend,
+      color = value, linewidth = abs(value))) +
+    ggplot2::geom_point(ggplot2::aes(x = (x + xend) / 2, y = (y + yend) / 2,
+      color = value), size = 3, alpha = 0.15, show.legend = FALSE) +
+    ggplot2::geom_label(data = nodes, ggplot2::aes(x = x, y = y, label = marker), size = 4) +
+    ggplot2::geom_text(data = notes, ggplot2::aes(x = 0, y = -1.25, label = label), size = 3) +
+    ggplot2::facet_wrap(~condition, nrow = 1, drop = FALSE) +
+    ggplot2::scale_color_gradient2(low = "#1F395F", mid = "#FFFFFF", high = "#B54868",
+      midpoint = 0, limits = c(-limit, limit), name = "Mean log2 ratio") +
+    ggplot2::scale_linewidth_continuous(range = c(0.4, 5), limits = c(0, limit), guide = "none") +
+    ggplot2::scale_x_continuous(limits = c(-1.4, 1.4)) +
+    ggplot2::scale_y_continuous(limits = c(-1.4, 1.4)) +
+    ggplot2::labs(title = "Colocalization network", subtitle = paste(unique(rows$donor), unique(rows$celltype),
+      paste0("detection > ", min_detection, "; |mean| > ", min_mean), sep = " · "),
+      caption = "Stored population means include missing scores as zero. Display thresholds are not significance tests.") +
+    ggplot2::theme_void() + ggplot2::theme(aspect.ratio = 1,
+      strip.text = ggplot2::element_text(size = 12), panel.border = ggplot2::element_rect(fill = NA, color = "grey70"))
+}
+
+report_network_plotly <- function(plot, source = "A") {
+  plot$theme$aspect.ratio <- NULL
+  if (is.data.frame(plot$data) && !nrow(plot$data)) {
+    plot$layers <- Filter(function(layer) !inherits(layer$geom, c("GeomSegment", "GeomPoint")), plot$layers)
+  }
+  fields <- c(marker_1 = "Marker 1", marker_2 = "Marker 2", condition = "Condition",
+    value = "Mean log2 ratio (missing scores zero)", pct_detected = "Fraction detected",
+    n_scored_cells = "Detected cells", n_total_cells = "Total cells")
+  plot$layers <- lapply(plot$layers, function(layer) {
+    if (inherits(layer$geom, "GeomLabel")) return(ggplot2::ggproto(NULL, layer, geom = ggplot2::GeomText))
+    if (inherits(layer$geom, c("GeomSegment", "GeomPoint"))) return(report_interactive_layer(layer, plot$data, fields))
+    layer
+  })
+  plotly::ggplotly(plot, tooltip = "text", source = source) |>
+    plotly::event_register("plotly_click") |>
+    plotly::layout(dragmode = "zoom", hovermode = "closest") |>
+    plotly::config(scrollZoom = TRUE, displaylogo = FALSE, doubleClick = "reset")
+}
+
 report_plot_error <- function(...) {
   stop(paste0(...), call. = FALSE)
 }

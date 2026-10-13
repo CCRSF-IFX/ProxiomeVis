@@ -301,13 +301,13 @@ test_that("large unavailable matrices use one heatmap instead of per-cell polygo
   expect_identical(widget$x$layout$yaxis$ticktext, rev(markers))
 })
 
-test_that("Spatial matrix renders its default comparison on first entry", {
+test_that("Spatial patterns renders its default comparison on first entry", {
   value <- precomputed_app_data(precomputed_fixture())
   value$contract$report <- report_plot_fixture()$report
   current <- shiny::reactiveVal(value)
   shiny::testServer(precomputed_server, args = list(data = current), {
     session$setInputs(readout = "self_proximity", donor = "D1", celltype = "B",
-      comparison = "TRT vs NC", results_view = "Spatial matrix")
+      comparison = "TRT vs NC", results_view = "Spatial patterns")
     expect_identical(spatial_scope()$kind, "differences")
     expect_identical(spatial_scope()$panel, "TRT_vs_NC")
     expect_equal(nrow(spatial_report_ggplot()$data), 4L)

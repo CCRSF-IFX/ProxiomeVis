@@ -126,7 +126,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           )
         ),
         bslib::nav_panel(
-          "Spatial matrix",
+          "Spatial patterns",
+          shiny::uiOutput(ns("spatial_view_control")),
+          shiny::conditionalPanel("!input.spatial_view || input.spatial_view == 'matrix'", ns = ns,
           bslib::layout_column_wrap(
             width = "280px", fill = FALSE,
             shiny::radioButtons(ns("spatial_kind"), "Spatial quantity", choices = c(
@@ -153,17 +155,45 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
                 "Loading spatial matrix…"),
               plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
             )
+          )),
+          shiny::conditionalPanel("input.spatial_view == 'network' && input.readout == 'colocalization'", ns = ns,
+            bslib::layout_column_wrap(width = "280px", fill = FALSE,
+              shiny::selectizeInput(ns("network_markers"), "Network markers (2–20)", choices = character(),
+                multiple = TRUE, options = list(maxItems = 20)),
+              shiny::numericInput(ns("network_detection"), "Minimum detection fraction (greater than)",
+                value = 0.5, min = 0, max = 1, step = 0.05),
+              shiny::numericInput(ns("network_mean"), "Minimum absolute mean proximity (greater than)",
+                value = 0.1, min = 0, step = 0.05)
+            ),
+            shiny::tags$p(class = "small text-muted",
+              "Each condition is filtered separately. The initial marker set uses up to 10 markers from the strongest stored pairs. Color shows mean log2 ratio; line width shows its absolute magnitude. Positions and scales are shared across conditions. These display thresholds are not significance tests. Stored population means include missing scores as zero."),
+            bslib::card(full_screen = TRUE,
+              bslib::card_header("Colocalization network — mean proximity by condition"),
+              precomputed_download_group(
+                shiny::downloadButton(ns("download_network_svg"), "Network SVG", class = "btn-sm btn-outline-primary"),
+                shiny::downloadButton(ns("download_network_csv"), "Displayed edges CSV", class = "btn-sm btn-outline-primary")
+              ),
+              shiny::tags$p(class = "small text-muted",
+                "Hover over an edge for its score and support. Click an edge to select its pair for Tables or Volcano. No proximity sidecar is required."),
+              shiny::textOutput(ns("network_selected_pair")),
+              shiny::div(class = "spatial-plot",
+                shiny::div(class = "spatial-loading alert alert-info", role = "status", `aria-live` = "polite",
+                  shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"),
+                  "Loading colocalization network…"),
+                plotly::plotlyOutput(ns("network_plot"), height = "650px")
+              )
+            )
           )
         )
       ),
-      shiny::conditionalPanel("input.results_view != 'Spatial matrix'", ns = ns,
+      shiny::conditionalPanel("input.results_view != 'Spatial patterns'", ns = ns,
       bslib::card(full_screen = TRUE,
         class = "mt-3", bslib::card_header("Selected feature — shared across views"),
         bslib::layout_columns(
           col_widths = c(4, 8), fill = FALSE,
           shiny::tagList(
             shiny::selectizeInput(ns("detail_feature"), "Marker / pair", choices = character()),
-            shiny::conditionalPanel("input.results_view == 'Spatial matrix'", ns = ns,
+            shiny::conditionalPanel("input.results_view == 'Spatial patterns'", ns = ns,
               shiny::radioButtons(ns("detail_display"), "Detail display", choices = c(
                 "Stored effects" = "effects", "Condition values, when stored" = "conditions"), selected = "effects")
             ),

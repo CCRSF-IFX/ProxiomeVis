@@ -1007,7 +1007,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       disabled <- identical(precomputed_scope_value(input$readout, "abundance"), "abundance")
       session$sendCustomMessage("precomputed-spatial-availability",
         list(id = session$ns("results_view"), disabled = disabled))
-      if (disabled && identical(input$results_view, "Spatial matrix")) {
+      if (disabled && identical(input$results_view, "Spatial patterns")) {
         bslib::nav_select("results_view", "Tables", session = session)
       }
     })
@@ -1159,7 +1159,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (from_spatial) shiny::updateSelectInput(session, "readout",
         selected = if (pair[1L] == pair[2L]) "self_proximity" else "colocalization")
     }
-    for (view in c("volcano", "spatial")) local({
+    for (view in c("volcano", "spatial", "network")) local({
       plot_view <- view
       shiny::observeEvent({
         shiny::req(session$rootScope()$input[[paste0("plotly_click-", session$ns(plot_view))]])
@@ -1167,7 +1167,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }, {
         event <- plotly::event_data("plotly_click", source = session$ns(plot_view), priority = "event")
         key <- if (!is.null(event$key)) event$key else event$customdata
-        if (length(key)) select_feature(key[1L], from_spatial = plot_view == "spatial")
+        if (length(key)) select_feature(key[1L], from_spatial = plot_view %in% c("spatial", "network"))
       })
     })
     shiny::observeEvent(input$results_table_rows_selected, {
@@ -1328,6 +1328,58 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       content = function(file) utils::write.csv(report_scope()$rows, file, row.names = FALSE, na = "")
     )
 
+    output$spatial_view_control <- shiny::renderUI({
+      choices <- c("Matrix" = "matrix")
+      if (scope()$readout == "colocalization") choices <- c(choices, "Network" = "network")
+      shiny::radioButtons(session$ns("spatial_view"), "Display", choices = choices, inline = TRUE,
+        selected = precomputed_keep_selection(shiny::isolate(input$spatial_view), unname(choices), "matrix"))
+    })
+    network_profiles <- shiny::reactive({
+      selected <- scope()
+      shiny::validate(shiny::need(selected$readout == "colocalization", "Network is available for Colocalization."))
+      report_network_profiles(current_data()$contract, selected$donor, selected$celltype, selected$comparison)
+    })
+    shiny::observeEvent(list(current_data(), input$donor, input$celltype, input$comparison, input$readout), {
+      rows <- tryCatch(network_profiles(), error = function(e) NULL)
+      choices <- sort(unique(c(rows$marker_1, rows$marker_2)))
+      selected <- intersect(shiny::isolate(input$network_markers), choices)
+      if (length(selected) < 2L && !is.null(rows)) {
+        selected <- report_network_default_markers(rows)
+        if (length(selected) < 2L) selected <- head(choices, 10L)
+      }
+      shiny::updateSelectizeInput(session, "network_markers", choices = choices, selected = selected, server = TRUE)
+    })
+    network_ggplot <- shiny::reactive({
+      rows <- network_profiles()
+      plot_report_network(rows, input$network_markers,
+        min_detection = input$network_detection, min_mean = input$network_mean)
+    })
+    output$network_plot <- plotly::renderPlotly({
+      plot <- tryCatch(network_ggplot(), error = function(e) precomputed_empty_plot(
+        conditionMessage(e), "Colocalization network unavailable"))
+      report_network_plotly(plot, source = session$ns("network"))
+    })
+    output$network_selected_pair <- shiny::renderText({
+      pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
+      if (length(pair) == 2L) paste("Selected pair:", paste(pair, collapse = " ↔ "), "— inspect in Tables or Volcano.")
+    })
+    output$download_network_svg <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, "colocalization-network"), ".svg"),
+      content = function(file) precomputed_write_svg(network_ggplot(), file, 12, 6)
+    )
+    output$download_network_csv <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, "network-edges"), ".csv"),
+      content = function(file) {
+        rows <- network_ggplot()$data
+        rows$minimum_detection_fraction <- rep(input$network_detection, nrow(rows))
+        rows$minimum_absolute_mean <- rep(input$network_mean, nrow(rows))
+        utils::write.csv(rows[setdiff(names(rows), c("x", "y", "xend", "yend", "key"))],
+          file, row.names = FALSE, na = "")
+      }
+    )
+
     spatial_scope <- shiny::reactive({
       shared <- scope()
       contract <- current_data()$contract
@@ -1359,10 +1411,10 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     spatial_report_ggplot <- shiny::reactive({
       if (identical(scope()$readout, "abundance")) return(precomputed_empty_plot(
-        "Select Self-proximity or Colocalization to view the spatial matrix.", "Spatial matrix"))
+        "Select Self-proximity or Colocalization to view the spatial matrix.", "Spatial patterns"))
       scope <- spatial_scope()
       if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
-        "Select one cell type for its spatial matrix.", "Spatial matrix"))
+        "Select one cell type for its spatial matrix.", "Spatial patterns"))
       if (!length(scope$donor) || is.na(scope$donor) || !length(scope$celltype) || is.na(scope$celltype) ||
           !length(scope$panel) || is.na(scope$panel)) {
         return(precomputed_empty_plot("No aligned spatial report panel is stored.", "Original spatial report view"))

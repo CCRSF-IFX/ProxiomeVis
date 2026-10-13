@@ -1,6 +1,6 @@
 $(function () {
   Shiny.addCustomMessageHandler("precomputed-spatial-availability", function (message) {
-    const tab = document.getElementById(message.id)?.querySelector('a[data-value="Spatial matrix"]');
+    const tab = document.getElementById(message.id)?.querySelector('a[data-value="Spatial patterns"]');
     if (!tab) return;
     tab.classList.toggle("disabled", message.disabled);
     tab.setAttribute("aria-disabled", String(message.disabled));

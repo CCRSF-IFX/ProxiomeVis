@@ -77,7 +77,7 @@ test_that("single-donor explorer uses stored contrasts without cross-donor resul
     expect_identical(report_scope()$celltype, "T")
     expect_identical(spatial_scope()$celltype, "T")
     expect_true(all(selected_results()$celltype == "T"))
-    session$setInputs(readout = "colocalization", results_view = "Spatial matrix",
+    session$setInputs(readout = "colocalization", results_view = "Spatial patterns",
       spatial_kind = "profiles", spatial_panel = "Unrelated")
     expect_setequal(spatial_scope()$panels, c("NC", "TRT"))
     expect_false(spatial_scope()$panel == "Unrelated")
@@ -193,7 +193,7 @@ test_that("searched rows distinguish no search from zero matches and reject inva
   expect_identical(precomputed_searched_rows(rows, c(3L, 3L, NA, 0L, -1L, 8L)), rows[3L, , drop = FALSE])
 })
 
-test_that("Spatial matrix is disabled for abundance and requests a safe tab fallback", {
+test_that("Spatial patterns is disabled for abundance and requests a safe tab fallback", {
   current <- shiny::reactiveVal(results_explorer_fixture())
   messages <- list()
   availability <- NULL
@@ -211,7 +211,7 @@ test_that("Spatial matrix is disabled for abundance and requests a safe tab fall
       session$setInputs(readout = readout)
       expect_false(availability$disabled)
     }
-    session$setInputs(results_view = "Spatial matrix")
+    session$setInputs(results_view = "Spatial patterns")
     session$setInputs(readout = "abundance")
     expect_true(availability$disabled)
     expect_identical(messages$results_view$value, "Tables")

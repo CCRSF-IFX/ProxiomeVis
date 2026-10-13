@@ -17,7 +17,7 @@ runInNewContext(readFileSync(new URL('../www/precomputed.js', import.meta.url), 
     handler = callback;
   } },
   document: { getElementById: id => id === 'report-results_view' ? {
-    querySelector(selector) { assert.equal(selector, 'a[data-value="Spatial matrix"]'); return tab; },
+    querySelector(selector) { assert.equal(selector, 'a[data-value="Spatial patterns"]'); return tab; },
   } : null },
 });
 handler({ id: 'report-results_view', disabled: true });

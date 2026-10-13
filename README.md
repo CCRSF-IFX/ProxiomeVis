@@ -200,7 +200,7 @@ The SVG download uses the current embedding, color, and split selections.
 
 ### Precomputed results
 
-The **Tables**, **Volcano**, and **Spatial matrix** views use the same selections.
+The **Tables**, **Volcano**, and **Spatial patterns** views use the same selections.
 Under **Tables**, select a marker or pair to show its cell-level violin and boxplot by condition.
 Under **Volcano**, click a point to update the violin and boxplot beside it.
 The plot uses normalized abundance or observed proximity scores for the selected donor and cell type.
@@ -214,7 +214,7 @@ The results come from the selected donor.
 They do not include results from other donors.
 The tables can show all cell types.
 One cell type is necessary for the volcano and spatial views.
-The **Spatial matrix** tab is disabled for abundance.
+The **Spatial patterns** tab is disabled for abundance.
 Select self-clustering or colocalization to enable it.
 
 A positive effect means that the target value is larger than the reference value.
@@ -231,6 +231,20 @@ The volcano and spatial plots have hover and zoom functions.
 The spatial matrix opens with the differential comparison selected.
 A loading message appears during initial loading and updates.
 The report SVG files keep the precomputed plot design and statistics.
+
+Under **Spatial patterns**, select **Matrix** or **Network**.
+The network is available for colocalization only.
+It shows the reference and target conditions in separate panels with the same marker positions and scales.
+Select 2 to 20 markers. The initial selection contains up to 10 markers from the strongest stored pairs detected in more than half of the cells.
+Use **Minimum detection fraction** and **Minimum absolute mean proximity** to filter the edges.
+The defaults are greater than 0.5 and greater than 0.1, respectively.
+Each condition uses these filters separately.
+Edge color shows the mean log2 ratio. Edge width shows its absolute magnitude.
+These thresholds control the display; they are not tests of statistical significance.
+The stored population means include missing scores as zero.
+Hover over an edge to read its score and cell counts. Click an edge to select its pair for Tables or Volcano.
+**Network SVG** exports the current plot. **Displayed edges CSV** exports the visible edges, support counts, and thresholds.
+The network uses summaries in the RDS and does not require PXL files or proximity sidecars.
 
 Spatial condition profiles contain means.
 Differential effects contain differences between medians.

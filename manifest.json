@@ -3617,7 +3617,7 @@
       "checksum": "0e89c568a9975c25e975b625e8695bf8"
     },
     "docs/getting-started.md": {
-      "checksum": "d57518045e384ddb9e3c9d471dd60c69"
+      "checksum": "45ac896c8365c4204e5a6d87cdbf880e"
     },
     "docs/hybrid-analysis.md": {
       "checksum": "badfa26cec1d65b559d3425a8f99eec3"
@@ -3626,7 +3626,7 @@
       "checksum": "3e4d5390b19ef058531eb396f9b0f258"
     },
     "docs/precomputed-results.md": {
-      "checksum": "779423ac35b6336372fe918ef06344a1"
+      "checksum": "a3ad100ae8ebe2e589329c4262afd7df"
     },
     "docs/troubleshooting.md": {
       "checksum": "8c09a81235646c2a6eb312cdebd96912"
@@ -3884,10 +3884,10 @@
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
     },
     "R/precomputed_module.R": {
-      "checksum": "aa79207b251658675af372fb3c039582"
+      "checksum": "fb34f171f34c399a6ff90d6fc98309ba"
     },
     "R/precomputed_ui.R": {
-      "checksum": "3384a58d25d675c39b0ff388365cdf62"
+      "checksum": "431fcc21820f0245eb70a1667cbcece3"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
@@ -3899,10 +3899,10 @@
       "checksum": "fad39fdf893504a3f063f10240080694"
     },
     "R/report_plots.R": {
-      "checksum": "6937ff3c1d3e7d2bc9750012d135925d"
+      "checksum": "2f5eadfead99624e4d8951af1151d8a1"
     },
     "README.md": {
-      "checksum": "080ebf5487b12a21f2ffbab7a6d3c435"
+      "checksum": "8485cd6bb461d4d3094edb1a720936c6"
     },
     "screenshots/proxiomevis-abundance-attempt.png": {
       "checksum": "4d372592d7e03b454f776237076dc2cd"
@@ -4376,7 +4376,7 @@
       "checksum": "fcd3a85bc384d0bd4c4e3118a2c99b98"
     },
     "tests/browser_smoke.mjs": {
-      "checksum": "8f2e1a8bed8d2dc149e0d5ef5493bd3a"
+      "checksum": "cd188925fc0d86e041adeb1104758929"
     },
     "tests/testthat.R": {
       "checksum": "2aa3b2db147f90830f81cfcb0e69df48"
@@ -4421,7 +4421,7 @@
       "checksum": "3c9851ef11a638ac147290bf9cef75fc"
     },
     "tests/testthat/test_precomputed_plots.R": {
-      "checksum": "44f540470c7f2c7f970eb2b6dd4d52b5"
+      "checksum": "1d5d07ddcef306ef5edd87a5a33f3b11"
     },
     "tests/testthat/test_preparation_cli.R": {
       "checksum": "d2cdf29fdd1cf3502e9db6040c7f4e31"
@@ -4436,10 +4436,13 @@
       "checksum": "879785d942ad84a867ba809588570c4f"
     },
     "tests/testthat/test_report_plots.R": {
-      "checksum": "200f4a35d6a70509b44a71d0b098d174"
+      "checksum": "731ec7345da3dce6947c2fce08ee6a1c"
     },
     "tests/testthat/test_results_explorer.R": {
-      "checksum": "fe09964397155d9362fb4c2f0c589d3c"
+      "checksum": "c87138a4e68b4a9e16b02e22f89b87cf"
+    },
+    "tests/testthat/test_spatial_network.R": {
+      "checksum": "f59c1cdbf18d95f78e0d3f46716e4cba"
     },
     "www/cell-graph-gif-worker.js": {
       "checksum": "88c12954e64c7641906abe6a57c27c51"
@@ -4451,7 +4454,7 @@
       "checksum": "bf421e2036be43e8146df2d2aea928d0"
     },
     "www/precomputed.js": {
-      "checksum": "77327d95a4d62d85eaa146586cf11cb8"
+      "checksum": "fcb2b60612ed1f1909cf74b9154bea0e"
     },
     "www/proixome.css": {
       "checksum": "e37788eaf0189a243b5e06c158ab1b15"

@@ -45,7 +45,7 @@ jobs:
           Rscript --vanilla -e
           'install.packages(c("testthat", "shiny", "bslib", "ggplot2", "plotly", "threejs",
           "DT", "SeuratObject", "Seurat", "Matrix", "jsonlite", "data.table", "ggrepel",
-          "scales", "tibble", "pheatmap", "yaml", "withr", "htmltools",
+          "scales", "tibble", "pheatmap", "yaml", "withr", "htmltools", "dbplyr",
           "callr", "promises", "later", "digest", "arrow", "dplyr", "DBI", "duckdb"),
           repos = c(CRAN = Sys.getenv("RSPM", "https://cloud.r-project.org")))'
 

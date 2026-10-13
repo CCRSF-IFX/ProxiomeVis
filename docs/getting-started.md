@@ -103,11 +103,14 @@ dropdown. The shared selection persists across these subtabs:
   CSV downloads, and a combined violin/boxplot for the selected feature.
 - **Volcano:** donor-specific stored test with hover and zoom beside the selected
   feature's violin/boxplot. Click a volcano point to update the distribution.
-- **Spatial matrix:** interactive self-proximity and colocalization together,
-  with condition-profile and differential-effect views.
+- **Spatial patterns:** interactive self-proximity and colocalization together,
+  with condition-profile and differential-effect matrices. Select Network for a
+  colocalization graph with aligned reference/target panels. Select markers and
+  detection/mean thresholds; hover or click an edge to inspect its pair. Network
+  means include missing scores as zero, and display thresholds are not significance tests.
 
 Volcano and spatial views need one cell type; they do not silently substitute
-one when **All cell types** is selected. **Spatial matrix** is disabled for
+one when **All cell types** is selected. **Spatial patterns** is disabled for
 abundance; select self-clustering or colocalization to enable it. Controls select stored rows,
 never rerun a test. Positive effects mean target minus reference. Stored
 component-level P values are exploratory within one donor, not population-level
