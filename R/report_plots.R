@@ -63,9 +63,11 @@ report_spatial_plotly <- function(plot, source = "A") {
     value = if (is.null(plot$labels$fill)) "Stored value" else plot$labels$fill,
     p_adj = "Adjusted P value", status = "Availability", pct_detected = "Fraction detected"
   )
-  # Empty tile layers cannot be translated by ggplotly.
+  # One heatmap replaces thousands of separate polygons for unavailable pairs.
+  tiles <- Filter(function(layer) inherits(layer$geom, "GeomTile") &&
+    is.data.frame(layer$data) && nrow(layer$data), plot$layers)
   plot$layers <- Filter(function(layer) {
-    !(inherits(layer$geom, "GeomTile") && is.data.frame(layer$data) && !nrow(layer$data))
+    !inherits(layer$geom, "GeomTile")
   }, plot$layers)
   plot$layers <- lapply(plot$layers, function(layer) {
     if (inherits(layer$geom, "GeomLabel")) {
@@ -74,7 +76,31 @@ report_spatial_plotly <- function(plot, source = "A") {
     if (!inherits(layer$geom, c("GeomPoint", "GeomTile"))) return(layer)
     report_interactive_layer(layer, plot$data, fields)
   })
-  plotly::ggplotly(plot, tooltip = "text", source = source) |>
+  widget <- plotly::ggplotly(plot, tooltip = "text", source = source)
+  if (length(tiles)) {
+    rows <- report_interactive_layer(tiles[[1L]], plot$data, fields)$data
+    x <- plot$scales$get_scales("x")$limits
+    y <- plot$scales$get_scales("y")$limits
+    z <- matrix(NA_real_, nrow = length(y), ncol = length(x))
+    text <- keys <- matrix(NA_character_, nrow = length(y), ncol = length(x))
+    index <- cbind(match(rows$marker_2, y), match(rows$marker_1, x))
+    keep <- stats::complete.cases(index)
+    z[index[keep, , drop = FALSE]] <- 1
+    text[index[keep, , drop = FALSE]] <- rows$.report_hover[keep]
+    keys[index[keep, , drop = FALSE]] <- rows$.feature_key[keep]
+    widget <- plotly::add_trace(widget, type = "heatmap", x = seq_along(x), y = seq_along(y),
+      z = z, text = text, hoverinfo = "text", hoverongaps = FALSE,
+      colorscale = list(c(0, "#D1D1D1"), c(1, "#D1D1D1")), zmin = 0, zmax = 1,
+      showscale = FALSE, showlegend = FALSE, inherit = FALSE)
+    widget <- plotly::plotly_build(widget)
+    i <- which(vapply(widget$x$data, function(trace) identical(trace$type, "heatmap"), logical(1)))
+    # Row lists preserve heatmap click keys through Plotly's key validation.
+    widget$x$data[[i]]$key <- lapply(seq_len(nrow(keys)), function(j) unname(keys[j, ]))
+    widget$x$data[[i]]$customdata <- widget$x$data[[i]]$key
+    widget$x$data[[i]]$`_isSimpleKey` <- FALSE
+    widget$x$data[[i]]$`_isNestedKey` <- TRUE
+  }
+  widget |>
     plotly::event_register("plotly_click") |>
     plotly::layout(dragmode = "zoom", hovermode = "closest") |>
     plotly::config(scrollZoom = TRUE, displayModeBar = TRUE,

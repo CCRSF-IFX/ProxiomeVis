@@ -4,7 +4,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
     id = ns("report_page"), title = "ProxiomeVis", fillable = FALSE,
     navbar_options = bslib::navbar_options(bg = "#f8f9fa", theme = "light"),
     header = shiny::tagList(dataset_status,
-      shiny::tags$head(shiny::tags$script(src = "precomputed.js"))),
+      shiny::tags$head(shiny::tags$script(src = "precomputed.js"),
+        shiny::tags$style(shiny::HTML(
+          ".spatial-plot:has(.js-plotly-plot):not(:has(.recalculating)) .spatial-loading, .spatial-plot:has(.shiny-output-error) .spatial-loading {display:none;}")))),
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
@@ -151,7 +153,13 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             ),
             shiny::tags$p(class = "small text-muted",
               "Hover for values and availability; click a marker pair to inspect it below. Marker order and scales follow the frozen report alignment."),
-            plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
+            shiny::div(class = "spatial-plot",
+              shiny::div(id = ns("spatial_loading"), class = "spatial-loading alert alert-info",
+                role = "status", `aria-live` = "polite",
+                shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"),
+                "Loading spatial matrix…"),
+              plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
+            )
           )
         )
       ),

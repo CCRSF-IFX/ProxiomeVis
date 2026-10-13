@@ -249,10 +249,18 @@ test_that("spatial hover distinguishes unavailable pairs, zero effects and color
   rows[marker_1 == "A" & marker_2 == "A", value := 5]
   plot <- plot_report_spatial(contract, "D1", "B", "differences", "TRT_vs_NC")
   built <- plotly::plotly_build(report_spatial_plotly(plot))
-  missing <- Filter(function(trace) identical(trace$mode, "lines"), built$x$data)[[1L]]
-  expect_match(missing$text, "Availability: unavailable", fixed = TRUE)
-  expect_match(missing$text, "Difference in medians: Not available", fixed = TRUE)
-  expect_identical(missing$fillcolor, "rgba(209,209,209,1)")
+  missing <- Filter(function(trace) identical(trace$type, "heatmap"), built$x$data)[[1L]]
+  expect_match(missing$text[is.finite(missing$z)], "Availability: unavailable", fixed = TRUE)
+  expect_match(missing$text[is.finite(missing$z)], "Difference in medians: Not available", fixed = TRUE)
+  expect_equal(missing$z[1, 1], 1)
+  expect_equal(sum(is.finite(missing$z)), 1L)
+  expect_equal(missing$customdata[[1]][1], report_feature_key("A", "B"))
+  expect_equal(as.character(missing$key[[1]][1]), report_feature_key("A", "B"))
+  serialized <- jsonlite::fromJSON(as.character(plotly::plotly_json(built, jsonedit = FALSE)), simplifyVector = FALSE)
+  tile <- Filter(function(trace) identical(trace$type, "heatmap"), serialized$data)[[1L]]
+  expect_equal(tile$key[[1]][[1]], report_feature_key("A", "B"))
+  expect_equal(tile$text[[1]][[1]], missing$text[1, 1])
+  expect_true(all(vapply(missing$colorscale, function(x) x[[2L]] == "#D1D1D1", logical(1))))
   points <- Filter(function(trace) identical(trace$mode, "markers") && !is.null(trace$key), built$x$data)
   zero <- Filter(function(trace) any(grepl("Difference in medians: 0<br>", trace$text, fixed = TRUE)), points)[[1L]]
   expect_identical(zero$marker$color, "rgba(255,255,255,1)")
@@ -270,6 +278,49 @@ test_that("interactive spatial matrices handle unavailable and empty scopes", {
   expect_s3_class(widget, "plotly")
   empty <- plot_report_spatial(contract, "D1", "T", "differences", "TRT_vs_NC")
   expect_warning(expect_s3_class(report_spatial_plotly(empty), "plotly"), NA)
+})
+
+test_that("large unavailable matrices use one heatmap instead of per-cell polygons", {
+  contract <- report_plot_fixture()
+  markers <- paste0("M", seq_len(40L))
+  contract$report$alignment$markers <- data.table::data.table(celltype = "B", marker = markers,
+    tested_clustering = TRUE, tested_colocalization = TRUE)
+  rows <- data.table::CJ(marker_1 = markers, marker_2 = markers)
+  rows[, `:=`(celltype = "B", donor = "D1", panel = "TRT_vs_NC", status = "unavailable",
+    value = NA_real_, p_adj = NA_real_, pct_detected = NA_real_)]
+  rows[1L, `:=`(status = "supported", value = 0, p_adj = 0.02, pct_detected = 1)]
+  contract$report$alignment$differences <- rows
+  widget <- plotly::plotly_build(report_spatial_plotly(
+    plot_report_spatial(contract, "D1", "B", "differences", "TRT_vs_NC")))
+  expect_lte(length(widget$x$data), 5L)
+  tiles <- Filter(function(x) identical(x$type, "heatmap"), widget$x$data)
+  expect_length(tiles, 1L)
+  expect_equal(sum(is.finite(tiles[[1L]]$z)), 1599L)
+  expect_false(tiles[[1L]]$hoverongaps)
+  expect_identical(widget$x$layout$xaxis$ticktext, markers)
+  expect_identical(widget$x$layout$yaxis$ticktext, rev(markers))
+})
+
+test_that("Spatial matrix renders its default comparison on first entry", {
+  value <- precomputed_app_data(precomputed_fixture())
+  value$contract$report <- report_plot_fixture()$report
+  current <- shiny::reactiveVal(value)
+  shiny::testServer(precomputed_server, args = list(data = current), {
+    session$setInputs(readout = "self_proximity", donor = "D1", celltype = "B",
+      comparison = "TRT vs NC", results_view = "Spatial matrix")
+    expect_identical(spatial_scope()$kind, "differences")
+    expect_identical(spatial_scope()$panel, "TRT_vs_NC")
+    expect_equal(nrow(spatial_report_ggplot()$data), 4L)
+    expect_true(all(spatial_report_ggplot()$data$status == "supported"))
+    session$setInputs(spatial_kind = "profiles")
+    expect_identical(spatial_scope()$panel, "TRT")
+    expect_equal(nrow(spatial_report_ggplot()$data), 4L)
+  })
+  html <- as.character(precomputed_ui("report"))
+  expect_match(html, 'id="report-spatial_loading"', fixed = TRUE)
+  expect_match(html, "Loading spatial matrix", fixed = TRUE)
+  expect_match(html, 'role="status"', fixed = TRUE)
+  expect_match(htmltools::renderTags(precomputed_ui("report"))$head, ".recalculating", fixed = TRUE)
 })
 
 test_that("abundance heatmaps use the frozen displayed matrix", {

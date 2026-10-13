@@ -228,6 +228,8 @@ The shared detail panel shows the selected feature.
 The order of markers in a pair does not change the selection.
 
 The volcano and spatial plots have hover and zoom functions.
+The spatial matrix opens with the differential comparison selected.
+A loading message appears during initial loading and updates.
 The report SVG files keep the precomputed plot design and statistics.
 
 Spatial condition profiles contain means.
