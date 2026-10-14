@@ -6,7 +6,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
     header = shiny::tagList(dataset_status,
       shiny::tags$head(shiny::tags$script(src = "precomputed.js"),
         shiny::tags$style(shiny::HTML(
-          ".spatial-plot:has(.js-plotly-plot):not(:has(.recalculating)) .spatial-loading, .spatial-plot:has(.shiny-output-error) .spatial-loading {display:none;}")))),
+          ".spatial-plot:has(.js-plotly-plot):not(:has(.recalculating)) .spatial-loading, .spatial-plot:has(.shiny-output-error) .spatial-loading {display:none;}
+           .spatial-matrix {width:100%;max-width:900px;}
+           .spatial-matrix .plotly {aspect-ratio:6 / 5;min-height:400px;}")))),
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
@@ -148,12 +150,12 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             ),
             shiny::tags$p(class = "small text-muted",
               "Hover for values and availability; click a marker pair to select it for inspection in Tables or Volcano. Marker order and scales follow the frozen report alignment."),
-            shiny::div(class = "spatial-plot",
+            shiny::div(class = "spatial-plot spatial-matrix",
               shiny::div(id = ns("spatial_loading"), class = "spatial-loading alert alert-info",
                 role = "status", `aria-live` = "polite",
                 shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"),
                 "Loading spatial matrix…"),
-              plotly::plotlyOutput(ns("spatial_report_plot"), height = "750px")
+              plotly::plotlyOutput(ns("spatial_report_plot"), height = "auto")
             )
           )),
           shiny::conditionalPanel("input.spatial_view == 'network' && input.readout == 'colocalization'", ns = ns,

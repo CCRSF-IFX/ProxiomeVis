@@ -76,7 +76,9 @@ report_spatial_plotly <- function(plot, source = "A") {
     if (!inherits(layer$geom, c("GeomPoint", "GeomTile"))) return(layer)
     report_interactive_layer(layer, plot$data, fields)
   })
-  widget <- plotly::ggplotly(plot, tooltip = "text", source = source)
+  # A converted ggplot border stays paper-sized when Plotly shrinks the axis domain.
+  widget <- plotly::ggplotly(plot + ggplot2::theme(panel.border = ggplot2::element_blank()),
+                            tooltip = "text", source = source)
   if (length(tiles)) {
     rows <- report_interactive_layer(tiles[[1L]], plot$data, fields)$data
     x <- plot$scales$get_scales("x")$limits
@@ -99,6 +101,12 @@ report_spatial_plotly <- function(plot, source = "A") {
     widget$x$data[[i]]$customdata <- widget$x$data[[i]]$key
     widget$x$data[[i]]$`_isSimpleKey` <- FALSE
     widget$x$data[[i]]$`_isNestedKey` <- TRUE
+  }
+  # Keep the marker bounds tight; shrink the panel rather than expanding empty ranges.
+  if (length(plot$scales$get_scales("x")$limits)) {
+    widget <- plotly::layout(widget,
+      xaxis = list(constrain = "domain", constraintoward = "left", scaleanchor = FALSE),
+      yaxis = list(constrain = "domain", scaleanchor = "x", scaleratio = 1))
   }
   widget |>
     plotly::event_register("plotly_click") |>

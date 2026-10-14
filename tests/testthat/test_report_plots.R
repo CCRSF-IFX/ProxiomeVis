@@ -231,6 +231,13 @@ test_that("interactive spatial matrices retain stored values, scales, order and 
     expect_true("plotly_click" %in% built$x$shinyEvents)
     expect_identical(built$x$layout$xaxis$ticktext, c("A", "B"))
     expect_identical(built$x$layout$yaxis$ticktext, c("B", "A"))
+    expect_identical(built$x$layout$xaxis$constrain, "domain")
+    expect_identical(built$x$layout$yaxis$constrain, "domain")
+    expect_identical(built$x$layout$xaxis$scaleanchor, FALSE)
+    expect_identical(built$x$layout$yaxis$scaleanchor, "x")
+    expect_equal(built$x$layout$yaxis$scaleratio, 1)
+    expect_equal(built$x$layout$xaxis$range, c(0.4, 2.6))
+    expect_equal(built$x$layout$yaxis$range, c(0.4, 2.6))
     colorbars <- Filter(function(trace) !is.null(trace$marker$colorbar), built$x$data)
     limits <- contract$report$alignment$limits[[kind]]
     expect_equal(range(as.numeric(colorbars[[1L]]$marker$colorbar$ticktext)), c(-limits, limits))
