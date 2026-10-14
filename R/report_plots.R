@@ -108,6 +108,34 @@ report_spatial_plotly <- function(plot, source = "A") {
       xaxis = list(constrain = "domain", constraintoward = "left", scaleanchor = FALSE),
       yaxis = list(constrain = "domain", scaleanchor = "x", scaleratio = 1))
   }
+  fill_scale <- plot$scales$get_scales("fill")
+  is_difference <- identical(plot$labels$fill, "Difference in medians") ||
+    identical(fill_scale$name, "Difference in medians") ||
+    grepl("log10(adj. P)", as.character(plot$labels$size), fixed = TRUE) ||
+    any(vapply(plot$layers, function(layer) {
+      is.data.frame(layer$data) && "point_size" %in% names(layer$data)
+    }, logical(1)))
+  size_legend <- list()
+  if (isTRUE(is_difference)) {
+    size_limits <- plot$scales$get_scales("size")$limits
+    cap <- suppressWarnings(as.numeric(if (length(size_limits) >= 2L) size_limits[[2L]] else 4))
+    if (!is.finite(cap)) cap <- 4
+    breaks <- unique(pmin(c(0, 1, 2, cap), cap))
+    labels <- ifelse(breaks == cap & cap > 2, paste0(cap, " (capped)"), as.character(breaks))
+    for (i in seq_along(breaks)) {
+      size_legend[[i]] <- list(type = "scatter", mode = "markers", name = labels[[i]],
+        legendgroup = "significance-size", x = list(), y = list(), marker = list(
+          size = 0.6 + 2.4 * breaks[[i]] / cap, color = "#D9D9D9",
+          line = list(color = "#596873", width = 1)),
+        showlegend = TRUE, hoverinfo = "skip")
+    }
+    widget <- plotly::layout(widget, legend = list(title = list(text =
+      "Significance size<br>-log10(adj. P)")))
+  }
+  if (length(size_legend)) {
+    widget <- plotly::plotly_build(widget)
+    widget$x$data <- c(widget$x$data, size_legend)
+  }
   widget |>
     plotly::event_register("plotly_click") |>
     plotly::layout(dragmode = "zoom", hovermode = "closest") |>

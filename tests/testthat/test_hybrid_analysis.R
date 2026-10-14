@@ -32,6 +32,11 @@ test_that("requests bind every cell to one donor, cell type and comparison", {
   expect_error(validate_hybrid_request(data, selected), "at least 20")
 })
 
+test_that("worker provenance does not require optional Seurat", {
+  source <- readLines(file.path("..", "..", "R", "hybrid_analysis.R"))
+  expect_true(any(grepl('requireNamespace("Seurat", quietly = TRUE)', source, fixed = TRUE)))
+})
+
 test_that("all-marker colocalization accepts a full panel beyond one batch", {
   data <- hybrid_fixture()
   data$abundance <- matrix(0, nrow = 160, ncol = nrow(data$metadata),

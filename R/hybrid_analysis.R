@@ -173,6 +173,10 @@ run_hybrid_analysis <- function(bundle_path, request, asset_root = NULL) {
     inference = "Exploratory cell-level comparison within one donor; cells are not biological replicates.",
     filters = filter_provenance, software = list(R = R.version.string,
       pixelatorR = as.character(utils::packageVersion("pixelatorR")),
-      Seurat = as.character(utils::packageVersion("Seurat"))))
+      Seurat = if (requireNamespace("Seurat", quietly = TRUE)) {
+        as.character(utils::packageVersion("Seurat"))
+      } else {
+        NA_character_
+      }))
   )
 }

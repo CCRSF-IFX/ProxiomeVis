@@ -238,6 +238,12 @@ test_that("interactive spatial matrices retain stored values, scales, order and 
     expect_equal(built$x$layout$yaxis$scaleratio, 1)
     expect_equal(built$x$layout$xaxis$range, c(0.4, 2.6))
     expect_equal(built$x$layout$yaxis$range, c(0.4, 2.6))
+    if (identical(kind, "differences")) {
+      size_legend <- Filter(function(trace) identical(trace$legendgroup, "significance-size"), built$x$data)
+      expect_length(size_legend, 4L)
+      expect_identical(vapply(size_legend, `[[`, character(1), "name"), c("0", "1", "2", "6 (capped)"))
+      expect_identical(built$x$layout$legend$title$text, "Significance size<br>-log10(adj. P)")
+    }
     colorbars <- Filter(function(trace) !is.null(trace$marker$colorbar), built$x$data)
     limits <- contract$report$alignment$limits[[kind]]
     expect_equal(range(as.numeric(colorbars[[1L]]$marker$colorbar$ticktext)), c(-limits, limits))
@@ -299,7 +305,7 @@ test_that("large unavailable matrices use one heatmap instead of per-cell polygo
   contract$report$alignment$differences <- rows
   widget <- plotly::plotly_build(report_spatial_plotly(
     plot_report_spatial(contract, "D1", "B", "differences", "TRT_vs_NC")))
-  expect_lte(length(widget$x$data), 5L)
+  expect_lte(length(widget$x$data), 9L)
   tiles <- Filter(function(x) identical(x$type, "heatmap"), widget$x$data)
   expect_length(tiles, 1L)
   expect_equal(sum(is.finite(tiles[[1L]]$z)), 1599L)
