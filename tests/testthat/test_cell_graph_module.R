@@ -95,11 +95,14 @@ test_that("a report-only dataset and missing graph directory give validation mes
     expect_equal(powerpoint_appearance()$highlight_radius, 0.007)
     session$setInputs(background_color = "#123456", highlight_color = "#00FF00",
       background_opacity = 0.4, highlight_opacity = 1, background_radius = 0.005, highlight_radius = 0.007,
-      glb_background_opacity = 0.8, glb_highlight_opacity = 1, glb_background_radius = 0.008, glb_highlight_radius = 0.009)
+      glb_background_opacity = 0.8, glb_highlight_opacity = 1, glb_background_radius = 0.008, glb_highlight_radius = 0.009,
+      glb_background_retention = 50)
+    expect_equal(glb_retention(), 25)
     expect_equal(appearance(), cell_graph_appearance())
     expect_equal(powerpoint_appearance()$background_radius, 0.005)
     session$setInputs(apply_appearance = 1L)
     expect_equal(appearance()$background_color, "#123456")
+    expect_equal(glb_retention(), 50)
     expect_equal(appearance()$highlight_radius, 0.007)
     expect_equal(powerpoint_appearance()$background_color, appearance()$background_color)
     expect_equal(powerpoint_appearance()$background_opacity, 0.8)

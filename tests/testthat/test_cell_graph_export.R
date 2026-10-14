@@ -20,7 +20,7 @@ test_that("GLB preserves nodes, outward tetrahedra, selected marker and applied 
   style <- cell_graph_appearance("#123456", "#00FF00", 0.4, 0.9, 0.005, 0.007)
   path <- tempfile(fileext = ".glb")
   on.exit(unlink(path))
-  write_cell_graph_glb(asset, "CD82", path, style)
+  write_cell_graph_glb(asset, "CD82", path, style, background_retention = 100)
   model <- read_graph_glb(path)
   expect_length(model$bytes, nrow(asset$nodes) * 96)
   expect_equal(model$doc$extras$highlight_marker, "CD82")
@@ -64,4 +64,42 @@ test_that("appearance is bounded and default preview retains the threejs style",
   expect_equal(plain$x$color, styled$x$color)
   expect_equal(plain$x$alpha, styled$x$alpha)
   expect_true(all(unlist(styled$x$size) == 0.1))
+})
+
+test_that("GLB retention is reproducible, preserves highlights and scale, and leaves RNG untouched", {
+  asset <- graph_asset_fixture()
+  asset$nodes <- asset$nodes[rep(1:4, 5), ]
+  asset$nodes$x <- as.double(1:20)
+  full <- tempfile(fileext = ".glb")
+  subset <- tempfile(fileext = ".glb")
+  on.exit(unlink(c(full, subset)))
+  write_cell_graph_glb(asset, "CD82", full, background_retention = 100)
+  withr::local_seed(123)
+  state <- .Random.seed
+  write_cell_graph_glb(asset, "CD82", subset)
+  expect_identical(.Random.seed, state)
+  original <- read_graph_glb(full)
+  sampled <- read_graph_glb(subset)
+  expect_equal(sampled$doc$extras$node_count, 12)
+  expect_equal(sampled$doc$extras$original_node_count, 20)
+  expect_equal(sampled$doc$extras$highlighted_node_count, 10)
+  expect_equal(sampled$doc$extras$retained_background_nodes, 2)
+  expect_true(sampled$doc$extras$subsampled)
+  expect_length(sampled$bytes, 12 * 96)
+  positions <- function(model, group) {
+    view <- model$doc$bufferViews[[group * 2 - 1]]
+    model$bytes[seq.int(view$byteOffset + 1, length.out = view$byteLength)]
+  }
+  expect_identical(positions(original, 2), positions(sampled, 2))
+  full_background <- matrix(readBin(positions(original, 1), "double", n = 120, size = 4, endian = "little"), ncol = 12, byrow = TRUE)
+  sampled_background <- matrix(readBin(positions(sampled, 1), "double", n = 24, size = 4, endian = "little"), ncol = 12, byrow = TRUE)
+  expect_true(all(apply(sampled_background, 1, function(row) any(apply(full_background, 1, function(other) identical(row, other))))))
+  checksum <- unname(tools::md5sum(subset))
+  set.seed(999)
+  write_cell_graph_glb(asset, "CD82", subset)
+  expect_equal(unname(tools::md5sum(subset)), checksum)
+  write_cell_graph_glb(asset, "CD82", subset, background_retention = 0)
+  expect_equal(read_graph_glb(subset)$doc$extras$node_count, 10)
+  for (bad in list(NA_real_, -1, 101, "25", numeric()))
+    expect_error(write_cell_graph_glb(asset, "CD82", subset, background_retention = bad), "retention")
 })

@@ -14,9 +14,16 @@ cell_graph_appearance <- function(background_color = "#D3D3D3", highlight_color 
        background_radius = background_radius, highlight_radius = highlight_radius)
 }
 
-write_cell_graph_glb <- function(asset, marker, glb, appearance = cell_graph_appearance()) {
+cell_graph_retention <- function(percent) {
+  if (!is.numeric(percent) || length(percent) != 1L || !is.finite(percent) || percent < 0 || percent > 100)
+    cell_graph_error("Other-node retention must be between 0 and 100 percent.")
+  percent
+}
+
+write_cell_graph_glb <- function(asset, marker, glb, appearance = cell_graph_appearance(), background_retention = 25) {
   validate_cell_graph_asset(asset)
   appearance <- do.call(cell_graph_appearance, appearance)
+  background_retention <- cell_graph_retention(background_retention)
   nodes <- asset$nodes
   if (!is.character(marker) || length(marker) != 1L || is.na(marker) ||
       !marker %in% unlist(nodes$markers, use.names = FALSE))
@@ -28,6 +35,27 @@ write_cell_graph_glb <- function(asset, marker, glb, appearance = cell_graph_app
   red <- vapply(nodes$markers, function(m) marker %in% m, logical(1))
   span <- max(vapply(nodes[c("x", "y", "z")], function(x) diff(range(x)), numeric(1)))
   if (span == 0) span <- 1
+  original_node_count <- nrow(nodes)
+  background_ids <- which(!red)
+  retained_background <- floor(length(background_ids) * background_retention / 100)
+  if (retained_background < length(background_ids)) {
+    # Local deterministic sampling must not alter the Shiny process's RNG state.
+    selected <- local({
+      had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      old_seed <- if (had_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+      old_kind <- RNGkind()
+      on.exit({
+        do.call(RNGkind, as.list(old_kind))
+        if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+        else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv)
+      })
+      set.seed(1L, kind = "Mersenne-Twister", normal.kind = "Inversion", sample.kind = "Rejection")
+      background_ids[sample.int(length(background_ids), retained_background)]
+    })
+    keep <- sort(c(which(red), selected))
+    nodes <- nodes[keep, , drop = FALSE]
+    red <- red[keep]
+  }
   v <- rbind(c(1,1,1),c(1,-1,-1),c(-1,1,-1),c(-1,-1,1))/sqrt(3)
   f <- rbind(c(1L,2L,3L),c(1L,4L,2L),c(1L,3L,4L),c(2L,4L,3L))
   chunks <- views <- accessors <- primitives <- list()
@@ -68,7 +96,11 @@ write_cell_graph_glb <- function(asset, marker, glb, appearance = cell_graph_app
       material(marker,as.numeric(grDevices::col2rgb(appearance$highlight_color))/255,appearance$highlight_opacity)),
     buffers=list(list(byteLength=offset)),bufferViews=views,accessors=accessors,
     extras=list(cell_id=id,highlight_marker=marker, appearance=appearance,node_count=nrow(nodes),
-      interpretation='Abstract graph layout, not measured physical positions.'))
+      original_node_count=original_node_count, highlighted_node_count=sum(red),
+      background_retention_percent=background_retention, retained_background_nodes=retained_background,
+      sampling_method='Uniform sampling of other-node rows without replacement; fixed seed 1; all highlighted nodes retained.',
+      subsampled=nrow(nodes)<original_node_count,
+      interpretation='Abstract graph layout, not measured physical positions. Other-node subsampling changes apparent marker proportions; use for presentation, not abundance or enrichment assessment.'))
   json <- charToRaw(enc2utf8(as.character(jsonlite::toJSON(document,auto_unbox=TRUE,digits=NA))))
   json <- c(json,rep(charToRaw(' '),(4L-length(json)%%4L)%%4L))
   con <- file(glb,'wb')

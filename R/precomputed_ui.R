@@ -295,6 +295,7 @@ documentation_ui <- function() {
         tags$p("Cell and marker changes do not update the graph until you click Display."),
         tags$p("Open Appearance and export to set shared colors and the view/GIF opacity and dot sizes. Open PowerPoint export preset (GLB only) for separate model opacity and sizes. Click Apply appearance to save both sets of settings. Pending edits are not exported."),
         tags$p("Click Download 3D model (GLB) to save a model for PowerPoint. The file contains tetrahedra, colors, and opacity. No companion file is necessary. Lighting and transparency can differ between viewers."),
+        tags$p("GLB retains all highlighted nodes and, by default, 25% of other nodes. Set Other nodes to retain (%) in the PowerPoint preset, then click Apply appearance. Sampling is reproducible and does not change the browser view or GIF. Subsampled models change apparent marker proportions; use them for presentation."),
         tags$p("The coordinates describe an abstract graph layout. They are not measured physical positions or distances."),
         tags$p("A shared highlight is not a statistical test of colocalization."),
         tags$ol(tags$li("To export a GIF, open Rotating GIF settings."), tags$li("Set the duration in seconds."),

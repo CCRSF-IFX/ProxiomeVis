@@ -50,6 +50,9 @@ cell_graph_ui <- function(id) {
           ),
           shiny::tags$details(
             shiny::tags$summary("PowerPoint export preset (GLB only)"),
+            shiny::numericInput(ns("glb_background_retention"), "Other nodes to retain (%)", 25, min = 0, max = 100, step = 5),
+            shiny::textOutput(ns("glb_estimate")),
+            shiny::tags$p(class = "small text-muted", "All highlighted nodes are retained. Other nodes are sampled reproducibly. Reduced retention changes apparent marker proportions; this export is for presentation."),
             shiny::fluidRow(
               shiny::column(6, shiny::tags$h5("Other nodes"),
                 shiny::numericInput(ns("glb_background_opacity"), "Opacity (0–1)", 1, min = 0, max = 1, step = 0.05),
@@ -309,6 +312,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
     appearance <- shiny::reactiveVal(cell_graph_appearance())
     powerpoint_appearance <- shiny::reactiveVal(cell_graph_appearance(
       background_opacity = 1, highlight_opacity = 1, background_radius = 0.005, highlight_radius = 0.007))
+    glb_retention <- shiny::reactiveVal(25)
     shiny::observeEvent(input$apply_appearance, {
       tryCatch({
         view_style <- cell_graph_appearance(input$background_color, input$highlight_color,
@@ -316,8 +320,10 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         model_style <- cell_graph_appearance(input$background_color, input$highlight_color,
           input$glb_background_opacity, input$glb_highlight_opacity,
           input$glb_background_radius, input$glb_highlight_radius)
+        retention <- cell_graph_retention(input$glb_background_retention)
         appearance(view_style)
         powerpoint_appearance(model_style)
+        glb_retention(retention)
       },
         error = function(error) shiny::showNotification(conditionMessage(error), type = "error"))
     })
@@ -333,6 +339,15 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         "function(el, x) { window.proxiomeCellGraph(el, x); }"),
         error = function(error) shiny::validate(shiny::need(FALSE, conditionMessage(error))))
     })
+    output$glb_estimate <- shiny::renderText({
+      value <- displayed()
+      highlighted <- sum(vapply(value$asset$nodes$markers, function(x) value$marker %in% x, logical(1)))
+      other <- nrow(value$asset$nodes) - highlighted
+      retained <- floor(other * glb_retention() / 100)
+      sprintf("Applied export: %s highlighted + %s of %s other nodes (%.1f%% retained); approximately %.2f MB of geometry.",
+        format(highlighted, big.mark = ","), format(retained, big.mark = ","), format(other, big.mark = ","),
+        glb_retention(), (highlighted + retained) * 96 / 1e6)
+    })
     output$model_glb <- shiny::downloadHandler(
       filename = function() paste0(gsub("[^A-Za-z0-9_-]", "_", displayed()$asset$cell_id), ".glb"),
       contentType = "model/gltf-binary",
@@ -340,7 +355,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         value <- displayed()
         style <- powerpoint_appearance()
         shiny::withProgress(message = "Exporting displayed cell as GLB", value = 0.1, {
-          write_cell_graph_glb(value$asset, value$marker, file, style)
+          write_cell_graph_glb(value$asset, value$marker, file, style, glb_retention())
           shiny::incProgress(0.9)
         })
       }

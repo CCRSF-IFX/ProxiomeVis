@@ -345,6 +345,13 @@ controls affect the view, PNG, and GIF.
 Open **PowerPoint export preset (GLB only)** to set separate opacity and sizes
 for the GLB. Its defaults are opaque nodes, size 0.005 for other nodes, and
 size 0.007 for highlighted nodes. These settings do not change the view or GIF.
+**Other nodes to retain (%)** defaults to 25%. Every highlighted node is retained.
+The export uses reproducible random sampling for other nodes. Set retention to
+100% for the complete cell or 0% for highlighted nodes only. Retained counts are
+rounded down. The applied counts and approximate geometry size appear above the controls.
+Coordinates and dot sizes use the complete cell layout. Sampling does not change them.
+Subsampled exports change apparent marker proportions. Use them for presentation,
+not to assess abundance or enrichment. Sampling details are stored in the GLB.
 **Apply appearance** saves both sets of settings. Pending edits are not exported.
 Use **Display** to change the cell or highlight marker.
 
