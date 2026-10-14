@@ -34,15 +34,16 @@ Install the packages for each necessary function.
 
 | Function | R packages |
 | --- | --- |
-| Application | `Matrix`, `shiny`, `bslib`, `ggplot2`, `plotly`, `threejs`, `htmlwidgets`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`, `pheatmap`, `yaml`, `callr`, `promises`, `later`, `digest` |
-| Analysis worker | The application packages, plus `SeuratObject`, `Seurat`, `pixelatorR`, `arrow`, and `dplyr` |
+| Application | `Seurat` (>= 5.0.0), `Matrix`, `shiny`, `bslib`, `ggplot2`, `plotly`, `threejs`, `htmlwidgets`, `htmltools`, `DT`, `jsonlite`, `data.table`, `ggrepel`, `scales`, `tibble`, `pheatmap`, `yaml`, `callr`, `promises`, `later`, `digest` |
+| Analysis worker | The application packages, plus `SeuratObject`, `pixelatorR`, `arrow`, and `dplyr` |
 | Data preparation | The analysis worker packages, plus `DBI` and `duckdb` |
 | Cell 3D | The application packages, plus `arrow` and `dplyr` |
 
 Use `threejs` version 0.3.4 or later from CRAN.
 The [DESCRIPTION](DESCRIPTION) file gives the package requirements.
 
-Seurat and pixelatorR are not necessary to load a plain application bundle.
+Seurat is required when the application starts. Install it for every deployment.
+The plain application bundle does not require pixelatorR for viewing.
 For older PNA or Seurat RDS files, install the packages that define their object classes.
 Use RDS files only from approved sources.
 

@@ -1,5 +1,6 @@
 library(shiny)
 library(bslib)
+library(Seurat)
 
 source(file.path("R", "precomputed_contract.R"), local = TRUE)
 source(file.path("R", "report_plot_sources.R"), local = TRUE)

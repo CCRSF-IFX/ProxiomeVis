@@ -7,6 +7,7 @@ Description: Interactive report views, bounded background differential analysis,
 Encoding: UTF-8
 Depends: R (>= 4.3.0)
 Imports:
+    Seurat (>= 5.0.0),
     shiny (>= 1.8.1),
     bslib (>= 0.8.0),
     ggplot2,
@@ -29,7 +30,6 @@ Imports:
     digest
 Suggests:
     SeuratObject (>= 5.0.0),
-    Seurat,
     pixelatorR,
     arrow,
     dplyr,
