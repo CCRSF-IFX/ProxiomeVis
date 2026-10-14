@@ -134,7 +134,7 @@ load_cell_graph_asset <- function(index, asset_dir, cell_id, max_nodes = 200000L
   asset
 }
 
-plot_cell_graph_asset <- function(asset, markers = character()) {
+plot_cell_graph_asset <- function(asset, markers = character(), appearance = NULL) {
   validate_cell_graph_asset(asset)
   if (length(markers) > 3L || anyNA(markers) || anyDuplicated(markers) ||
       !all(markers %in% unlist(asset$nodes$markers, use.names = FALSE))) {
@@ -157,10 +157,21 @@ plot_cell_graph_asset <- function(asset, markers = character()) {
   span <- max(ranges[2, ] - ranges[1, ])
   # One common scale preserves geometry and also handles flat/single-node layouts.
   coordinates <- sweep(coordinates, 2, colMeans(ranges)) / if (span > 0) span else 1
+  point_colors <- paste0(colors[code + 1L], ifelse(code == 0L, "40", "FF"))
+  point_size <- 0.1
+  if (!is.null(appearance)) {
+    appearance <- do.call(cell_graph_appearance, appearance)
+    point_colors <- ifelse(code == 0L,
+      paste0(appearance$background_color, sprintf("%02X", as.integer(round(appearance$background_opacity * 255)))),
+      paste0(appearance$highlight_color, sprintf("%02X", as.integer(round(appearance$highlight_opacity * 255)))))
+    # Sprites approximate relative mesh radii; screen pixels also depend on camera and viewport.
+    point_size <- ifelse(code == 0L, appearance$background_radius, appearance$highlight_radius) *
+      (0.1 / 0.003)
+  }
   # Suppress black sprite outlines and keep context faint while highlights stay opaque.
   plot <- threejs::scatterplot3js(coordinates,
-    color = paste0(colors[code + 1L], ifelse(code == 0L, "40", "FF")), strokewidth = 0,
-    labels = hover, axis = FALSE, grid = FALSE, size = 0.1, center = TRUE,
+    color = point_colors, strokewidth = 0,
+    labels = hover, axis = FALSE, grid = FALSE, size = point_size, center = TRUE,
     xlim = c(-0.5, 0.5), ylim = c(-0.5, 0.5), zlim = c(-0.5, 0.5),
     main = htmltools::htmlEscape(asset$cell_id), font.main = "14px sans-serif")
   plot$elementId <- NULL

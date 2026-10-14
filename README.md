@@ -336,6 +336,30 @@ After this transfer, select a comparison condition.
 Then select one highlight marker.
 Click **Display** to load the graph.
 
+### Set the 3D appearance and export a model
+
+Open **Appearance and export** in Cell 3D. Set the color, opacity, and dot size
+for other nodes and highlighted nodes. Click **Apply appearance**.
+Colors are shared by the view, PNG, GIF, and GLB. The main opacity and size
+controls affect the view, PNG, and GIF.
+Open **PowerPoint export preset (GLB only)** to set separate opacity and sizes
+for the GLB. Its defaults are opaque nodes, size 0.005 for other nodes, and
+size 0.007 for highlighted nodes. These settings do not change the view or GIF.
+**Apply appearance** saves both sets of settings. Pending edits are not exported.
+Use **Display** to change the cell or highlight marker.
+
+Defaults match the threejs view: light gray (#D3D3D3) at 25% opacity,
+opaque red (#C00000), and equal dot sizes of 0.003.
+Size is the tetrahedron radius as a fraction of the longest cell dimension.
+The browser uses round dots with an approximate matching size.
+
+Click **Download 3D model (GLB)** to export the displayed cell for PowerPoint.
+The file contains four triangles per node, all coordinates, colors, and opacity.
+No companion file is necessary. Geometry uses approximately 96 bytes per node.
+The writer accepts up to 250,000 nodes; the existing displayed-cell limit still applies.
+GLB retains the abstract layout, not measured physical positions.
+Lighting and transparency can differ in PowerPoint. Increase opacity if gray nodes are faint.
+
 ### Download a rotating GIF
 
 The GIF shows one full rotation of the displayed cell and highlight.

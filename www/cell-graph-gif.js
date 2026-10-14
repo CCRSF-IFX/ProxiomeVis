@@ -19,6 +19,9 @@ window.proxiomeCellGraphGif = function(el, graph, data) {
     }
     const display = document.getElementById(el.id.replace(/plot$/, 'display'));
     const previousDisabled = display.disabled;
+    const appearance = document.getElementById(el.id.replace(/plot$/, 'apply_appearance'));
+    const appearanceDisabled = appearance?.disabled;
+    if (appearance) appearance.disabled = true;
     button.disabled = display.disabled = true;
     inputs.forEach(input => { input.disabled = true; });
     cancel.hidden = progress.hidden = false;
@@ -98,6 +101,7 @@ window.proxiomeCellGraphGif = function(el, graph, data) {
       renderer?.forceContextLoss();
       if (el.proxiomeGifCancel === stop) el.proxiomeGifCancel = null;
       button.disabled = !el.isConnected;
+      if (appearance) appearance.disabled = appearanceDisabled;
       display.disabled = previousDisabled;
       inputs.forEach(input => { input.disabled = false; });
       cancel.hidden = progress.hidden = true;

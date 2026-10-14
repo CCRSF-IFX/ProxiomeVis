@@ -4656,7 +4656,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "0d32dde969bc6369b3e810fe14aad828"
+      "checksum": "d53f76cfcb7c28b9afe0d1ebf0c3cd49"
     },
     "DESCRIPTION": {
       "checksum": "e50043ed5092bf9c8ac732076668da7e"
@@ -4704,10 +4704,13 @@
       "checksum": "aaf5a540150726b0cd66930d35ab2ad5"
     },
     "R/cell_graph_assets.R": {
-      "checksum": "6e4b63e60bf64f6f7eef2f83dc811040"
+      "checksum": "bdacbf38a25808935078542a8e17cab6"
+    },
+    "R/cell_graph_export.R": {
+      "checksum": "1f024e6dbdd09051f0fe1c5997edc156"
     },
     "R/cell_graph_module.R": {
-      "checksum": "1cc92c92e23ea63247a309d7b04b0300"
+      "checksum": "8a7b5f0f4ce4770ffd555be1a88e0f33"
     },
     "R/hybrid_analysis.R": {
       "checksum": "1107bdf89c076c7f5a0b265a9dfba9de"
@@ -4725,7 +4728,7 @@
       "checksum": "cce0d11cd69aa3af0b0c174e8796540e"
     },
     "R/precomputed_ui.R": {
-      "checksum": "85b7e618f8aa81b356fc434121c45718"
+      "checksum": "a316dbb8a657a7ed53f424289f3acf0e"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
@@ -4740,13 +4743,13 @@
       "checksum": "84c0a588710d7f3cd29cd4fa9ec05266"
     },
     "README.md": {
-      "checksum": "4a55afce8efdc1c96faf64f87545b2b1"
+      "checksum": "88913705af7bf81af9d42db05f04ccf6"
     },
     "www/cell-graph-gif-worker.js": {
       "checksum": "88c12954e64c7641906abe6a57c27c51"
     },
     "www/cell-graph-gif.js": {
-      "checksum": "6e5e1558ac5e8e5bec02a0e5233e1e8f"
+      "checksum": "b1d0647884d7a095a4cb29648136079b"
     },
     "www/cell-graph.js": {
       "checksum": "bf421e2036be43e8146df2d2aea928d0"

@@ -87,6 +87,29 @@ test_that("a report-only dataset and missing graph directory give validation mes
     expect_equal(provenance$schema_version, 3L)
     expect_false(any(c("nodes", "counts", "edges") %in% names(provenance)))
     expect_false(session$isClosed())
+    model <- output$model_glb
+    expect_equal(rawToChar(readBin(model, "raw", n = 4)), "glTF")
+    original_size <- file.info(model)$size
+    expect_equal(powerpoint_appearance()$background_opacity, 1)
+    expect_equal(powerpoint_appearance()$background_radius, 0.005)
+    expect_equal(powerpoint_appearance()$highlight_radius, 0.007)
+    session$setInputs(background_color = "#123456", highlight_color = "#00FF00",
+      background_opacity = 0.4, highlight_opacity = 1, background_radius = 0.005, highlight_radius = 0.007,
+      glb_background_opacity = 0.8, glb_highlight_opacity = 1, glb_background_radius = 0.008, glb_highlight_radius = 0.009)
+    expect_equal(appearance(), cell_graph_appearance())
+    expect_equal(powerpoint_appearance()$background_radius, 0.005)
+    session$setInputs(apply_appearance = 1L)
+    expect_equal(appearance()$background_color, "#123456")
+    expect_equal(appearance()$highlight_radius, 0.007)
+    expect_equal(powerpoint_appearance()$background_color, appearance()$background_color)
+    expect_equal(powerpoint_appearance()$background_opacity, 0.8)
+    expect_equal(powerpoint_appearance()$highlight_radius, 0.009)
+    session$setInputs(glb_background_radius = -1, apply_appearance = 2L)
+    expect_equal(powerpoint_appearance()$background_radius, 0.008)
+    expect_equal(appearance()$background_opacity, 0.4)
+    session$setInputs(background_color = "invalid", apply_appearance = 3L)
+    expect_equal(appearance()$background_color, "#123456")
+    expect_gt(original_size, 192)
   })
 })
 

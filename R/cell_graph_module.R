@@ -36,6 +36,34 @@ cell_graph_ui <- function(id) {
           shiny::tags$button(id = ns("plot_png"), type = "button", class = "btn btn-outline-primary", "Save PNG")
         ),
         shiny::tags$details(
+          shiny::tags$summary("Appearance and export"),
+          shiny::tags$p(class = "small text-muted", "Colors are shared across all outputs. The opacity and size controls below affect the view, PNG, and GIF."),
+          shiny::fluidRow(
+            shiny::column(6, shiny::tags$h5("Other nodes"),
+              shiny::textInput(ns("background_color"), "Color (hex)", "#D3D3D3"),
+              shiny::numericInput(ns("background_opacity"), "Opacity (0–1)", 64 / 255, min = 0, max = 1, step = 0.05),
+              shiny::numericInput(ns("background_radius"), "Dot size (fraction of cell width)", 0.003, min = 0.0001, max = 0.05, step = 0.001)),
+            shiny::column(6, shiny::tags$h5("Highlighted nodes"),
+              shiny::textInput(ns("highlight_color"), "Color (hex)", "#C00000"),
+              shiny::numericInput(ns("highlight_opacity"), "Opacity (0–1)", 1, min = 0, max = 1, step = 0.05),
+              shiny::numericInput(ns("highlight_radius"), "Dot size (fraction of cell width)", 0.003, min = 0.0001, max = 0.05, step = 0.001))
+          ),
+          shiny::tags$details(
+            shiny::tags$summary("PowerPoint export preset (GLB only)"),
+            shiny::fluidRow(
+              shiny::column(6, shiny::tags$h5("Other nodes"),
+                shiny::numericInput(ns("glb_background_opacity"), "Opacity (0–1)", 1, min = 0, max = 1, step = 0.05),
+                shiny::numericInput(ns("glb_background_radius"), "Dot size (fraction of cell width)", 0.005, min = 0.0001, max = 0.05, step = 0.001)),
+              shiny::column(6, shiny::tags$h5("Highlighted nodes"),
+                shiny::numericInput(ns("glb_highlight_opacity"), "Opacity (0–1)", 1, min = 0, max = 1, step = 0.05),
+                shiny::numericInput(ns("glb_highlight_radius"), "Dot size (fraction of cell width)", 0.007, min = 0.0001, max = 0.05, step = 0.001))
+            ),
+            shiny::tags$p(class = "small text-muted", "Defaults use opaque, larger dots for PowerPoint. These settings do not change the browser view or GIF.")
+          ),
+          shiny::actionButton(ns("apply_appearance"), "Apply appearance", class = "btn-outline-primary"),
+          shiny::tags$p(class = "small text-muted mt-2",
+            "Apply appearance saves the shared colors and both sets of opacity and size settings. Pending edits are not exported. GLB size is a radius relative to the longest cell dimension; browser dots approximate it. PowerPoint lighting and transparency may differ."),
+        shiny::tags$details(
           shiny::tags$summary("Rotating GIF settings"),
           shiny::tags$div(class = "d-flex flex-wrap gap-3 mt-2",
             shiny::numericInput(ns("plot_gif_seconds"), "Duration (seconds)", 6, min = 1, max = 20, step = 1, width = "160px"),
@@ -44,8 +72,9 @@ cell_graph_ui <- function(id) {
           ),
           shiny::tags$p(class = "small text-muted",
             "Exports the displayed cell and highlight through one full turn. Maximum 300 frames and 120 million total pixels; reduce duration, FPS, or size for large exports.")
-        ),
+        )),
         shiny::tags$div(class = "d-flex flex-wrap gap-2 align-items-center",
+          shiny::downloadButton(ns("model_glb"), "Download 3D model (GLB)"),
           shiny::tags$button(id = ns("plot_gif"), type = "button", disabled = "disabled",
             class = "btn btn-outline-primary", "Download rotating GIF"),
           shiny::tags$button(id = ns("plot_gif_cancel"), type = "button", hidden = NA,
@@ -57,7 +86,7 @@ cell_graph_ui <- function(id) {
           class = "small text-muted", "Display a cell before exporting.")
       ),
       bslib::card_body(
-        shiny::tags$p(class = "small text-muted", "Red: highlighted marker. Grey: other nodes. Drag to rotate; scroll to zoom; hover for marker identities."),
+        shiny::tags$p(class = "small text-muted", "Highlight and other-node colors follow the applied appearance settings. Drag to rotate; scroll to zoom; hover for marker identities."),
         threejs::scatterplotThreeOutput(ns("plot"), height = "700px"))
     )
   )
@@ -277,6 +306,21 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         error = function(error) shiny::validate(shiny::need(FALSE, conditionMessage(error))))
     }, ignoreInit = TRUE)
     asset <- shiny::reactive(displayed()$asset)
+    appearance <- shiny::reactiveVal(cell_graph_appearance())
+    powerpoint_appearance <- shiny::reactiveVal(cell_graph_appearance(
+      background_opacity = 1, highlight_opacity = 1, background_radius = 0.005, highlight_radius = 0.007))
+    shiny::observeEvent(input$apply_appearance, {
+      tryCatch({
+        view_style <- cell_graph_appearance(input$background_color, input$highlight_color,
+          input$background_opacity, input$highlight_opacity, input$background_radius, input$highlight_radius)
+        model_style <- cell_graph_appearance(input$background_color, input$highlight_color,
+          input$glb_background_opacity, input$glb_highlight_opacity,
+          input$glb_background_radius, input$glb_highlight_radius)
+        appearance(view_style)
+        powerpoint_appearance(model_style)
+      },
+        error = function(error) shiny::showNotification(conditionMessage(error), type = "error"))
+    })
     output$summary <- shiny::renderText({
       value <- asset()
       paste(format(nrow(value$nodes), big.mark = ","), "nodes;", value$layout,
@@ -285,10 +329,22 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
           " | log2_ratio ", signif(displayed()$ranking$cell$log2_ratio, 5L)) else "")
     })
     output$plot <- threejs::renderScatterplotThree({
-      tryCatch(htmlwidgets::onRender(plot_cell_graph_asset(asset(), displayed()$marker),
+      tryCatch(htmlwidgets::onRender(plot_cell_graph_asset(asset(), displayed()$marker, appearance()),
         "function(el, x) { window.proxiomeCellGraph(el, x); }"),
         error = function(error) shiny::validate(shiny::need(FALSE, conditionMessage(error))))
     })
+    output$model_glb <- shiny::downloadHandler(
+      filename = function() paste0(gsub("[^A-Za-z0-9_-]", "_", displayed()$asset$cell_id), ".glb"),
+      contentType = "model/gltf-binary",
+      content = function(file) {
+        value <- displayed()
+        style <- powerpoint_appearance()
+        shiny::withProgress(message = "Exporting displayed cell as GLB", value = 0.1, {
+          write_cell_graph_glb(value$asset, value$marker, file, style)
+          shiny::incProgress(0.9)
+        })
+      }
+    )
     output$nodes_csv <- shiny::downloadHandler(
       filename = function() "proxiomevis_cell_coordinates.csv",
       content = function(file) {
