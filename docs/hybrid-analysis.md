@@ -1,37 +1,104 @@
-# Prepared reports and new exploratory analyses
+# Results and new comparisons
 
-The application separates three operations: viewing frozen results, submitting
-a bounded new comparison to an R worker, and opening prepared cell graphs.
-Viewing or filtering a report never changes its stored statistics. Runtime
-analysis reads a prepared proximity sidecar, not PXL files.
+Use **Results** to view saved analyses and completed session comparisons.
+Use **New comparison** to run a test for one donor and one cell type.
+Both result sources use the same tables, volcano, and spatial views.
+Display filters do not change stored statistics. New spatial tests read the
+prepared proximity files, not the source PXL files.
 
-## Running a new comparison
+For your own dataset, use [Prepare your data](prepare-user-data.md).
+The general preparation script does not require the demo report folders.
 
-Open the exploratory-analysis tab, choose one donor, one cell type, two distinct
-conditions, a readout, and the markers to test. Use all cells in that scope, or
-select a subset using the embedding's lasso/box tools or the cell selector. The
-selected conditions assign cells to target and reference groups; cells cannot
-belong to both. The displayed counts update before submission.
+## Run a new comparison
 
-Confirm the exploratory-analysis notice and click **Run comparison**. An R
-process performs the test while the reports remain usable. Changing controls
-does not rerun a test. The result identifies the submitted scope; downloads
-include the results CSV and JSON provenance with the exact selected cell IDs.
-The volcano supports hover, box/scroll zoom, and double-click reset. The results
-table also includes requested features that could not be tested.
+1. Open **New comparison**.
+2. Select a readout, one donor, one cell type, a target condition, and a reference condition.
+3. For a spatial test, set **Minimum observed cells per condition** if necessary.
+4. Read the readiness message. Check the target and reference cell counts, protein count, and required data.
+5. Confirm the exploratory-analysis notice. Click **Run comparison**.
 
-Only one background analysis runs at a time per application process. The server
-limits each request to 2,000 cells, 160 markers, 1,000 unordered non-self pairs,
-and 1,000,000 retained score rows, with a 120-second timeout. Colocalization tests
-all combinations of the chosen markers: 45 markers produce 990 pairs; 46 exceed
-the cap. Oversized selections are rejected, not silently downsampled. Cancel a
-running job or narrow the cells/markers if it exceeds a limit.
+The test uses all dataset markers and all cells in the selected scope.
+There is no marker-test selector or cell-subset selector. The embedding does
+not select cells for this test. Target and reference must be different conditions.
+
+Abundance tests require stored raw counts. Spatial tests require a configured
+proximity sidecar. Readiness checks the scope and input declarations before
+the worker starts. The worker checks sidecar integrity and available score
+coverage. A configured sidecar does not guarantee that all pairs have enough
+observations.
+
+A separate R process runs the test. You can use the other app views while it
+runs. Click **Cancel running analysis** to stop it. A control change does not
+start another test or change a completed result.
+
+Only one analysis runs at a time per application process. Each comparison is
+limited to 2,000 cells, 160 markers, and 120 seconds. Spatial tests use batches
+of at most 1,000 pairs and 1,000,000 score rows. These are batch limits, not a
+1,000-pair limit on the complete comparison. Colocalization tests all pairs
+of different markers. For example, 46 markers produce 1,035 pairs and can use
+more than one batch. The app does not silently remove cells to meet a limit.
+For a larger comparison, run the analysis offline and prepare its results for
+the app.
+
+## Open and keep completed comparisons
+
+The **Completed comparisons in this session** list retains each completed test.
+Select a comparison, then click **Open in Results**. You can also use
+**Result source** in Results to switch between prepared results and session
+comparisons. This selection does not change the loaded dataset or the Cell 3D
+view. A failed or cancelled test does not remove earlier completed comparisons.
+
+Use **Results CSV**, **Analysis provenance JSON**, or **Comparison RDS** to
+keep the selected comparison. The JSON includes the submitted scope and cell
+IDs. The RDS includes results and settings. It does not include the source
+Seurat object or cell-level measurements. See
+[Prepare your data](prepare-user-data.md) for offline reuse of a comparison.
+Use only trusted RDS files.
+
+Loading another dataset clears session history and cancels the active test.
+A late result from the old dataset is not added to history. Closing the session
+also removes its history. Download results that you need to keep.
+
+## Compare spatial patterns
+
+Open **Results → Spatial patterns**. Select a spatial readout and one cell type.
+Condition profiles can be viewed without a differential test when the bundle
+contains the required summaries.
+
+1. Open **Shared proteins and order**.
+2. Select **Proteins**. Choose the prepared order, alphabetical order, or a custom ordered list.
+3. For a custom order, enter protein names separated by commas or new lines. This list sets both selection and order.
+4. Click **Apply**. Click **Reset** to restore the dataset defaults.
+
+All spatial matrices use the applied protein list on both axes. The selection
+is retained when you change the result source, condition, comparison, or matrix
+quantity. Loading a different dataset restores its defaults. Protein selection
+and ordering do not rerun tests or change adjusted P values.
+
+Choose **Single** for one matrix. Choose **Compare profiles and difference**
+for the reference profile, target profile, and differential effect. The panels
+use the same protein positions and matrix dimensions. On a narrow screen, the
+panels are stacked.
+
+The two profiles share a fixed color scale. Differential effects use a separate
+fixed scale. A profile is a mean proximity score. The differential effect is a
+difference in medians; it is not calculated by subtracting the profile means.
+Diagonal entries show self-proximity. Other entries show colocalization.
+The pairs A–B and B–A identify the same feature.
+
+Unavailable or untested pairs keep their positions and appear as gray cells.
+They are not replaced with zero. Hover for values and availability. Click a
+pair to select it for inspection in the other result views.
+
+Use the matrix or comparison SVG and CSV buttons to export the applied view.
+Use **Protein order CSV** to export the ordered list. The selection does not
+change the underlying saved tables or their full-row exports.
 
 ## Methods and interpretation
 
 | Readout | Effect: target minus reference | Test and minimum support |
 | --- | --- | --- |
-| Abundance | Mean stored normalized abundance | `pixelatorR::RunDAA`, using Seurat's two-sided Wilcoxon test; at least 3 selected cells per group |
+| Abundance | Mean stored normalized abundance | `pixelatorR::RunDAA`, using Seurat's two-sided Wilcoxon test; at least 3 cells per group |
 | Self-proximity | Median observed `log2_ratio` for each marker paired with itself | `pixelatorR::DifferentialProximityAnalysis(metric_type = "self")`; at least 20 retained observations per marker in each group |
 | Colocalization | Median observed `log2_ratio` for each unordered pair of different markers | `pixelatorR::DifferentialProximityAnalysis(metric_type = "co")`; at least 40 retained observations per pair in each group |
 
@@ -49,16 +116,14 @@ not the log fold-change in mean abundance. The preparation formula is
 `log2(pmax(join_count, 1) / pmax(join_count_expected_mean, 1))`.
 
 BH adjustment is performed separately over the eligible tested features in
-each submitted request. Restricting markers changes this testing family, so
-adjusted p-values can differ from the frozen report even when individual
-effects and raw p-values agree. The app does not recalculate or replace the
-original report's adjustment family.
+each submitted request. This family can differ from the saved analysis family.
+Adjusted P values can therefore differ from saved results even when effects
+and raw P values agree. Display filters and shared protein controls do not
+change either testing family.
 
 These are exploratory comparisons of cells within **one donor**. Cells are not
 independent biological replicates, and the results do not establish an effect
-across donors. Selecting cells using the same markers or an embedding derived
-from them can introduce selection bias. Neither the donor restriction nor a
-small p-value resolves that problem.
+across donors. A small P value does not remove this limitation.
 
 ## Missing scores and filtering
 
@@ -69,13 +134,13 @@ never converted to zero. A measured score of zero remains an observation.
 
 The demo's threshold is computed from **all prepared cells in that donor** as
 `max(median(isotype_fraction) + 2 * mad(isotype_fraction), 0.001)`. It is fixed
-during preparation, not recomputed after lasso selection. Both demo donors have
+during preparation. Display filters do not recompute it. Both demo donors have
 a cutoff of 0.001. The source pipeline's median/MAD settings are read from its
 stored report configuration. The current preparer supports this isotype mode
 without extra marker-count or pair-count filters; incompatible configurations
 are rejected instead of silently changed.
 
-Results distinguish `n_cells_a/b` (all selected cells) from `n_scored_a/b`
+Results distinguish `n_cells_a/b` (all cells in scope) from `n_scored_a/b`
 (retained observations for this particular feature). Spatial eligibility uses
 the latter. Unsupported features have missing statistics and an explicit
 status. Stored spatial report profiles may use a different missing-observation
@@ -226,13 +291,12 @@ schema versions within one graph directory.
 
 Install the CRAN renderer with `install.packages("threejs")` (version >= 0.3.4).
 
-The plain-bundle viewer uses the packages in `DESCRIPTION`'s `Imports`; it
-does not require Seurat/PNA class definitions merely to load data. Legacy
-Seurat RDS inputs still require SeuratObject, and PNA inputs require pixelatorR.
-Background differential analysis requires pixelatorR, Seurat, and SeuratObject;
-spatial querying additionally requires Arrow and dplyr. **Cell 3D** also requires
-Arrow and dplyr in the Shiny R environment, but not Seurat or pixelatorR for a
-plain bundle. Offline graph preparation requires the source Seurat/PNA object,
+Install the packages in `DESCRIPTION`'s `Imports`, including Seurat.
+A plain application bundle does not contain Seurat or PNA objects. Legacy
+Seurat RDS inputs require SeuratObject, and PNA inputs require pixelatorR.
+Background analysis requires pixelatorR, Seurat, and SeuratObject.
+Spatial queries and **Cell 3D** require Arrow and dplyr in the Shiny environment.
+Offline graph preparation requires the source Seurat/PNA object,
 pixelatorR, Arrow, and dplyr; PXL-to-Parquet preparation also uses DBI and DuckDB.
 Neither the analysis worker nor the 3D viewer needs PXL mounts or permission to
 access the original files.

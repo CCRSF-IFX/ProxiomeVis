@@ -60,7 +60,7 @@ async function run() {
   await waitFor("document.getElementById('report-analysis-run').disabled");
   // A live worker must not prevent navigation in the same session.
   await tab('Overview / QC');
-  await tab('Custom analysis');
+  await tab('New comparison');
   await waitFor("document.getElementById('report-analysis-status').textContent.startsWith('Completed.')");
   await settled();
 }
@@ -93,7 +93,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1100, deviceScaleFactor: 1, mobile: false });
   await call('Page.navigate', { url: appUrl });
   await waitFor("document.getElementById('report-metric_cells')?.textContent.trim() === '4,024'");
-  await tab('Custom analysis');
+  await tab('New comparison');
   await select('report-analysis-donor', 'd1');
   await select('report-analysis-celltype', 'CD4 T');
   await select('report-analysis-target', 'PHA');
@@ -112,7 +112,10 @@ try {
     assert.equal(provenance.request.celltype, 'CD4 T');
     assert.match(provenance.provenance.bundle_md5, /^[a-f0-9]{32}$/);
     assert.match(await download('report-analysis-results_csv'), /exploratory_component_level/);
-    await waitFor("document.getElementById('report-analysis-volcano')?.data?.some(t => t.mode === 'markers' && t.x.length)");
+    await evaluate("document.getElementById('report-analysis-open_result').click()");
+    await tab('Volcano');
+    await waitFor("document.getElementById('report-report_volcano_plot')?.data?.some(t => t.mode === 'markers' && t.x.length)");
+    await tab('New comparison');
   }
   console.log('PASS: three real background analyses, confirmation, same-session navigation, CSV/provenance');
   await checkControlContrast();
@@ -327,7 +330,7 @@ try {
   console.log('PASS: GIF settings, decoded frames/duration/dimensions/red highlights, rotation, cancellation, failure recovery, unchanged view');
 
   await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await tab('Custom analysis');
+  await tab('New comparison');
   assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth + 2'));
   await screenshot('hybrid-mobile');
   console.log('PASS: mobile navigation/layout without horizontal page overflow');

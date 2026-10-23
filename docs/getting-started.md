@@ -5,6 +5,11 @@ Run commands from the `ProxiomeVis` directory.
 The Cell 3D renderer uses the CRAN `threejs` package (>= 0.3.4):
 `install.packages("threejs")`. Plotly remains in use for the other interactive plots.
 
+For your own annotated Seurat object, follow
+[Prepare your data](prepare-user-data.md). The general builder does not require
+the demo report folders. The following preparation steps are for the demo.
+If you already have a trusted application bundle, go to **3. Start Shiny**.
+
 ## 1. Prepare the demo RDS
 
 The repository expects the demo source at `../pixelgen_demo_data`. Build the
@@ -78,10 +83,11 @@ export PROXIOME_PRECOMPUTED_RDS=/absolute/path/to/results.rds
 Rscript --vanilla -e 'shiny::runApp(".", host="127.0.0.1", port=3838)'
 ```
 
-Plain bundles require no Seurat/PNA class packages for viewing. Legacy inputs
-still require those packages; new statistical tests require the analysis-worker
-dependencies listed in the README. **Cell 3D** requires `arrow` and `dplyr` in
-the Shiny R environment. No runtime PXL mount is required.
+Install the packages listed in `DESCRIPTION`'s `Imports`, including Seurat.
+A plain bundle does not contain Seurat or PNA objects. Legacy inputs and new
+tests need the applicable analysis packages. **Cell 3D** requires `arrow` and
+`dplyr` in the Shiny environment. The running app does not need the source PXL
+files.
 
 The app loads the configured RDS once and does not expose a visitor-selectable
 server path. For trusted local administration only, set
@@ -91,50 +97,96 @@ enable that setting on a public deployment.
 
 ## 4. Explore or run a new comparison
 
-Use the top navigation for **Overview / QC**, **Embeddings**, **Precomputed
-results**, **Custom analysis**, and **Cell 3D**. Open **Dataset** at the upper
-right for the active bundle and configured sidecars.
+Use the top navigation for **Overview / QC**, **Embeddings**, **Results**,
+**New comparison**, **Cell 3D**, and **Documentation**. Open **Dataset** at the
+upper right to check the active bundle and configured sidecars.
 
-In **Precomputed results**, choose one donor, cell type, comparison, and readout
-once. A single-donor dataset shows a fixed donor label instead of a redundant
-dropdown. The shared selection persists across these subtabs:
+### View results
 
-- **Tables:** searchable results, sample support, original method settings,
-  CSV downloads, and a combined violin/boxplot for the selected feature.
-- **Volcano:** donor-specific stored test with hover and zoom beside the selected
-  feature's violin/boxplot. Click a volcano point to update the distribution.
-- **Spatial patterns:** interactive self-proximity and colocalization together,
-  with condition-profile and differential-effect matrices. Select Network for a
-  colocalization graph with aligned reference/target panels. Select markers and
-  detection/mean thresholds; hover or click an edge to inspect its pair. Network
-  means include missing scores as zero, and display thresholds are not significance tests.
+Open **Results**. Select **Prepared results** or a completed session comparison
+under **Result source**. Both use the same views. For prepared results, choose
+a donor, cell type, comparison, and readout. A dataset with one donor shows a
+fixed donor label. A session comparison retains its submitted scope.
 
-Volcano and spatial views need one cell type; they do not silently substitute
-one when **All cell types** is selected. **Spatial patterns** is disabled for
-abundance; select self-clustering or colocalization to enable it. Controls select stored rows,
-never rerun a test. Positive effects mean target minus reference. Stored
-component-level P values are exploratory within one donor, not population-level
-treatment inference. Spatial condition means are not the group medians used
-for stored differential effects.
+- **Tables:** inspect searchable results, sample support, method settings, and CSV downloads.
+- **Volcano:** inspect the test beside a combined violin and boxplot. Click a volcano point to change the displayed cell distribution. Hover for details. Scroll or drag a box to zoom. Double-click to reset.
+- **Spatial patterns:** inspect self-proximity and colocalization profiles or differential effects. For colocalization, select the network view to compare condition profiles with shared node positions.
 
-Click a plot feature or result-table row to update the shared selected-feature
-panel. Self-pairs and reversed marker pairs refer to the same feature. Condition
-values appear only when they were actually stored. **Explore cells in 3D**
-transfers the donor, cell type, and pair without loading a graph.
+The volcano and spatial views require one cell type. **Spatial patterns** is
+disabled for abundance. Select self-proximity or colocalization to enable it.
+Profiles need stored summaries but do not require a differential test.
 
-FDR and search controls filter tables and their **Filtered table CSV** downloads.
-**All stored rows CSV** retains every stored row in the chosen scope, ignoring
-those filters. Report plots and **Original report SVG** retain the original
-thresholds. Hidden plots are not rendered until needed. Stored results need no
-sidecar reads; cell-level spatial distributions read the selected pair from the
-proximity sidecar and show an availability message when it is absent.
+Click a plot feature or result-table row to select that feature across views.
+The pairs A–B and B–A identify the same feature. **Explore cells in 3D** transfers
+the donor, cell type, and pair. It does not load a graph.
 
-Use **Custom analysis** for a new selected-cell comparison: choose one donor,
-one cell type, two conditions and markers; optionally lasso cells in the embedding;
-acknowledge the exploratory scope and click **Run comparison**. You can navigate
-while the separate R process works or cancel it. Export results and their JSON
-provenance. Report tabs remain unchanged. Missing spatial sidecars disable only
-spatial reanalysis, not the report viewer.
+FDR and search controls affect tables and **Filtered table CSV** downloads.
+**All stored rows CSV** ignores these filters within the chosen scope. A table
+filter does not change the volcano or rerun a test. Stored summaries and test
+results do not need sidecar reads. Cell-level spatial distributions require
+the proximity sidecar; the app shows a message if it is unavailable.
+
+### Align spatial matrices
+
+In **Spatial patterns**, open **Shared proteins and order**. Select proteins
+and choose the prepared order, alphabetical order, or a custom ordered list.
+For a custom list, separate names with commas or new lines. For example:
+
+```text
+CD19, CD37, CD53, CD81, CD82
+```
+
+Click **Apply**. This list controls both axes of every spatial matrix.
+Click **Reset** to restore the dataset defaults. The applied list stays the
+same when you switch profiles, comparisons, or result sources. Loading another
+dataset resets it. Selection and ordering do not rerun tests or change adjusted
+P values.
+
+Choose **Single** for one matrix. Choose **Compare profiles and difference**
+to show the reference profile, target profile, and differential effect together.
+All three panels use the same protein positions. The two profiles share a fixed
+color scale. The differential panel uses a separate fixed scale. Gray cells
+mean that a result is unavailable or untested; missing values are not zero.
+
+Profile means are not the group medians used for differential effects.
+Positive effects mean target minus reference. Diagonal entries show
+self-proximity; other entries show colocalization. Use the SVG and CSV buttons
+to export the applied view. **Protein order CSV** exports the ordered list.
+
+The colocalization network has its own marker and display-threshold controls.
+Its stored population means include missing scores as zero. Its display
+thresholds are not significance tests.
+
+### Run and keep a comparison
+
+Open **New comparison**. Choose one donor, one cell type, two different
+conditions, and a readout. The test uses all cells in this scope and all dataset
+markers. The app has no marker-test or cell-subset selector.
+
+Read the readiness message before you run. It shows cell and marker counts,
+scope errors, and the required input status. Abundance requires stored counts.
+Spatial tests require a configured proximity sidecar. The worker checks
+sidecar integrity and score coverage after submission. Adjust **Minimum
+observed cells per condition** for a spatial test if necessary.
+
+Confirm the exploratory-analysis notice and click **Run comparison**. You can
+use other views while the separate R process runs. Click **Cancel running
+analysis** to stop it. Comparisons are limited to 2,000 cells, 160 markers,
+and 120 seconds. Spatial processing uses batches of at most 1,000 pairs and
+1,000,000 score rows. There is no 1,000-pair limit on the complete comparison.
+For a larger scope, prepare results offline.
+
+Each completed test appears in session history. Select a completed comparison
+and click **Open in Results**. Prepared results remain unchanged. Use the CSV,
+JSON, or **Comparison RDS** download to keep the selected result. The RDS stores
+results and settings, not cell-level measurements. See
+[Prepare your data](prepare-user-data.md) for offline reuse.
+
+Loading another dataset cancels the active test and clears history. Closing
+the session also removes its history. Download results that you need to keep.
+Within-donor cell-level P values do not establish a population-level effect.
+
+### Display a cell
 
 Use **Cell 3D** to rank cells within donor, cell type, and condition by two markers'
 observed log2 ratio (self-pairs allowed; pair order does not matter).
@@ -148,7 +200,7 @@ queries use Arrow row-group pruning and cached checksum validation. Coordinates
 represent a graph layout, not physical microscopy positions, and marker
 highlights indicate identities rather than counts or a colocalization test.
 
-Read [Hybrid analysis](hybrid-analysis.md) before interpreting new P values.
+Read [Results and new comparisons](hybrid-analysis.md) before you interpret new P values.
 
 ## Tests
 

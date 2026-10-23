@@ -14,6 +14,12 @@ The application reads selected data from these files.
 It does not load all sidecar data into each Shiny session.
 Custom analyses do not replace precomputed results.
 
+Use **Results** to inspect prepared analyses and completed session comparisons.
+Use **New comparison** to submit a test for one donor and one cell type.
+Spatial matrices share a protein selection and order.
+The **Compare profiles and difference** option shows two condition profiles and their differential result.
+Unavailable results keep their positions on the axes.
+
 ## Technical terms
 
 | Term | Meaning |
@@ -50,6 +56,24 @@ Use RDS files only from approved sources.
 ## Prepare the data
 
 Run all commands from the `ProxiomeVis` directory.
+
+### Use your own data
+
+Use an annotated Seurat RDS file with normalized abundance, a default embedding, and a PCA embedding.
+Saved differential tests are optional.
+
+```bash
+Rscript --vanilla scripts/prepare_user_bundle.R \
+  my_analysis.rds output/my_dataset \
+  --assay PNA --reduction umap --celltype-column celltype \
+  --sample-column sample_id --donor-column donor --condition-column condition
+```
+
+The command creates `output/my_dataset/analysis.rds` in a new directory.
+It does not change the input RDS file.
+Set `PROXIOME_PRECOMPUTED_RDS` to this path when you start the application.
+See [Prepare your own data](docs/prepare-user-data.md) for saved results, proximity profiles, sidecars, and comparison imports.
+The demo-specific commands below remain available.
 
 ### 1. Prepare the precomputed RDS file
 
@@ -182,8 +206,8 @@ The navigation bar contains these tabs:
 
 - **Overview / QC**
 - **Embeddings**
-- **Precomputed results**
-- **Custom analysis**
+- **Results**
+- **New comparison**
 - **Cell 3D**
 - **Documentation**
 
@@ -203,7 +227,10 @@ The sample alias uses the sample column configured in the RDS.
 Split panels use the same axes and color scale.
 The SVG download uses the current embedding, color, and split selections.
 
-### Precomputed results
+### Results
+
+Select **Prepared results** or a completed session comparison in **Result source**.
+Session comparisons keep their submitted scope.
 
 The **Tables**, **Volcano**, and **Spatial patterns** views use the same selections.
 Under **Tables**, select a marker or pair to show its cell-level violin and boxplot by condition.
@@ -233,7 +260,8 @@ The shared detail panel shows the selected feature in Tables and Volcano.
 The order of markers in a pair does not change the selection.
 
 The volcano and spatial plots have hover and zoom functions.
-The spatial matrix opens with the differential comparison selected.
+The spatial matrix opens with the differential comparison when one is available.
+If only profiles are available, the application selects the condition-profile view.
 A loading message appears during initial loading and updates.
 The report SVG files keep the precomputed plot design and statistics.
 
@@ -255,6 +283,15 @@ Spatial condition profiles contain means.
 Differential effects contain differences between medians.
 These values describe different calculations.
 
+Open **Shared proteins and order** to select the same proteins for all matrices.
+Choose the prepared order, alphabetical order, or a custom ordered list.
+Click **Apply** to update the plots. **Reset** restores the prepared order.
+Select **Compare profiles and difference** for aligned reference, target, and differential panels.
+The two profiles share a color scale. The differential effect uses a separate scale.
+Gray cells keep the positions of unavailable results. They are not zero.
+Protein selection does not change tests or adjusted P values.
+Matrix SVG and CSV exports use the applied selection. **Protein order CSV** saves the axis order.
+
 False discovery rate (FDR) controls and table searches change only the tables and **Filtered table CSV** exports.
 The **All stored rows CSV** export does not use these filters.
 Table filters do not change the precomputed report thresholds.
@@ -263,14 +300,15 @@ Stored results do not require sidecars.
 Cell-level spatial distributions load the selected pair from the proximity sidecar.
 These views do not load graph sidecars.
 
-### Custom analysis
+### New comparison
 
 1. Select one donor.
 2. Select one cell type.
 3. Select two conditions.
 4. For clustering or colocalization, set **Minimum observed cells per condition** if necessary.
-5. Select the checkbox for the exploratory-analysis notice.
-6. Click **Run comparison**.
+5. Check the cell counts and readiness message.
+6. Select the checkbox for the exploratory-analysis notice.
+7. Click **Run comparison**.
 
 The comparison includes all cells in the selected donor, cell type, and conditions.
 If the scope exceeds the 2,000-cell limit, use precomputed results or run the comparison offline.
@@ -292,6 +330,11 @@ You can cancel the analysis.
 The results and JSON provenance contain the submitted cell groups, feature family, bundle checksum, methods, and software.
 Different control settings do not change a completed result.
 A new analysis uses the new settings.
+Choose a completed comparison and click **Open in Results** to inspect it.
+The session keeps multiple completed comparisons until you change datasets or close the session.
+Download **Results CSV**, **Analysis provenance JSON**, or **Comparison RDS** to keep a result.
+Comparison RDS files contain results and settings, not the full dataset.
+Use the [trusted offline import](docs/prepare-user-data.md) to reuse one with its original bundle.
 
 ### Cell 3D
 

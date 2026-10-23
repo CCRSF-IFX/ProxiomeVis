@@ -1,8 +1,9 @@
-# Frozen plotting functions from the Pixelgen tertiary-analysis workflow.
+# Plotting functions adapted from the Pixelgen tertiary-analysis workflow.
 #
 # These functions are copied into isolated environments so the deployed app
-# does not source or execute the analysis scripts.  Update a copy only after
-# reviewing the corresponding source and recording its new checksum here.
+# does not source or execute the analysis scripts. Checksums below identify the
+# original source snapshots. The spatial adapter accepts a shared protein order
+# and distinguishes missing significance from a nonsignificant test.
 REPORT_PLOT_SOURCE_PROVENANCE <- data.frame(
   component = c(
     "abundance_volcano", "self_proximity_volcano",
@@ -407,12 +408,12 @@ evalq({
     if (kind == "profiles") markers else markers[tested_clustering | tested_colocalization]
   }
 
-  comparison_plot <- function(bundle, celltype_value, kind, donor_value, panel_value) {
+  comparison_plot <- function(bundle, celltype_value, kind, donor_value, panel_value, markers = NULL) {
     cfg <- bundle$cfg
     panels <- if (kind == "profiles") bundle$conditions else bundle$contrasts
     stopifnot(kind %in% c("profiles", "differences"), donor_value %in% bundle$donors,
               panel_value %in% panels)
-    order <- axis_markers(bundle$markers, kind)[celltype == celltype_value, marker]
+    order <- if (is.null(markers)) axis_markers(bundle$markers, kind)[celltype == celltype_value, marker] else markers
     # Subset only the displayed observations; retain the cross-donor marker order/scales.
     data <- copy(bundle[[kind]][celltype == celltype_value & donor == donor_value & panel == panel_value])
     title <- paste(celltype_value, donor_value, panel_value, sep = " | ")
@@ -437,7 +438,7 @@ evalq({
             axis.text.y = element_text(size = 7), panel.border = element_rect(color = "black", fill = NA)) +
       labs(x = NULL, y = NULL, title = title,
            subtitle = paste(if (descriptive_only) "Descriptive profiles (no differential spatial tests)"
-                            else if (kind == "profiles") "Profiles for proteins tested by self or co analysis"
+                            else if (kind == "profiles") "Stored condition profiles"
                             else "Differential clustering and colocalization",
                             "- shared marker order and scales"),
            caption = paste("Grey: unavailable / not tested.",
@@ -453,13 +454,13 @@ evalq({
     } else {
       # Display-only encodings: never export a second copy of P-derived quantities.
       available[, `:=`(
-        point_size = pmin(-log10(pmax(p_adj, .Machine$double.xmin)), cfg$significance_size_cap),
-        significance = ifelse(p_adj <= cfg$significance_threshold, "Significant", "Not significant")
+        point_size = ifelse(is.finite(p_adj), pmin(-log10(pmax(p_adj, .Machine$double.xmin)), cfg$significance_size_cap), 0),
+        significance = ifelse(!is.finite(p_adj), "Not tested", ifelse(p_adj <= cfg$significance_threshold, "Significant", "Not significant"))
       )]
       plot <- plot + geom_point(data = available, aes(fill = value, size = point_size, color = significance), shape = 21, stroke = 0.35) +
         scale_size_continuous(limits = c(0, cfg$significance_size_cap), range = c(0.6, 3)) +
-        scale_color_manual(values = c(Significant = "black", `Not significant` = "grey65"),
-                           limits = c("Significant", "Not significant"), drop = FALSE) +
+        scale_color_manual(values = c(Significant = "black", `Not significant` = "grey65", `Not tested` = "grey65"),
+                           limits = c("Significant", "Not significant", if (any(!is.finite(available$p_adj))) "Not tested"), drop = FALSE) +
         labs(fill = "Difference in medians", color = paste0("Adjusted P <= ", cfg$significance_threshold),
              size = paste0("-log10(adj. P)\n(capped at ", cfg$significance_size_cap, ")"))
     }

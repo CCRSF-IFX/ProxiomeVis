@@ -3,7 +3,7 @@
 The report views consume a versioned frozen-analysis contract. The recommended
 application file is a compact plain-R bundle; legacy Seurat RDS files remain
 supported. Filtering a report never changes its stored statistics. The separate
-**Custom analysis** tab can submit a new bounded comparison to an R worker using
+**New comparison** tab can submit a new bounded comparison to an R worker using
 prepared cell-level inputs; see [Hybrid analysis](hybrid-analysis.md).
 
 ## Prepare the frozen results
@@ -261,7 +261,8 @@ than silently changing the meaning of an existing field.
 
 ## Explore one donor's stored results
 
-The top navigation groups stored views under **Precomputed results**. Its shared
+The top navigation groups prepared and session views under **Results**. Select
+**Prepared results** or a completed comparison in **Result source**. Its shared
 selection bar contains donor, cell type, comparison, and readout. A single-donor
 dataset displays the donor as a fixed label; multi-donor datasets offer a donor
 dropdown, but every result view still uses one donor's original stored contrast.
@@ -317,15 +318,41 @@ The spatial matrix combines self-proximity and colocalization when either
 spatial readout is selected. The tab is disabled for abundance; switching to
 abundance while viewing it returns to Tables. Hover exposes the
 pair, stored value, and availability; click selects the pair for detail. The
-marker order and aligned scales follow the frozen report. Condition profiles
+default marker order and scales follow the prepared report. Condition profiles
 show stored population means with the upstream missing-as-zero policy, while
 differential effects show differences of observed medians. The former must not
 be subtracted to reconstruct the latter. Untested or unavailable entries are
 distinguished from measured values near zero.
 
-**Custom analysis** instead submits an explicit selected-cell comparison to a
-background R process with its own result and provenance. Those new P values
-remain exploratory, and selection using the same data can bias testing.
+Open **Shared proteins and order** to select proteins. Select **Prepared order**,
+**Alphabetical**, or **Custom ordered list**. A custom list sets both the protein
+selection and the order. Separate names with commas or new lines. Click **Apply**.
+The previous display stays active until you apply a valid selection.
+
+Select **Compare profiles and difference** to show the reference profile, target
+profile, and differential effect together. All panels use the same axes. The two
+profiles share one color scale. The differential panel has its own effect scale.
+Use **Single** or a full-screen card when many proteins make the panels too small.
+
+Unavailable pairs keep their positions as gray cells. They are not zero.
+Changing the result source, condition, donor, or cell type keeps the applied
+protein order. **Reset** restores the prepared order for the current cell type.
+Loading another dataset resets the selection. SVG and CSV exports use the applied
+selection. **Protein order CSV** records the ordered axis labels.
+
+Condition profiles do not require saved differential tests. Prepared bundles can
+contain only profiles. The [general preparation tool](prepare-user-data.md) can
+produce these profiles from proximity sidecars without running a test.
+The network also works without a saved comparison. It shows the available
+conditions for the selected donor and cell type. When a condition has multiple
+samples, profile means are weighted by each sample's cell count. Missing sample
+contributions remain unavailable; they are not treated as zero.
+
+**New comparison** submits a comparison for all cells and markers in the selected
+donor, cell type, and conditions. A background R process performs the test.
+Select a completed comparison and click **Open in Results** to use the same viewer.
+The session keeps multiple comparisons. Download a comparison before you close
+the session or change datasets. These operations do not replace the prepared results.
 
 ### Filters, exports, and rendering
 
@@ -336,7 +363,7 @@ the corresponding **Filtered table CSV**, including all matching rows rather
 than just the current page. **All stored rows CSV** ignores both filters and
 exports the selected donor/cell-type/comparison/readout scope.
 
-**Original report SVG** preserves the upstream report plotting strategy and
+**Volcano SVG** preserves the upstream report plotting strategy and
 thresholds. The interactive spatial view also offers its displayed rows as CSV.
 The selected-feature SVG exports the displayed distribution from Tables or
 Volcano. The methods section exposes stored effect metrics, original settings, test

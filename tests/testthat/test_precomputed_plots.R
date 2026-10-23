@@ -190,5 +190,5 @@ test_that("report cell-type choices retain source scopes that were not tested", 
     drop = FALSE
   ]
   choices <- precomputed_report_celltypes(contract, object@meta.data, "D1", "abundance", donor_rows)
-  expect_identical(choices, c("B", "Not tested"))
+  expect_identical(choices, c("B", "Not tested", "T"))
 })

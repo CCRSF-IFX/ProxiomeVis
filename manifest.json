@@ -4719,31 +4719,31 @@
       "checksum": "11611edb90b7be14ef4ad648554f14e3"
     },
     "R/hybrid_module.R": {
-      "checksum": "fa73ddc2bfb0ba5bc5a309b09e17b222"
+      "checksum": "563a7401c0edd43c272c9f77fb1034a2"
     },
     "R/precomputed_contract.R": {
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
     },
     "R/precomputed_module.R": {
-      "checksum": "cce0d11cd69aa3af0b0c174e8796540e"
+      "checksum": "f3c52c6efbf7c1ecca6d89c5c526befa"
     },
     "R/precomputed_ui.R": {
-      "checksum": "5b12317efa97735d77c4b9b311d9f2a0"
+      "checksum": "b766a86e70baa1ba18e705451b0c0df1"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
     },
     "R/proximity_store.R": {
-      "checksum": "675520f26cf445a9a49f93ff404db548"
+      "checksum": "4b27a3a0ca530f27d21543fcf6f57608"
     },
     "R/report_plot_sources.R": {
-      "checksum": "fad39fdf893504a3f063f10240080694"
+      "checksum": "fc6d20df253aa4a4d87ec22165f64418"
     },
     "R/report_plots.R": {
-      "checksum": "84c0a588710d7f3cd29cd4fa9ec05266"
+      "checksum": "ca34ff1ad08d95b7a54d0704707da2c0"
     },
     "README.md": {
-      "checksum": "f49db131f213212f32c8edee167a5e42"
+      "checksum": "3981e0d59a1ef8e6c6f616df215eb9b4"
     },
     "www/cell-graph-gif-worker.js": {
       "checksum": "88c12954e64c7641906abe6a57c27c51"

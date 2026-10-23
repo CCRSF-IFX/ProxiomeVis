@@ -298,6 +298,7 @@ test_that("large unavailable matrices use one heatmap instead of per-cell polygo
   markers <- paste0("M", seq_len(40L))
   contract$report$alignment$markers <- data.table::data.table(celltype = "B", marker = markers,
     tested_clustering = TRUE, tested_colocalization = TRUE)
+  contract$report$alignment$profiles <- contract$report$alignment$profiles[0L]
   rows <- data.table::CJ(marker_1 = markers, marker_2 = markers)
   rows[, `:=`(celltype = "B", donor = "D1", panel = "TRT_vs_NC", status = "unavailable",
     value = NA_real_, p_adj = NA_real_, pct_detected = NA_real_)]

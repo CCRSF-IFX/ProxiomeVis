@@ -103,7 +103,7 @@ try {
   assert.equal(await evaluate("document.getElementById('rds_path') === null"), true);
   await evaluate("document.querySelector('#shiny-modal .modal-footer button').click()");
 
-  await tab('Precomputed results');
+  await tab('Results');
   await waitFor("document.getElementById('report-effect_detail')?.data?.some(x => x.type === 'box')");
   assert.equal(await evaluate("document.querySelector('#report-results_view .nav-link.active')?.getAttribute('data-value')"), 'Tables');
   assert.equal(await evaluate("document.querySelector('#report-results_view a[data-value=\"Summary\"]') === null"), true);
@@ -219,7 +219,7 @@ try {
 
   await call('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
   await evaluate("document.querySelector('.navbar-toggle').click()");
-  await tab('Precomputed results');
+  await tab('Results');
   await tab('Volcano');
   await evaluate("window.scrollTo(0,0)");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2"));

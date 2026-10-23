@@ -37,13 +37,16 @@ be found. This workspace's project environment is
 
 ## A filter produces no rows
 
-Report controls only narrow the frozen tertiary results. Choose a donor,
-comparison, cell type, and feature present in those tables. A missing stored
-combination is not computed automatically.
+Results controls select stored results. Select a donor, comparison, cell type,
+and feature that has stored rows. The application does not calculate missing
+results automatically. Condition profiles in **Spatial patterns** can be
+available without differential results.
 
-To run a new comparison, use **Custom analysis** and explicitly submit a valid
-cell selection. Its result is separate from the report and requires the
-appropriate cell-level inputs and worker dependencies.
+To run a test, open **New comparison**. Select one donor, one cell type, and two
+conditions. Click **Run comparison** to test all cells and markers in that scope.
+Raw counts are required for abundance tests. A proximity sidecar is required for
+spatial tests. Select the completed comparison and click **Open in Results**.
+The application does not change the prepared results.
 
 ## PXL files are unavailable
 

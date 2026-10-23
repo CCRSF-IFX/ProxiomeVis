@@ -8,7 +8,11 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
         shiny::tags$style(shiny::HTML(
           ".spatial-plot:has(.js-plotly-plot):not(:has(.recalculating)) .spatial-loading, .spatial-plot:has(.shiny-output-error) .spatial-loading {display:none;}
            .spatial-matrix {width:100%;max-width:900px;}
-           .spatial-matrix .plotly {aspect-ratio:6 / 5;min-height:400px;}")))),
+           .spatial-matrix .plotly {aspect-ratio:6 / 5;min-height:400px;}
+           .spatial-comparison {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;}
+           .spatial-comparison .card {min-width:0;}
+           .spatial-protein-controls .selectize-input {max-height:130px;overflow-y:auto;}
+           @media (max-width:1199px) {.spatial-comparison {grid-template-columns:1fr;}}")))),
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
@@ -64,14 +68,17 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
       )
     ),
     bslib::nav_panel(
-      "Precomputed results",
+      "Results",
+      shiny::selectInput(ns("result_source"), "Result source",
+        choices = c("Prepared results" = "prepared"), width = "100%"),
+      shiny::conditionalPanel("!input.result_source || input.result_source == 'prepared'", ns = ns,
       bslib::layout_column_wrap(
         width = "220px", fill = FALSE,
         shiny::uiOutput(ns("donor_control")),
         shiny::selectInput(ns("celltype"), "Cell type", choices = character()),
         shiny::selectInput(ns("comparison"), "Comparison (target − reference)", choices = character()),
         shiny::selectInput(ns("readout"), "Readout", choices = PRECOMPUTED_READOUTS)
-      ),
+      )),
       shiny::uiOutput(ns("result_summary")),
       bslib::navset_underline(
         id = ns("results_view"),
@@ -110,9 +117,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           bslib::layout_columns(
             col_widths = c(6, 6), fill = FALSE,
             bslib::card(full_screen = TRUE,
-              bslib::card_header("Stored report volcano"),
+              bslib::card_header("Comparison volcano"),
               precomputed_download_group(
-                shiny::downloadButton(ns("download_report_volcano_svg"), "Original report SVG", class = "btn-sm btn-outline-primary"),
+                shiny::downloadButton(ns("download_report_volcano_svg"), "Volcano SVG", class = "btn-sm btn-outline-primary"),
                 shiny::downloadButton(ns("download_report_volcano_csv"), "All stored volcano rows CSV", class = "btn-sm btn-outline-primary")
               ),
               shiny::tags$p(class = "small text-muted",
@@ -131,25 +138,47 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
           "Spatial patterns",
           shiny::uiOutput(ns("spatial_view_control")),
           shiny::conditionalPanel("!input.spatial_view || input.spatial_view == 'matrix'", ns = ns,
+          bslib::accordion(bslib::accordion_panel("Shared proteins and order",
+            bslib::layout_columns(col_widths = c(5, 3, 4), fill = FALSE,
+            shiny::selectizeInput(ns("spatial_markers"), "Proteins", choices = character(), multiple = TRUE,
+              width = "100%", options = list(plugins = list("remove_button"))),
+            shiny::selectInput(ns("spatial_order"), "Protein order", choices = c(
+              "Prepared order" = "prepared", "Alphabetical" = "alphabetical", "Custom ordered list" = "custom"), width = "100%"),
+            shiny::conditionalPanel("input.spatial_order == 'custom'", ns = ns,
+              shiny::textAreaInput(ns("spatial_custom_order"), "Proteins in order (commas or new lines)",
+                placeholder = "CD19, CD37, CD53, CD81, CD82", rows = 3, width = "100%"),
+              shiny::tags$p(class = "small text-muted", "The custom list sets both the protein selection and its order.")
+            )),
+            precomputed_download_group(
+              shiny::actionButton(ns("spatial_apply"), "Apply", class = "btn-primary"),
+              shiny::actionButton(ns("spatial_reset"), "Reset", class = "btn-outline-secondary"),
+              shiny::downloadButton(ns("download_spatial_order"), "Protein order CSV", class = "btn-sm btn-outline-primary")),
+            shiny::textOutput(ns("spatial_selection_status")),
+            shiny::tags$p(class = "small text-muted", "All spatial matrices use this selection and order. Changes affect the display only. Missing results keep their positions; tests and adjusted P values do not change.")
+          ), open = TRUE, class = "spatial-protein-controls"),
           bslib::layout_column_wrap(
             width = "280px", fill = FALSE,
+            shiny::radioButtons(ns("spatial_layout"), "Panels", choices = c(
+              "Single" = "single", "Compare profiles and difference" = "compare"), inline = TRUE),
+            shiny::conditionalPanel("!input.spatial_layout || input.spatial_layout == 'single'", ns = ns,
             shiny::radioButtons(ns("spatial_kind"), "Spatial quantity", choices = c(
               "Differential effect (difference of medians)" = "differences",
               "Condition profile (mean proximity)" = "profiles"), selected = "differences"),
             shiny::conditionalPanel("input.spatial_kind == 'profiles'", ns = ns,
               shiny::selectInput(ns("spatial_panel"), "Condition", choices = character())
-            )
+            ))
           ),
           shiny::tags$p(class = "small text-muted",
             "Available for spatial readouts; combines self-proximity and colocalization. A mean condition profile is not the quantity used for a difference-of-medians effect. No proximity is recalculated."),
+          shiny::conditionalPanel("!input.spatial_layout || input.spatial_layout == 'single'", ns = ns,
           bslib::card(full_screen = TRUE,
             bslib::card_header("Aligned spatial matrix"),
             precomputed_download_group(
-              shiny::downloadButton(ns("download_spatial_report_svg"), "Original report SVG", class = "btn-sm btn-outline-primary"),
+              shiny::downloadButton(ns("download_spatial_report_svg"), "Matrix SVG", class = "btn-sm btn-outline-primary"),
               shiny::downloadButton(ns("download_spatial_csv"), "Displayed spatial rows CSV", class = "btn-sm btn-outline-primary")
             ),
             shiny::tags$p(class = "small text-muted",
-              "Hover for values and availability; click a marker pair to select it for inspection in Tables or Volcano. Marker order and scales follow the frozen report alignment."),
+              "Hover for values and availability; click a marker pair to select it for inspection in Tables or Volcano. Every matrix uses the applied protein order. Color scales stay fixed within each quantity."),
             shiny::div(class = "spatial-plot spatial-matrix",
               shiny::div(id = ns("spatial_loading"), class = "spatial-loading alert alert-info",
                 role = "status", `aria-live` = "polite",
@@ -157,6 +186,22 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
                 "Loading spatial matrix…"),
               plotly::plotlyOutput(ns("spatial_report_plot"), height = "auto")
             )
+          )),
+          shiny::conditionalPanel("input.spatial_layout == 'compare'", ns = ns,
+            shiny::uiOutput(ns("spatial_compare_conditions")),
+            precomputed_download_group(
+              shiny::downloadButton(ns("download_spatial_compare_svg"), "Comparison SVG", class = "btn-sm btn-outline-primary"),
+              shiny::downloadButton(ns("download_spatial_compare_csv"), "Comparison rows CSV", class = "btn-sm btn-outline-primary")),
+            shiny::tags$p(class = "small text-muted", "The two profiles share a color scale. The differential panel uses a separate effect scale. A difference in profile means is not the stored difference in medians."),
+            shiny::div(class = "spatial-comparison",
+              lapply(c("reference", "target", "difference"), function(key) {
+                label <- switch(key, reference = "Reference profile", target = "Target profile", difference = "Differential effect")
+                bslib::card(full_screen = TRUE, bslib::card_header(label),
+                  shiny::div(class = "spatial-plot spatial-matrix",
+                    shiny::div(class = "spatial-loading alert alert-info", role = "status",
+                      shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"), "Loading spatial matrix…"),
+                    plotly::plotlyOutput(ns(paste0("spatial_", key)), height = "auto")))
+              }))
           )),
           shiny::conditionalPanel("input.spatial_view == 'network' && input.readout == 'colocalization'", ns = ns,
             bslib::layout_column_wrap(width = "280px", fill = FALSE,
@@ -209,7 +254,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
         )
       ))
     ),
-    bslib::nav_panel("Custom analysis", hybrid_analysis_ui(ns("analysis"))),
+    bslib::nav_panel("New comparison", hybrid_analysis_ui(ns("analysis"))),
     bslib::nav_panel("Cell 3D", cell_graph_ui(ns("graph"))),
     bslib::nav_panel("Documentation", documentation_ui()),
     bslib::nav_spacer(),
@@ -234,7 +279,10 @@ documentation_ui <- function() {
         tags$ul(tags$li("Prepared tables, embeddings, and spatial summaries need only the RDS file."),
           tags$li("Cell-level spatial distributions, cell ranking, and custom spatial tests need the proximity sidecar."),
           tags$li("The Cell 3D view needs the graph sidecar. PXL files are not necessary during application use.")),
-        tags$p("For local use, the administrator can enable server-path entry. Use RDS files only from approved sources.")
+        tags$p("For local use, the administrator can enable server-path entry. Use RDS files only from approved sources."),
+        tags$p("To use your own annotated Seurat data, run scripts/prepare_user_bundle.R before application use. The input can have no saved differential tests."),
+        tags$p(tags$a(href = "https://github.com/CCRSF-IFX/ProxiomeVis/blob/main/docs/prepare-user-data.md",
+          target = "_blank", rel = "noopener noreferrer", "Prepare your own data (opens in a new tab)"))
       ),
       bslib::accordion_panel("Overview / QC and Embeddings",
         tags$p("QC means quality control. Overview / QC shows cell counts before and after each filter."),
@@ -244,10 +292,11 @@ documentation_ui <- function() {
           tags$li("Use Split by to make separate panels for each donor or sample alias.")),
         tags$p("An embedding places cells in a reduced coordinate space. Split panels use the same axes and color scale.")
       ),
-      bslib::accordion_panel("Precomputed results",
-        tags$p("Precomputed results come from an analysis completed before application use. Display controls do not calculate new tests."),
-        tags$ol(tags$li("Open Precomputed results."), tags$li("If more than one donor is available, select one donor."),
+      bslib::accordion_panel("Results",
+        tags$p("Results shows prepared analyses and comparisons completed in this session. Both use the same tables and plots. Display controls do not calculate new tests."),
+        tags$ol(tags$li("Open Results."), tags$li("Select a Result source."), tags$li("For prepared results, select one donor if more than one is available."),
           tags$li("Select a Cell type."), tags$li("Select a Comparison (target − reference)."), tags$li("Select a Readout.")),
+        tags$p("A session comparison keeps its submitted donor, cell type, conditions, and readout. Select Prepared results to return to the original analyses."),
         tags$p("Abundance describes marker amounts. Self-clustering describes proximity for one marker. Colocalization describes proximity between different markers."),
         tags$h3("Tables and Volcano"),
         tags$ol(tags$li("Click a result row in Tables to select a marker or pair."),
@@ -264,27 +313,45 @@ documentation_ui <- function() {
       ),
       bslib::accordion_panel("Spatial patterns",
         tags$p("Spatial patterns is unavailable for abundance. Network is available only for colocalization."),
-        tags$ol(tags$li("Select a spatial readout under Precomputed results."), tags$li("Open Spatial patterns."),
+        tags$ol(tags$li("Select a spatial readout under Results."), tags$li("Open Spatial patterns."),
           tags$li("Select Matrix or Network.")),
         tags$p("Matrix shows differential effects or condition profiles. Condition profiles contain means, not differences between medians."),
+        tags$h3("Use the same proteins and order"),
+        tags$ol(tags$li("Open Shared proteins and order."), tags$li("Select Proteins."),
+          tags$li("Select Prepared order or Alphabetical. For a specific sequence, select Custom ordered list and enter proteins separated by commas or new lines."),
+          tags$li("Click Apply."), tags$li("Select Single or Compare profiles and difference.")),
+        tags$p("The custom list sets the selection and its order. Each protein can occur only once."),
+        tags$p("All matrices keep the applied axes when you change conditions, cell types, or result sources. Reset restores the prepared order. A new dataset resets the selection."),
+        tags$p("Compare shows the reference profile, target profile, and differential effect. The profile panels share a color scale. The differential effect has its own scale."),
+        tags$p("If no differential comparison is available, select two profile conditions. The differential panel stays unavailable; the application does not calculate a difference from the means."),
+        tags$p("Gray cells indicate unavailable results. They are not zero. A missing test does not remove a protein from the axes."),
+        tags$p("Condition profiles can be available without differential tests. Protein selection changes only the display. It does not change tests or adjusted P values."),
+        tags$p("SVG and CSV downloads use the applied protein selection and order. Protein order CSV records the axis sequence."),
         tags$ol(tags$li("For Network, select 2 to 20 Network markers."),
           tags$li("Set Minimum detection fraction if necessary."), tags$li("Set Minimum absolute mean proximity if necessary."),
           tags$li("Point to an edge to read its score and cell counts."),
           tags$li("Click an edge to select its pair for Tables or Volcano.")),
-        tags$p("The network uses the same marker positions and scales for both conditions. Each condition uses the display filters separately."),
+        tags$p("The network uses the same marker positions and scales for all displayed conditions. Each condition uses the display filters separately."),
+        tags$p("A selected comparison shows its two conditions. Without a comparison, the network shows the available conditions for the selected donor and cell type."),
         tags$p("Edge color shows the mean log2 ratio. Edge width shows its absolute magnitude."),
         tags$p("Network means include missing scores as zero. Network thresholds control the display; they do not test statistical significance.")
       ),
-      bslib::accordion_panel("Custom analysis",
-        tags$ol(tags$li("Open Custom analysis."), tags$li("Select one donor."), tags$li("Select one cell type."),
+      bslib::accordion_panel("New comparison",
+        tags$ol(tags$li("Open New comparison."), tags$li("Select one donor."), tags$li("Select one cell type."),
           tags$li("Select the target and reference conditions."), tags$li("Select the readout."),
           tags$li("For spatial tests, set Minimum observed cells per condition if necessary."),
+          tags$li("Check the cell counts and readiness message."),
           tags$li("Read the exploratory-analysis notice."), tags$li("Select its confirmation checkbox."),
           tags$li("Click Run comparison.")),
         tags$p("The comparison uses all cells in the selected scope. It tests all dataset markers or different-marker pairs."),
         tags$p("Spatial tests apply isotype-background filtering before the minimum observation count. The analysis adjusts P values across the tested features."),
         tags$p("One job permits at most 2,000 cells, 160 markers, and 120 seconds. Larger comparisons require analysis outside the application."),
-        tags$p("You can use other tabs during the analysis. Custom results do not replace precomputed results.")
+        tags$p("You can use other tabs during the analysis. New comparisons do not replace prepared results."),
+        tags$ol(tags$li("When the analysis ends, select a Completed comparison."),
+          tags$li("Click Open in Results to inspect its tables, volcano, and available spatial views."),
+          tags$li("Download Results CSV, Analysis provenance JSON, or Comparison RDS to keep the result.")),
+        tags$p("The session keeps multiple completed comparisons. A dataset change or session closure clears this history."),
+        tags$p("Comparison RDS contains results and settings, not the full dataset. Import approved files offline with the preparation tools.")
       ),
       bslib::accordion_panel("Cell 3D, GIF, and PowerPoint model",
         tags$ol(tags$li("Open Cell 3D."), tags$li("Select a donor, cell type, and condition."),
@@ -373,7 +440,7 @@ documentation_ui <- function() {
         tags$p("Filtered table CSV uses the table filters and search. All stored rows CSV ignores these filters."),
         tags$p("Table filters do not change the volcano or spatial report thresholds."),
         tags$p("SVG is a vector image format. CSV stores table data. JSON stores structured information, including provenance."),
-        tags$p("Original report SVG preserves the report design. Network SVG and Displayed edges CSV use the current network selections."),
+        tags$p("Volcano SVG preserves the comparison plot. Matrix SVG and Comparison SVG use the applied protein selection and order. Network SVG and Displayed edges CSV use the current network selections."),
         tags$p("A missing-sidecar message means that the required file is unavailable. Ask the administrator to check the prepared files.")
       )
     )

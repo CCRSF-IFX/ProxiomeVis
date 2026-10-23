@@ -181,10 +181,12 @@ read_proximity_subset <- function(data, asset_root, request, marker_1 = request$
   markers <- request$markers
   first_markers <- marker_1
   query <- arrow::open_dataset(prepared$paths)
-  # Preparation already stores application IDs; overlapping source IDs must not be remapped.
+  # Prepared partitions use source PXL IDs. Return the bundle's current IDs.
+  mapping <- data$cell_sources[data$cell_sources$component %in% cells, c("component", "original_id"), drop = FALSE]
+  source_cells <- unique(c(mapping$original_id, cells))
   # FilterProximityScores(background_threshold_pct = cutoff) uses pmin(p1, p2) >= cutoff.
   # The sidecar stores that minimum, so apply the identical filter before collection.
-  query <- dplyr::filter(query, component %in% cells, marker_1 %in% markers, marker_2 %in% markers,
+  query <- dplyr::filter(query, component %in% source_cells, marker_1 %in% markers, marker_2 %in% markers,
                          marker_1 %in% first_markers,
                          min_marker_fraction >= cutoff, is.finite(log2_ratio))
   query <- if (request$readout == "self_proximity") {
@@ -192,7 +194,22 @@ read_proximity_subset <- function(data, asset_root, request, marker_1 = request$
   } else {
     dplyr::filter(query, marker_1 != marker_2)
   }
-  scores <- as.data.frame(dplyr::collect(utils::head(query, HYBRID_LIMITS$rows + 1L)))
+  # Scan bounded batches directly; Arrow's streaming query executor can stall here.
+  reader <- arrow::Scanner$create(query, use_threads = FALSE)$ToRecordBatchReader()
+  on.exit(reader$Close(), add = TRUE)
+  batches <- list()
+  rows <- 0L
+  repeat {
+    batch <- reader$read_next_batch()
+    if (is.null(batch)) break
+    rows <- rows + batch$num_rows
+    if (rows > HYBRID_LIMITS$rows) stop("Too many proximity rows; use precomputed results or run this comparison offline.", call. = FALSE)
+    batches[[length(batches) + 1L]] <- batch
+  }
+  scores <- as.data.frame(do.call(arrow::Table$create, c(batches, list(schema = reader$schema))))
+  if (nrow(scores) && all(scores$component %in% mapping$original_id)) {
+    scores$component <- mapping$component[match(scores$component, mapping$original_id)]
+  }
   if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; use precomputed results or run this comparison offline.", call. = FALSE)
   if (anyDuplicated(scores[c("component", "marker_1", "marker_2")])) stop("Duplicate proximity observations.", call. = FALSE)
   attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),

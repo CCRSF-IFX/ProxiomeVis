@@ -2,11 +2,16 @@ report_feature_key <- function(marker_1, marker_2) {
   stopifnot(length(marker_1) == length(marker_2))
   marker_1 <- as.character(marker_1)
   marker_2 <- as.character(marker_2)
-  vapply(seq_along(marker_1), function(i) {
-    pair <- c(marker_1[[i]], marker_2[[i]])
-    if (anyNA(pair)) return(NA_character_)
-    as.character(jsonlite::toJSON(sort(pair, method = "radix")))
-  }, character(1))
+  if (!length(marker_1)) return(character())
+  # Encode each protein once, not once per cell/pair; retain the exact JSON click keys.
+  markers <- sort(unique(c(marker_1, marker_2)), method = "radix")
+  encoded <- vapply(markers, function(marker)
+    as.character(jsonlite::toJSON(marker, auto_unbox = TRUE)), character(1), USE.NAMES = FALSE)
+  a <- match(marker_1, markers)
+  b <- match(marker_2, markers)
+  keys <- paste0("[", encoded[pmin(a, b)], ",", encoded[pmax(a, b)], "]")
+  keys[is.na(a) | is.na(b)] <- NA_character_
+  keys
 }
 
 report_interactive_layer <- function(layer, plot_data, fields) {
@@ -56,7 +61,7 @@ report_volcano_plotly <- function(plot, source = "A") {
                    displaylogo = FALSE, doubleClick = "reset")
 }
 
-report_spatial_plotly <- function(plot, source = "A") {
+report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
   fields <- c(
     marker_1 = "Marker 1", marker_2 = "Marker 2", donor = "Donor",
     celltype = "Cell type", panel = "Condition / comparison",
@@ -117,15 +122,18 @@ report_spatial_plotly <- function(plot, source = "A") {
     }, logical(1)))
   size_legend <- list()
   if (isTRUE(is_difference)) {
-    size_limits <- plot$scales$get_scales("size")$limits
+    size_scale <- plot$scales$get_scales("size")
+    size_limits <- size_scale$limits
     cap <- suppressWarnings(as.numeric(if (length(size_limits) >= 2L) size_limits[[2L]] else 4))
     if (!is.finite(cap)) cap <- 4
     breaks <- unique(pmin(c(0, 1, 2, cap), cap))
     labels <- ifelse(breaks == cap & cap > 2, paste0(cap, " (capped)"), as.character(breaks))
+    # ggplotly converts the size scale's millimetres to CSS pixels.
+    sizes <- size_scale$map(breaks) * 96 / 25.4
     for (i in seq_along(breaks)) {
       size_legend[[i]] <- list(type = "scatter", mode = "markers", name = labels[[i]],
-        legendgroup = "significance-size", x = list(), y = list(), marker = list(
-          size = 0.6 + 2.4 * breaks[[i]] / cap, color = "#D9D9D9",
+        legendgroup = "significance-size", x = list(NA_real_), y = list(NA_real_), marker = list(
+          size = sizes[[i]], color = "#D9D9D9",
           line = list(color = "#596873", width = 1)),
         showlegend = TRUE, hoverinfo = "skip")
     }
@@ -136,6 +144,28 @@ report_spatial_plotly <- function(plot, source = "A") {
     widget <- plotly::plotly_build(widget)
     widget$x$data <- c(widget$x$data, size_legend)
   }
+  if (isTRUE(comparison)) {
+    widget <- plotly::plotly_build(widget)
+    # Reserve identical space for every panel; extra effect legends must not shrink its matrix.
+    widget$x$layout$margin <- list(l = 60, r = 150, t = 70, b = 60, autoexpand = FALSE)
+    for (axis in c("xaxis", "yaxis")) {
+      widget$x$layout[[axis]]$domain <- c(0, 1)
+      widget$x$layout[[axis]]$automargin <- FALSE
+    }
+    widget$x$layout$legend <- utils::modifyList(widget$x$layout$legend,
+      list(x = 1.03, y = 0.43, xanchor = "left", yanchor = "top", font = list(size = 9)))
+    widget$x$data <- lapply(widget$x$data, function(trace) {
+      if (!is.null(trace$marker$colorbar)) {
+        trace$marker$colorbar <- utils::modifyList(trace$marker$colorbar,
+          list(x = 1.03, y = 1, yanchor = "top", len = 0.46, thickness = 12,
+            xpad = 0, ypad = 0, tickfont = list(size = 9)))
+        if (isTRUE(is_difference)) {
+          trace$marker$colorbar$title <- list(text = "Difference<br>in medians", font = list(size = 10))
+        }
+      }
+      trace
+    })
+  }
   widget |>
     plotly::event_register("plotly_click") |>
     plotly::layout(dragmode = "zoom", hovermode = "closest") |>
@@ -143,30 +173,35 @@ report_spatial_plotly <- function(plot, source = "A") {
                    displaylogo = FALSE, doubleClick = "reset")
 }
 
-report_network_profiles <- function(contract, donor, celltype, comparison) {
+report_network_profiles <- function(contract, donor, celltype, comparison = NULL) {
   if (identical(celltype, PRECOMPUTED_ALL)) stop("Select one cell type for its network.", call. = FALSE)
-  contrasts <- precomputed_filter_table(
-    precomputed_contract_table(contract, "donor_contrasts", "colocalization"),
-    donor = donor, celltype = celltype, comparison = comparison, include_controls = TRUE)
-  groups <- unique(contrasts[c("group_b", "group_a")])
-  if (nrow(groups) != 1L) stop("No unique stored condition comparison is available.", call. = FALSE)
-  conditions <- unname(unlist(groups[1L, ], use.names = FALSE))
   rows <- precomputed_filter_table(
     precomputed_contract_table(contract, "sample_summaries", "colocalization"),
     donor = donor, celltype = celltype, include_controls = TRUE)
+  conditions <- sort(unique(as.character(rows$condition)), method = "radix")
+  if (length(comparison) && !all(is.na(comparison))) {
+    comparison <- report_plot_scalar(comparison, "comparison")
+    contrasts <- precomputed_filter_table(
+      precomputed_contract_table(contract, "donor_contrasts", "colocalization"),
+      donor = donor, celltype = celltype, comparison = comparison, include_controls = TRUE)
+    groups <- unique(contrasts[c("group_b", "group_a")])
+    if (nrow(groups) != 1L) stop("No unique stored condition comparison is available.", call. = FALSE)
+    conditions <- unname(unlist(groups[1L, ], use.names = FALSE))
+  }
   rows <- rows[rows$condition %in% conditions & rows$marker_1 != rows$marker_2, , drop = FALSE]
   if (!nrow(rows)) stop("No stored colocalization profiles are available for this scope.", call. = FALSE)
   if (anyNA(rows$metric) || any(rows$metric != "population_mean_log2_ratio_missing_zero")) {
     stop("This network requires stored population mean log2 ratios with an explicit missing-zero policy.", call. = FALSE)
   }
   rows$key <- report_feature_key(rows$marker_1, rows$marker_2)
-  if (anyDuplicated(rows[c("condition", "key")])) {
-    stop("Multiple summaries exist for a condition and pair; prepare one donor-level profile per condition.", call. = FALSE)
+  if (anyDuplicated(rows[c("sample_id", "condition", "key")])) {
+    stop("Multiple summaries exist for a sample and pair; prepare one profile per sample and pair.", call. = FALSE)
   }
-  rows$pct_detected <- ifelse(is.finite(rows$n_total_cells) & rows$n_total_cells > 0 &
-    is.finite(rows$n_scored_cells) & rows$n_scored_cells >= 0 & rows$n_scored_cells <= rows$n_total_cells,
-    rows$n_scored_cells / rows$n_total_cells, NA_real_)
-  rows$condition <- factor(rows$condition, levels = conditions)
+  rows <- as.data.frame(report_population_profiles(rows, contract$sample_summaries$abundance))
+  rows$key <- report_feature_key(rows$marker_1, rows$marker_2)
+  rows$condition <- factor(rows$panel, levels = conditions)
+  rows$panel <- NULL
+  rows$metric <- "population_mean_log2_ratio_missing_zero"
   rows
 }
 
@@ -359,6 +394,31 @@ plot_report_volcano <- function(contract, readout, donor, celltype, comparison) 
   donor <- report_plot_scalar(donor, "donor")
   celltype <- report_plot_scalar(celltype, "celltype")
   comparison <- report_plot_scalar(comparison, "comparison")
+  if (is.null(contract$report$source_results[[donor]][[readout]])) {
+    rows <- as.data.frame(contract$donor_contrasts[[readout]])
+    report_plot_require_columns(rows, c("donor", "celltype", "comparison", "marker_1",
+      "marker_2", "effect_size", "group_a", "group_b"), "stored donor contrasts")
+    rows <- rows[rows$donor == donor & rows$celltype == celltype & rows$comparison == comparison, , drop = FALSE]
+    if (!"p_adj" %in% names(rows)) rows$p_adj <- rep(NA_real_, nrow(rows))
+    if (!"p_value" %in% names(rows)) rows$p_value <- rep(NA_real_, nrow(rows))
+    rows$p <- rows$p_value
+    rows$target <- rows$group_a
+    rows$reference <- rows$group_b
+    rows$marker <- rows$marker_1
+    effect <- if (readout == "abundance") "difference" else "diff_median"
+    rows[[effect]] <- rows$effect_size
+    rows <- rows[is.finite(rows$effect_size) & is.finite(rows$p_adj), , drop = FALSE]
+    rows$.significance <- -log10(pmax(rows$p_adj, .Machine$double.xmin))
+    plot <- ggplot2::ggplot(rows, ggplot2::aes(x = .data[[effect]], y = .significance)) +
+      ggplot2::geom_point(color = "#3B6EA8", alpha = 0.7) +
+      ggplot2::labs(title = paste(donor, celltype, comparison, sep = " | "),
+        x = if (readout == "abundance") "Abundance difference" else "Difference in medians",
+        y = "-log10(adjusted P)", subtitle = "Stored results: target minus reference") +
+      ggplot2::theme_minimal(base_size = 12)
+    if (!nrow(rows)) plot <- plot + ggplot2::annotate("text", x = 0, y = 0,
+      label = "No finite effects with adjusted P values for this scope")
+    return(plot)
+  }
   report <- report_plot_bundle(contract)
   source <- report_plot_table(
     report_plot_nested(report, "source_results", donor, readout),
@@ -432,25 +492,192 @@ plot_report_volcano <- function(contract, readout, donor, celltype, comparison) 
   )
 }
 
-# Recreate the existing cross-donor aligned spatial matrix without changing its
-# marker order, shared scales, stored effects, or stored adjusted P values.
+# Matrices and networks use the same cell-weighted population means and coverage checks.
+report_population_profiles <- function(samples, abundance = NULL) {
+  profiles <- data.table::data.table(marker_1 = character(), marker_2 = character(),
+    celltype = character(), donor = character(), panel = character(), status = character(),
+    value = numeric(), p_adj = numeric(), pct_detected = numeric(),
+    n_total_cells = numeric(), n_scored_cells = numeric())
+  if (nrow(samples)) {
+    report_plot_require_columns(samples, c("sample_id", "marker_1", "marker_2", "celltype", "donor",
+      "condition", "value", "metric", "n_total_cells", "n_scored_cells"), "spatial sample summaries")
+    # Do not label medians or an unknown missing-score policy as population means.
+    samples <- data.table::as.data.table(samples)[metric == "population_mean_log2_ratio_missing_zero"]
+    if (nrow(samples)) {
+      design_columns <- c("sample_id", "donor", "celltype", "condition")
+      design <- unique(samples[, ..design_columns])
+      if (is.data.frame(abundance) && all(design_columns %in% names(abundance))) {
+        design <- unique(data.table::rbindlist(list(design, data.table::as.data.table(abundance)[, ..design_columns])))
+      }
+      expected <- design[, .(expected_samples = .N), by = .(celltype, donor, panel = condition)]
+      samples[, key := report_feature_key(marker_1, marker_2)]
+      samples <- unique(samples, by = c("sample_id", "donor", "celltype", "condition", "key"))
+      profiles <- samples[, .(
+        marker_1 = marker_1[[1L]], marker_2 = marker_2[[1L]],
+        value = if (all(is.finite(value) & is.finite(n_total_cells) & n_total_cells > 0))
+          stats::weighted.mean(value, n_total_cells) else NA_real_,
+        pct_detected = if (all(is.finite(n_total_cells) & n_total_cells > 0 &
+          is.finite(n_scored_cells) & n_scored_cells >= 0 & n_scored_cells <= n_total_cells))
+          sum(n_scored_cells) / sum(n_total_cells) else NA_real_,
+        n_total_cells = if (all(is.finite(n_total_cells) & n_total_cells > 0)) sum(n_total_cells) else NA_real_,
+        n_scored_cells = if (all(is.finite(n_total_cells) & n_total_cells > 0 &
+          is.finite(n_scored_cells) & n_scored_cells >= 0 & n_scored_cells <= n_total_cells))
+          sum(n_scored_cells) else NA_real_,
+        p_adj = NA_real_, observed_samples = .N
+      ), by = .(celltype, donor, panel = condition, key)]
+      profiles[expected, on = .(celltype, donor, panel), expected_samples := i.expected_samples]
+      # Absent imported sample rows are not proof of zero observations in that sample.
+      profiles[observed_samples != expected_samples, `:=`(value = NA_real_, pct_detected = NA_real_,
+        n_total_cells = NA_real_, n_scored_cells = NA_real_)]
+      profiles[, `:=`(key = NULL, observed_samples = NULL, expected_samples = NULL,
+        status = ifelse(is.finite(value), "supported", "unavailable"))]
+    }
+  }
+  profiles
+}
+
+# Canonical bundles do not need the original report scaffolding to show stored profiles.
+report_spatial_alignment <- function(contract) {
+  frozen <- contract$report$alignment
+  empty <- data.table::data.table(marker_1 = character(), marker_2 = character(),
+    celltype = character(), donor = character(), panel = character(), status = character(),
+    value = numeric(), p_adj = numeric(), pct_detected = numeric())
+  collect <- function(section) {
+    data.table::rbindlist(lapply(c("self_proximity", "colocalization"), function(readout) {
+      rows <- contract[[section]][[readout]]
+      if (is.data.frame(rows)) rows else NULL
+    }), fill = TRUE)
+  }
+  profiles <- report_population_profiles(collect("sample_summaries"), contract$sample_summaries$abundance)
+  profiles[, c("n_total_cells", "n_scored_cells") := NULL]
+  contrasts <- if (is.data.frame(frozen$differences)) data.table::data.table() else collect("donor_contrasts")
+  differences <- data.table::copy(empty)
+  if (nrow(contrasts)) {
+    report_plot_require_columns(contrasts, c("marker_1", "marker_2", "celltype", "donor",
+      "comparison", "effect_size", "metric"), "spatial donor contrasts")
+    contrasts <- contrasts[metric == "delta_median_log2_ratio"]
+    if (!"p_adj" %in% names(contrasts)) contrasts[, p_adj := NA_real_]
+    differences <- contrasts[, .(marker_1, marker_2, celltype, donor, panel = comparison,
+      status = ifelse(is.finite(effect_size), "supported", "unavailable"),
+      value = effect_size, p_adj, pct_detected = NA_real_)]
+  }
+  rows <- data.table::rbindlist(list(profiles, differences), fill = TRUE)
+  markers <- unique(data.table::rbindlist(list(rows[, .(celltype, marker = marker_1)],
+    rows[, .(celltype, marker = marker_2)])))
+  data.table::setorderv(markers, c("celltype", "marker"))
+  markers[, `:=`(tested_clustering = FALSE, tested_colocalization = FALSE)]
+  if (nrow(differences)) {
+    tested <- differences[is.finite(p_adj)]
+    self <- unique(tested[marker_1 == marker_2, .(celltype, marker = marker_1)])
+    co <- tested[marker_1 != marker_2]
+    co <- unique(data.table::rbindlist(list(co[, .(celltype, marker = marker_1)], co[, .(celltype, marker = marker_2)])))
+    markers[self, on = .(celltype, marker), tested_clustering := TRUE]
+    markers[co, on = .(celltype, marker), tested_colocalization := TRUE]
+  }
+  alignment <- list(cfg = list(significance_size_cap = 4, significance_threshold = 0.05),
+    conditions = unique(profiles$panel), contrasts = unique(differences$panel),
+    donors = unique(rows$donor), markers = markers, profiles = profiles, differences = differences,
+    limits = list(profiles = max(c(0.1, abs(profiles$value[is.finite(profiles$value)]))),
+      differences = max(c(0.1, abs(differences$value[is.finite(differences$value)])))),
+    metric = "Mean log2 ratio (missing scores zero)")
+  if (is.list(frozen)) {
+    for (kind in c("profiles", "differences")) {
+      if (is.data.frame(frozen[[kind]])) {
+        retained <- data.table::as.data.table(frozen[[kind]])
+        if (kind == "profiles" && nrow(alignment$profiles)) {
+          key <- function(rows) data.table::data.table(donor = as.character(rows$donor),
+            celltype = as.character(rows$celltype), panel = as.character(rows$panel),
+            pair = report_feature_key(rows$marker_1, rows$marker_2))
+          new_keys <- key(alignment$profiles)
+          matched <- new_keys[key(retained), on = .(donor, celltype, panel, pair), which = TRUE, nomatch = 0L]
+          missing <- !seq_len(nrow(new_keys)) %in% matched
+          retained <- data.table::rbindlist(list(retained, alignment$profiles[missing]), fill = TRUE)
+        }
+        alignment[[kind]] <- retained
+        alignment$limits[[kind]] <- frozen$limits[[kind]]
+      }
+    }
+    alignment$conditions <- unique(c(frozen$conditions, as.character(alignment$profiles$panel)))
+    alignment$contrasts <- unique(c(frozen$contrasts, as.character(alignment$differences$panel)))
+    alignment$donors <- unique(c(as.character(alignment$profiles$donor), as.character(alignment$differences$donor)))
+    alignment$markers <- unique(data.table::rbindlist(list(frozen$markers, alignment$markers), fill = TRUE),
+      by = c("celltype", "marker"))
+    if (is.list(frozen$cfg)) alignment$cfg <- frozen$cfg
+    if (is.character(frozen$metric)) alignment$metric <- frozen$metric
+  }
+  alignment
+}
+
+report_spatial_markers <- function(alignment, celltype = NULL) {
+  select <- function(rows, fields) {
+    if (!is.data.frame(rows) || !all(fields %in% names(rows))) return(character())
+    rows <- as.data.frame(rows)
+    if (!is.null(celltype)) rows <- rows[rows$celltype %in% celltype, , drop = FALSE]
+    as.character(unlist(rows[fields], use.names = FALSE))
+  }
+  markers <- unique(c(select(alignment$markers, "marker"),
+    select(alignment$profiles, c("marker_1", "marker_2")),
+    select(alignment$differences, c("marker_1", "marker_2"))))
+  markers[!is.na(markers) & nzchar(markers)]
+}
+
+# Preserve explicit missing entries; use the reverse pair only when that entry is absent.
+report_spatial_rows <- function(alignment, donor, celltype, kind, panel, markers = NULL) {
+  report_plot_scalar(kind, "kind", c("profiles", "differences"))
+  if (is.null(markers)) markers <- report_spatial_markers(alignment, celltype)
+  if (!is.character(markers) || anyNA(markers) || anyDuplicated(markers) ||
+      any(!nzchar(markers))) {
+    report_plot_error("Choose unique, nonempty spatial proteins in the required order.")
+  }
+  rows <- as.data.frame(alignment[[kind]])
+  rows <- rows[rows$donor == donor & rows$celltype == celltype & rows$panel == panel, , drop = FALSE]
+  grid <- expand.grid(marker_1 = markers, marker_2 = markers, stringsAsFactors = FALSE)
+  keys <- paste(rows$marker_1, rows$marker_2, sep = "\r")
+  if (anyDuplicated(keys)) report_plot_error("Multiple spatial results exist for this scope and protein pair.")
+  index <- match(paste(grid$marker_1, grid$marker_2, sep = "\r"), keys)
+  reverse <- match(paste(grid$marker_2, grid$marker_1, sep = "\r"), keys)
+  index[is.na(index)] <- reverse[is.na(index)]
+  fields <- setdiff(names(rows), c("marker_1", "marker_2", "celltype", "donor", "panel"))
+  for (field in fields) grid[[field]] <- rows[[field]][index]
+  grid$donor <- rep(donor, nrow(grid))
+  grid$celltype <- rep(celltype, nrow(grid))
+  grid$panel <- rep(panel, nrow(grid))
+  for (field in c("value", "p_adj", "pct_detected")) {
+    if (!field %in% names(grid)) grid[[field]] <- rep(NA_real_, nrow(grid))
+  }
+  if (!"status" %in% names(grid)) grid$status <- rep("supported", nrow(grid))
+  grid$status[is.na(grid$status) | !is.finite(grid$value)] <- "unavailable"
+  grid$value[grid$status != "supported"] <- NA_real_
+  grid$p_adj[grid$status != "supported"] <- NA_real_
+  data.table::as.data.table(grid)
+}
+
+# Display filters never recompute effects, adjusted P values, or color limits.
 plot_report_spatial <- function(
   contract,
   donor,
   celltype,
   kind = "differences",
-  panel
+  panel,
+  markers = NULL,
+  alignment = NULL
 ) {
   donor <- report_plot_scalar(donor, "donor")
   celltype <- report_plot_scalar(celltype, "celltype")
   kind <- report_plot_scalar(kind, "kind", c("differences", "profiles"))
   panel <- report_plot_scalar(panel, "panel")
-  alignment <- report_plot_bundle(contract)$alignment
-  if (!is.list(alignment)) report_plot_error("The report alignment bundle is missing.")
+  if (is.null(alignment)) alignment <- report_spatial_alignment(contract)
   allowed_panels <- if (identical(kind, "profiles")) alignment$conditions else alignment$contrasts
-  report_plot_scalar(panel, "panel", as.character(allowed_panels))
+  if (is.null(markers)) report_plot_scalar(panel, "panel", as.character(allowed_panels))
+  # Explicit display selections are validated against dataset metadata by the caller.
+  # Keep an unavailable grid when that valid selection has no stored results.
+  panel_field <- if (kind == "profiles") "conditions" else "contrasts"
+  alignment[[panel_field]] <- unique(c(alignment[[panel_field]], panel))
+  alignment$donors <- unique(c(alignment$donors, donor))
+  if (is.null(markers)) markers <- report_spatial_markers(alignment, celltype)
+  alignment[[kind]] <- report_spatial_rows(alignment, donor, celltype, kind, panel, markers)
   .report_comparable_source$comparison_plot(
-    alignment, celltype, kind, donor, panel
+    alignment, celltype, kind, donor, panel, markers = markers
   )
 }
 
