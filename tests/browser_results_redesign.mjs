@@ -59,6 +59,15 @@ async function noErrors() {
   assert.deepEqual(await evaluate("[...document.querySelectorAll('.shiny-output-error:not(.shiny-output-error-validation)')].map(x => x.textContent)"), []);
 }
 
+async function compactHistory() {
+  const gap = await evaluate(`(() => {
+    const body = document.getElementById('report-analysis-history_id').closest('.card-body');
+    return body.querySelector('p').getBoundingClientRect().top -
+      body.closest('.card').querySelector('.card-header').getBoundingClientRect().bottom;
+  })()`);
+  assert.ok(gap >= 0 && gap < 32, `History content is vertically displaced by ${gap}px`);
+}
+
 try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1700, height: 1100, deviceScaleFactor: 1, mobile: false });
   await call('Page.navigate', { url: 'about:blank' });
@@ -159,6 +168,7 @@ try {
 
   await tab('New comparison');
   await waitFor("document.getElementById('report-analysis-readiness')?.textContent.includes('cells')");
+  await compactHistory();
   await select('analysis-donor', 'd1');
   await select('analysis-celltype', 'B');
   await select('analysis-readout', 'abundance');
@@ -166,6 +176,7 @@ try {
   await evaluate("document.getElementById('report-analysis-acknowledge').click(); document.getElementById('report-analysis-run').click()");
   await waitFor("document.getElementById('report-analysis-run').disabled");
   await waitFor("document.getElementById('report-analysis-status')?.textContent.startsWith('Completed')");
+  await compactHistory();
   await evaluate("document.getElementById('report-analysis-open_result').click()");
   await waitFor("document.getElementById('report-result_source').value.startsWith('session-')");
   await waitFor("document.getElementById('report-readout').value === 'abundance'");
