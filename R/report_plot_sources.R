@@ -428,14 +428,14 @@ evalq({
     descriptive_only <- kind == "profiles" && !any(bundle$markers[
       celltype == celltype_value, tested_clustering | tested_colocalization])
     plot <- ggplot(data, aes(marker_1, marker_2)) +
-      geom_tile(data = data[status == "unavailable"], fill = "grey82") +
+      geom_tile(data = data[status == "unavailable"], fill = "#E9EDF0") +
       scale_x_discrete(limits = order, drop = FALSE, position = "top") +
       scale_y_discrete(limits = rev(order), drop = FALSE) +
       scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0,
                            limits = c(-1, 1) * bundle$limits[[kind]], oob = scales::squish) +
       coord_fixed() + theme_bw(base_size = 10) +
-      theme(panel.grid = element_blank(), axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5, size = 7),
-            axis.text.y = element_text(size = 7), panel.border = element_rect(color = "black", fill = NA)) +
+      theme(panel.grid = element_blank(), axis.text.x = element_text(angle = 45, hjust = 0, vjust = 0, size = 9),
+            axis.text.y = element_text(size = 9), panel.border = element_rect(color = "grey65", fill = NA)) +
       labs(x = NULL, y = NULL, title = title,
            subtitle = paste(if (descriptive_only) "Descriptive profiles (no differential spatial tests)"
                             else if (kind == "profiles") "Stored condition profiles"

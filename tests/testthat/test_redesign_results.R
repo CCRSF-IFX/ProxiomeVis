@@ -22,9 +22,10 @@ redesign_results_fixture <- function() {
 test_that("shared spatial selection validates lists without changing prepared values", {
   expect_identical(precomputed_spatial_selection(c("A", "B"), "prepared", "", c("A", "B", "C"), c("B", "A")), c("B", "A"))
   expect_identical(precomputed_spatial_selection(c("B", "A"), "alphabetical", "", c("A", "B"), c("B", "A")), c("A", "B"))
-  expect_identical(precomputed_spatial_selection(NULL, "custom", "C, B\nA", c("A", "B", "C"), c("B", "A")), c("C", "B", "A"))
-  expect_error(precomputed_spatial_selection(NULL, "custom", "A,A", c("A", "B"), "A"), "only once")
-  expect_error(precomputed_spatial_selection(NULL, "custom", "D", c("A", "B"), "A"), "Unknown proteins")
+  expect_identical(precomputed_spatial_selection(c("A", "B", "C"), "custom", "C, B\nA", c("A", "B", "C"), c("B", "A")), c("C", "B", "A"))
+  expect_error(precomputed_spatial_selection("A", "custom", "A,A", c("A", "B"), "A"), "only once")
+  expect_error(precomputed_spatial_selection("D", "custom", "D", c("A", "B"), "A"), "Unknown proteins")
+  expect_error(precomputed_spatial_selection(c("A", "B"), "custom", "A", c("A", "B"), "A"), "exactly the selected")
   expect_error(precomputed_spatial_selection(character(), "prepared", "", c("A", "B"), "A"), "at least one")
 })
 
@@ -36,9 +37,9 @@ test_that("Apply aligns all spatial panels and exports; switching views preserve
   shiny::testServer(precomputed_server, args = list(data = current, job_manager = manager), {
     session$setInputs(readout = "colocalization", donor = "D1", celltype = "B", comparison = "TRT vs NC",
       report_page = "Results", results_view = "Spatial patterns", spatial_kind = "differences")
-    expect_identical(spatial_markers(), c("B", "A"))
-    session$setInputs(spatial_order = "custom", spatial_custom_order = "C,B,A")
-    expect_identical(spatial_markers(), c("B", "A"))
+    expect_identical(spatial_markers(), c("B", "A", "C"))
+    session$setInputs(spatial_set = "manual", spatial_markers = c("A", "B", "C"), spatial_order = "custom", spatial_custom_order = "C,B,A")
+    expect_identical(spatial_markers(), c("B", "A", "C"))
     session$setInputs(spatial_apply = 1L, spatial_layout = "compare")
     expect_identical(spatial_markers(), c("C", "B", "A"))
     plots <- spatial_comparison_plots()
@@ -72,7 +73,7 @@ test_that("Apply aligns all spatial panels and exports; switching views preserve
     current(fixture)
     session$flushReact()
     session$setInputs(donor = "D1", celltype = "B", spatial_reset = 1L)
-    expect_identical(spatial_markers(), c("B", "A"))
+    expect_identical(spatial_markers(), c("B", "A", "C"))
   })
 })
 

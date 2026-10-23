@@ -9,17 +9,21 @@ const tab = {
   setAttribute(name, value) { attributes.set(name, value); },
   removeAttribute(name) { attributes.delete(name); },
 };
-let handler;
+const handlers = new Map();
+const sizes = new Map();
+let resized = 0;
 runInNewContext(readFileSync(new URL('../www/precomputed.js', import.meta.url), 'utf8'), {
   $: ready => ready(),
+  Event: class { constructor(type) { this.type = type; } },
+  window: { dispatchEvent(event) { assert.equal(event.type, 'resize'); resized++; } },
   Shiny: { addCustomMessageHandler(name, callback) {
-    assert.equal(name, 'precomputed-spatial-availability');
-    handler = callback;
+    handlers.set(name, callback);
   } },
   document: { getElementById: id => id === 'report-results_view' ? {
     querySelector(selector) { assert.equal(selector, 'a[data-value="Spatial patterns"]'); return tab; },
-  } : null },
+  } : id === 'matrix' ? { style: { setProperty(name, value) { sizes.set(name, value); } } } : null },
 });
+const handler = handlers.get('precomputed-spatial-availability');
 handler({ id: 'report-results_view', disabled: true });
 assert.ok(classes.has('disabled'));
 assert.equal(attributes.get('aria-disabled'), 'true');
@@ -30,4 +34,9 @@ assert.ok(!classes.has('disabled'));
 assert.equal(attributes.get('aria-disabled'), 'false');
 assert.ok(!attributes.has('tabindex'));
 assert.doesNotThrow(() => handler({ id: 'missing-module', disabled: true }));
+handlers.get('precomputed-spatial-size')({ id: 'matrix', proteins: 50 });
+assert.equal(sizes.get('--spatial-panel-min'), '1060px');
+handlers.get('precomputed-spatial-size')({ id: 'matrix', proteins: 5 });
+assert.equal(sizes.get('--spatial-panel-min'), '480px');
+assert.equal(resized, 2);
 console.log('PASS: spatial tab disabled/enabled accessibility state');

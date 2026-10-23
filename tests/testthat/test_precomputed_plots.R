@@ -158,8 +158,8 @@ test_that("the report UI groups stored views under shared navigation and selecti
   expect_match(ui, "Spatial patterns", fixed = TRUE)
   expect_match(ui, 'class="spatial-plot spatial-matrix"', fixed = TRUE)
   head <- htmltools::renderTags(precomputed_ui("report"))$head
-  expect_match(head, '.spatial-matrix {width:100%;max-width:900px;}', fixed = TRUE)
-  expect_match(head, 'aspect-ratio:6 / 5;min-height:400px;', fixed = TRUE)
+  expect_match(head, 'var(--spatial-panel-min,480px)', fixed = TRUE)
+  expect_match(head, '.spatial-scroll {overflow:auto;', fixed = TRUE)
   expect_match(ui, 'id="report-donor_control"', fixed = TRUE)
   expect_match(ui, 'id="report-explore_3d"', fixed = TRUE)
   expect_match(ui, 'id="report-download_filtered_results_csv"', fixed = TRUE)

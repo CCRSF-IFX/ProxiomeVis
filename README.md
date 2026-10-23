@@ -284,8 +284,14 @@ Differential effects contain differences between medians.
 These values describe different calculations.
 
 Open **Shared proteins and order** to select the same proteins for all matrices.
-Choose the prepared order, alphabetical order, or a custom ordered list.
-Click **Apply** to update the plots. **Reset** restores the prepared order.
+The automatic list combines self-clustering and colocalization results across comparisons and donors for the cell type.
+It uses condition profiles when no comparison results are available.
+Select **My selection** to choose your own proteins.
+Choose **Automatic reference order**, **Alphabetical**, or **My order** independently.
+Automatic ordering reuses the prepared order or clusters the selected reference profile with Ward.D2.
+Use **Update automatic list** to include completed session comparisons.
+Large lists use larger, stacked matrices. Small lists can appear side by side.
+Click **Apply** to update the plots. **Reset to automatic** restores the current cell type's defaults.
 Select **Compare profiles and difference** for aligned reference, target, and differential panels.
 The two profiles share a color scale. The differential effect uses a separate scale.
 Gray cells keep the positions of unavailable results. They are not zero.

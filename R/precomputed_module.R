@@ -1006,7 +1006,6 @@ precomputed_searched_rows <- function(rows, indices, search = "", column_search 
 }
 
 precomputed_spatial_selection <- function(selected, order, custom, available, prepared) {
-  if (identical(order, "custom")) selected <- trimws(unlist(strsplit(custom, "[,;\n\r]+")))
   selected <- as.character(selected)
   selected <- selected[nzchar(selected)]
   if (!length(selected)) stop("Select at least one protein, then click Apply.", call. = FALSE)
@@ -1014,7 +1013,13 @@ precomputed_spatial_selection <- function(selected, order, custom, available, pr
   unknown <- setdiff(selected, available)
   if (length(unknown)) stop("Unknown proteins: ", paste(unknown, collapse = ", "), call. = FALSE)
   if (identical(order, "alphabetical")) return(sort(selected, method = "radix"))
-  if (identical(order, "custom")) return(selected)
+  if (identical(order, "custom")) {
+    ordered <- trimws(unlist(strsplit(custom, "[,;\n\r]+")))
+    ordered <- ordered[nzchar(ordered)]
+    if (anyDuplicated(ordered)) stop("Use each protein only once in My order.", call. = FALSE)
+    if (!setequal(ordered, selected)) stop("My order must contain exactly the selected proteins. Change My selection to add or remove proteins.", call. = FALSE)
+    return(ordered)
+  }
   unique(c(prepared[prepared %in% selected], sort(setdiff(selected, prepared), method = "radix")))
 }
 
@@ -1463,34 +1468,81 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     spatial_markers <- shiny::reactiveVal(character())
     spatial_selection_error <- shiny::reactiveVal(NULL)
-    spatial_prepared_order <- shiny::reactive({
-      contract <- current_data()$contract
-      order <- report_spatial_markers(contract$report$alignment, scope()$celltype)
-      for (readout in c("self_proximity", "colocalization")) {
-        rows <- precomputed_contract_table(contract, "sample_summaries", readout)
-        rows <- rows[rows$celltype == scope()$celltype & rows$metric == "population_mean_log2_ratio_missing_zero", , drop = FALSE]
-        order <- unique(c(order, rows$marker_1, rows$marker_2))
-      }
-      if (!length(order)) order <- sort(rownames(current_data()$abundance), method = "radix")
-      order
-    })
-    reset_spatial_selection <- function() {
-      order <- spatial_prepared_order()
-      spatial_markers(order)
+    spatial_auto <- shiny::reactiveVal(NULL)
+    spatial_applied_mode <- shiny::reactiveVal("automatic")
+    spatial_applied_order <- shiny::reactiveVal("automatic")
+    spatial_order_note <- shiny::reactiveVal("")
+    spatial_reference_choices <- shiny::reactive(report_spatial_reference(prepared_alignment(), scope()$celltype))
+    refresh_spatial_auto <- function(reset = FALSE) {
+      reference <- spatial_reference_choices()
+      donor <- if (reset) reference$donor else precomputed_keep_selection(input$spatial_reference_donor, unique(reference$choices$donor))
+      conditions <- reference$choices$panel[reference$choices$donor %in% donor]
+      condition <- if (reset) reference$condition else precomputed_keep_selection(input$spatial_reference_condition, conditions)
+      auto <- report_spatial_protein_set(current_data()$contract, scope()$celltype,
+        prepared_alignment(), analysis$history())
+      auto$markers <- intersect(auto$markers, rownames(current_data()$abundance))
+      ordered <- report_spatial_order(prepared_alignment(), scope()$celltype, auto$markers, donor, condition)
+      auto$markers <- ordered$markers
+      auto$method <- ordered$method
+      auto$donor <- donor
+      auto$condition <- condition
+      auto$celltype <- scope()$celltype
+      auto$history_ids <- names(analysis$history())
+      spatial_auto(auto)
       spatial_selection_error(NULL)
+      shiny::updateSelectInput(session, "spatial_reference_donor", choices = unique(reference$choices$donor), selected = donor)
+      shiny::updateSelectInput(session, "spatial_reference_condition", choices = conditions, selected = condition)
       shiny::updateSelectizeInput(session, "spatial_markers", choices = rownames(current_data()$abundance),
-        selected = order, server = TRUE)
-      shiny::updateSelectInput(session, "spatial_order", selected = "prepared")
-      shiny::updateTextAreaInput(session, "spatial_custom_order", value = paste(order, collapse = ", "))
+        selected = if (reset) auto$markers else spatial_markers(), server = TRUE)
+      if (reset || (identical(spatial_applied_mode(), "automatic") && !identical(spatial_applied_order(), "custom"))) {
+        order <- if (!reset && identical(spatial_applied_order(), "alphabetical")) sort(auto$markers, method = "radix") else auto$markers
+        spatial_markers(order)
+        spatial_order_note(paste(auto$source, "·", if (!reset && identical(spatial_applied_order(), "alphabetical")) "Alphabetical" else auto$method,
+          if (length(donor) == 1L && length(condition) == 1L && !anyNA(c(donor, condition))) paste0("(", donor, " / ", condition, ")") else ""))
+        shiny::updateTextAreaInput(session, "spatial_custom_order", value = paste(order, collapse = ", "))
+      }
+      if (reset) {
+        spatial_applied_mode("automatic")
+        spatial_applied_order("automatic")
+        shiny::updateSelectInput(session, "spatial_set", selected = "automatic")
+        shiny::updateSelectInput(session, "spatial_order", selected = "automatic")
+      }
     }
-    shiny::observeEvent(current_data(), reset_spatial_selection(), priority = 50)
-    shiny::observeEvent(input$spatial_reset, reset_spatial_selection())
+    shiny::observeEvent(current_data(), refresh_spatial_auto(TRUE), priority = 50)
+    shiny::observeEvent(scope()$celltype, {
+      if (!identical(spatial_auto()$celltype, scope()$celltype) &&
+          identical(spatial_applied_mode(), "automatic") && !identical(spatial_applied_order(), "custom"))
+        refresh_spatial_auto(TRUE)
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$spatial_reset, refresh_spatial_auto(TRUE))
+    shiny::observeEvent(input$spatial_refresh, refresh_spatial_auto())
+    shiny::observeEvent(input$spatial_reference_donor, {
+      choices <- spatial_reference_choices()$choices
+      conditions <- choices$panel[choices$donor %in% input$spatial_reference_donor]
+      shiny::updateSelectInput(session, "spatial_reference_condition", choices = conditions,
+        selected = precomputed_keep_selection(input$spatial_reference_condition, conditions))
+    })
     shiny::observeEvent(input$spatial_apply, {
       tryCatch({
-        markers <- precomputed_spatial_selection(input$spatial_markers,
-          precomputed_scope_value(input$spatial_order, "prepared"), input$spatial_custom_order,
-          rownames(current_data()$abundance), spatial_prepared_order())
+        if (!identical(spatial_auto()$celltype, scope()$celltype)) refresh_spatial_auto()
+        mode <- precomputed_scope_value(input$spatial_set, "automatic")
+        order <- precomputed_scope_value(input$spatial_order, "automatic")
+        selected <- if (mode == "automatic") spatial_auto()$markers else input$spatial_markers
+        donor <- if (is.null(input$spatial_reference_donor)) spatial_auto()$donor else input$spatial_reference_donor
+        condition <- if (is.null(input$spatial_reference_condition)) spatial_auto()$condition else input$spatial_reference_condition
+        references <- spatial_reference_choices()
+        if (!any(donor %in% references$choices$donor)) donor <- references$donor
+        conditions <- references$choices$panel[references$choices$donor %in% donor]
+        if (!any(condition %in% conditions)) condition <- conditions[1L]
+        ordered <- if (order %in% c("automatic", "prepared")) report_spatial_order(prepared_alignment(), scope()$celltype,
+          unique(c(spatial_auto()$markers, selected)), donor, condition) else list(markers = selected, method = if (order == "custom") "My order" else "Alphabetical")
+        markers <- precomputed_spatial_selection(selected, order, input$spatial_custom_order,
+          rownames(current_data()$abundance), ordered$markers)
         spatial_markers(markers)
+        spatial_applied_mode(mode)
+        spatial_applied_order(order)
+        spatial_order_note(paste(if (mode == "automatic") spatial_auto()$source else "My selection", "·", ordered$method,
+          if (order == "automatic" && length(donor) == 1L && length(condition) == 1L && !anyNA(c(donor, condition))) paste0("(", donor, " / ", condition, ")") else ""))
         spatial_selection_error(NULL)
         shiny::updateSelectizeInput(session, "spatial_markers", selected = markers)
       }, error = function(e) spatial_selection_error(conditionMessage(e)))
@@ -1498,8 +1550,22 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     output$spatial_selection_status <- shiny::renderText({
       if (!is.null(spatial_selection_error())) return(paste("Not applied:", spatial_selection_error()))
       markers <- spatial_markers()
-      paste(length(markers), "proteins applied. Order:", paste(head(markers, 12L), collapse = ", "),
-        if (length(markers) > 12L) "… (download Protein order CSV for the full list)" else "")
+      paste(length(markers), "proteins applied ·", spatial_order_note())
+    })
+    output$spatial_auto_status <- shiny::renderText({
+      auto <- spatial_auto()
+      if (is.null(auto)) return("")
+      history <- analysis$history()
+      related <- vapply(history, function(entry) identical(entry$request$celltype, scope()$celltype) &&
+        entry$request$readout %in% c("self_proximity", "colocalization"), logical(1))
+      new_results <- setdiff(names(history)[related], auto$history_ids)
+      paste(length(auto$markers), "proteins in the automatic list for", auto$celltype,
+        "across comparisons and donors.",
+        if (length(new_results)) "New session results are available. Click Update automatic list to include them." else "")
+    })
+    shiny::observeEvent(spatial_markers(), {
+      session$sendCustomMessage("precomputed-spatial-size", list(id = session$ns("spatial_matrix_region"),
+        proteins = length(spatial_markers())))
     })
     output$download_spatial_order <- shiny::downloadHandler(
       filename = function() "proxiomevis_protein_order.csv",
@@ -1608,7 +1674,10 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         spatial_scope()$donor, spatial_scope()$celltype, spatial_scope()$kind,
         spatial_scope()$panel, "spatial-report"
       ), ".svg"),
-      content = function(file) precomputed_write_svg(spatial_report_ggplot(), file, 12, 9)
+      content = function(file) {
+        edge <- max(9, length(spatial_markers()) * .16 + 3)
+        precomputed_write_svg(spatial_report_ggplot(), file, edge, edge)
+      }
     )
     spatial_comparison_plots <- shiny::reactive({
       selected <- spatial_scope()
@@ -1627,12 +1696,21 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         scope()$comparison, "spatial-comparison"), ".svg"),
       content = function(file) {
         plots <- spatial_comparison_plots()
-        grDevices::svg(file, width = 24, height = 8)
+        edge <- max(8, length(spatial_markers()) * .16 + 3)
+        grDevices::svg(file, width = 3 * edge, height = edge)
         on.exit(grDevices::dev.off(), add = TRUE)
+        grobs <- lapply(plots, ggplot2::ggplotGrob)
+        widths <- Reduce(grid::unit.pmax, lapply(grobs, `[[`, "widths"))
+        heights <- Reduce(grid::unit.pmax, lapply(grobs, `[[`, "heights"))
         grid::grid.newpage()
         grid::pushViewport(grid::viewport(layout = grid::grid.layout(1, 3)))
-        for (i in seq_along(plots)) print(plots[[i]], newpage = FALSE,
-          vp = grid::viewport(layout.pos.row = 1, layout.pos.col = i))
+        for (i in seq_along(grobs)) {
+          grobs[[i]]$widths <- widths
+          grobs[[i]]$heights <- heights
+          grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = i))
+          grid::grid.draw(grobs[[i]])
+          grid::popViewport()
+        }
       }
     )
 

@@ -324,21 +324,51 @@ differential effects show differences of observed medians. The former must not
 be subtracted to reconstruct the latter. Untested or unavailable entries are
 distinguished from measured values near zero.
 
-Open **Shared proteins and order** to select proteins. Select **Prepared order**,
-**Alphabetical**, or **Custom ordered list**. A custom list sets both the protein
-selection and the order. Separate names with commas or new lines. Click **Apply**.
-The previous display stays active until you apply a valid selection.
+The automatic protein list combines proteins from self-clustering and
+colocalization results for the selected cell type, across prepared comparisons
+and donors. It includes nonsignificant results. A colocalization pair contributes
+both proteins, regardless of pair order. If no spatial comparison result is
+available, the list uses proteins with supported condition profiles.
+
+Open **Shared proteins and order** to change the defaults:
+
+1. Keep **Automatic union across comparisons**, or choose **My selection** and
+   select proteins.
+2. Select **Automatic reference order**, **Alphabetical**, or **My order**.
+3. For automatic ordering, select the ordering reference donor and condition.
+   For **My order**, enter each selected protein once, separated by commas or
+   new lines. The list must contain exactly the selected proteins.
+4. Click **Apply**. Invalid input leaves the previous display active.
+
+Selection and ordering are independent. A manual selection can use automatic
+ordering. Automatic ordering reuses the prepared reference order when available.
+Otherwise, it uses Euclidean distances and Ward.D2 clustering of the reference
+protein profiles. The calculation uses reference columns with finite values for
+all participating proteins. It does not impute unavailable scores. Proteins with
+no reference values go at the end alphabetically. With fewer than two proteins
+or two shared reference columns, the order is alphabetical. Ordering does not
+read cell-level sidecars or rerun tests.
 
 Select **Compare profiles and difference** to show the reference profile, target
 profile, and differential effect together. All panels use the same axes. The two
 profiles share one color scale. The differential panel has its own effect scale.
-Use **Single** or a full-screen card when many proteins make the panels too small.
+The layout reserves space for protein labels and legends. Large protein lists
+use larger matrices and stack the panels. Small lists can appear side by side.
+Use scrolling or the full-screen button to inspect large matrices. SVG export
+dimensions increase with protein count; comparison exports align the three
+matrix panels. Profile dot sizes show the fraction of cells with a score.
+Differential dot sizes show capped −log10(adjusted P), with black outlines for
+results that meet the stored significance threshold (0.05 in the demo).
 
 Unavailable pairs keep their positions as gray cells. They are not zero.
-Changing the result source, condition, donor, or cell type keeps the applied
-protein order. **Reset** restores the prepared order for the current cell type.
-Loading another dataset resets the selection. SVG and CSV exports use the applied
-selection. **Protein order CSV** records the ordered axis labels.
+Changing the result source, condition, or donor keeps the applied protein order
+for the same cell type. In automatic mode, selecting a different cell type loads
+its default list and order. Manual selections or custom orders stay applied.
+**Update automatic list** includes completed spatial comparisons from the current
+session. Completion alone does not change the axes. Manual selections and orders
+remain applied after an update. **Reset to automatic** restores defaults for the
+current cell type. Loading another dataset resets the selection. SVG and CSV
+exports use the applied selection. **Protein order CSV** records the ordered axes.
 
 Condition profiles do not require saved differential tests. Prepared bundles can
 contain only profiles. The [general preparation tool](prepare-user-data.md) can

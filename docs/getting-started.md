@@ -128,23 +128,32 @@ the proximity sidecar; the app shows a message if it is unavailable.
 
 ### Align spatial matrices
 
-In **Spatial patterns**, open **Shared proteins and order**. Select proteins
-and choose the prepared order, alphabetical order, or a custom ordered list.
-For a custom list, separate names with commas or new lines. For example:
+In **Spatial patterns**, the automatic list combines proteins from spatial
+results across comparisons and donors for the selected cell type. Profiles
+supply the list if no comparisons are available. The order follows one
+reference profile and stays fixed while you browse comparisons.
+
+Open **Shared proteins and order**. Keep the automatic list or select **My
+selection** and choose proteins. Select **Automatic reference order**,
+**Alphabetical**, or **My order** independently. For **My order**, include each
+selected protein once, separated by commas or new lines. For example:
 
 ```text
 CD19, CD37, CD53, CD81, CD82
 ```
 
 Click **Apply**. This list controls both axes of every spatial matrix.
-Click **Reset** to restore the dataset defaults. The applied list stays the
-same when you switch profiles, comparisons, or result sources. Loading another
-dataset resets it. Selection and ordering do not rerun tests or change adjusted
-P values.
+Click **Reset to automatic** to restore the current cell type's defaults.
+Use **Update automatic list** to include completed session comparisons.
+The applied list stays the same when you switch profiles, donors, comparisons,
+or result sources for the same cell type. Automatic lists follow the cell type;
+manual selections and orders stay applied. Loading another dataset resets the
+selection. These controls do not rerun tests or change adjusted P values.
 
 Choose **Single** for one matrix. Choose **Compare profiles and difference**
 to show the reference profile, target profile, and differential effect together.
-All three panels use the same protein positions. The two profiles share a fixed
+Large lists use larger, stacked matrices with scrolling. Small lists can appear
+side by side. All three panels use the same protein positions. The two profiles share a fixed
 color scale. The differential panel uses a separate fixed scale. Gray cells
 mean that a result is unavailable or untested; missing values are not zero.
 

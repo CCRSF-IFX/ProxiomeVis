@@ -51,7 +51,7 @@ async function select(id, value) {
     else if (element.selectize) element.selectize.setValue(${JSON.stringify(value)});
     else { element.value = ${JSON.stringify(value)}; element.dispatchEvent(new Event('change', {bubbles:true})); }
   })()`);
-  await waitFor(`Shiny.shinyapp.$inputValues[${JSON.stringify(`report-${id}`)}] === ${JSON.stringify(value)}`);
+  await waitFor(`JSON.stringify(Shiny.shinyapp.$inputValues[${JSON.stringify(`report-${id}`)}]) === JSON.stringify(${JSON.stringify(value)})`);
   await delay(300);
 }
 async function noErrors() {
@@ -61,6 +61,8 @@ async function noErrors() {
 
 try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1700, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await call('Page.navigate', { url: 'about:blank' });
+  await waitFor("location.href === 'about:blank'");
   await call('Page.navigate', { url: appUrl });
   await waitFor("document.getElementById('report-metric_cells')?.textContent.trim().length > 0");
   await tab('Results');
@@ -69,10 +71,45 @@ try {
   await select('celltype', 'B');
   await tab('Spatial patterns');
   await waitFor("document.getElementById('report-spatial_report_plot')?._fullLayout?.xaxis?.ticktext?.length > 0");
+  const automaticOrder = await evaluate("document.getElementById('report-spatial_report_plot')._fullLayout.xaxis.ticktext");
+  assert.ok(automaticOrder.length >= 30, 'Exercise the full prepared union, not just a small marker subset');
+  assert.equal(await evaluate("document.querySelector('.spatial-protein-controls .accordion-button').getAttribute('aria-expanded')"), 'false');
+  await select('spatial_layout', 'compare');
+  for (const name of ['reference', 'target', 'difference']) {
+    await waitFor(`document.getElementById('report-spatial_${name}')?._fullLayout?.xaxis?.ticktext?.length === ${automaticOrder.length}`);
+    assert.deepEqual(await evaluate(`document.getElementById('report-spatial_${name}')._fullLayout.xaxis.ticktext`), automaticOrder);
+    const pitch = await evaluate(`document.getElementById('report-spatial_${name}')._fullLayout.xaxis._length / ${automaticOrder.length}`);
+    assert.ok(pitch >= 14, `Crowded ${name} matrix: ${pitch} pixels per protein`);
+  }
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.spatial-comparison')).gridTemplateColumns.split(' ').length"), 1);
+  await evaluate("document.querySelector('.spatial-comparison').scrollIntoView({block:'start'})");
+  await delay(500);
+  const automaticScreenshot = await call('Page.captureScreenshot', { format: 'png' });
+  await writeFile('/tmp/proxiomevis-spatial-automatic.png', Buffer.from(automaticScreenshot.data, 'base64'));
+  console.log(`PASS: ${automaticOrder.length}-protein automatic union, common order and readable matrix spacing`);
+  await call('Emulation.setDeviceMetricsOverride', { width: 700, height: 1100, deviceScaleFactor: 1, mobile: true });
+  await delay(700);
+  assert.ok(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), 'Large matrices must scroll inside their cards');
+  assert.ok(await evaluate("document.getElementById('report-spatial_reference').closest('.spatial-scroll').scrollWidth > document.getElementById('report-spatial_reference').closest('.spatial-scroll').clientWidth"));
+  await call('Emulation.setDeviceMetricsOverride', { width: 1700, height: 1100, deviceScaleFactor: 1, mobile: false });
+  await evaluate("document.querySelector('.spatial-protein-controls .accordion-button').click()");
+  await select('spatial_reference_donor', 'd2');
+  await select('spatial_reference_condition', 'unstim');
+  assert.deepEqual(await evaluate("document.getElementById('report-spatial_reference')._fullLayout.xaxis.ticktext"), automaticOrder);
+  await evaluate("document.getElementById('report-spatial_apply').click()");
+  await waitFor("document.getElementById('report-spatial_selection_status').textContent.includes('Ward.D2 (d2 / unstim)')");
+  await noErrors();
+  await evaluate("document.getElementById('report-spatial_reset').click()");
+  await waitFor("document.getElementById('report-spatial_selection_status').textContent.includes('Prepared reference order (d1 / unstim)')");
+  await waitFor(`JSON.stringify(document.getElementById('report-spatial_reference')._fullLayout.xaxis.ticktext) === ${JSON.stringify(JSON.stringify(automaticOrder))}`);
+  console.log('PASS: large-matrix mobile scrolling, draft reference change, Ward ordering and prepared-order reset');
+  await select('spatial_set', 'manual');
+  await select('spatial_markers', ['CD19', 'CD37', 'CD53', 'CD81', 'CD82']);
   await select('spatial_order', 'custom');
   await select('spatial_custom_order', 'CD82, CD81, CD53, CD37, CD19');
   await evaluate("document.getElementById('report-spatial_apply').click()");
   await waitFor("document.getElementById('report-spatial_selection_status').textContent.startsWith('5 proteins applied')");
+  await evaluate("document.querySelector('.spatial-protein-controls .accordion-button').click()");
   await select('spatial_layout', 'compare');
   const expected = ['CD82', 'CD81', 'CD53', 'CD37', 'CD19'];
   for (const name of ['reference', 'target', 'difference']) {
@@ -85,6 +122,8 @@ try {
   await noErrors();
   assert.ok(await evaluate("[...document.querySelectorAll('#report-spatial_difference .legendtext')].some(x=>x.textContent==='4 (capped)')"),
     'The significance-size scale must be visible, not just binary significance labels');
+  assert.ok(await evaluate("[...document.querySelectorAll('#report-spatial_reference .legendtext')].some(x=>x.textContent==='100%')"),
+    'The condition profile must explain detection-fraction dot sizes');
   const geometry = await evaluate("['reference','target','difference'].map(n=>{const p=document.getElementById('report-spatial_'+n)._fullLayout;return {width:p.xaxis._length,height:p.yaxis._length,top:p.yaxis._offset};})");
   assert.ok(geometry.every(p => Math.abs(p.width - geometry[0].width) < 1 &&
     Math.abs(p.height - geometry[0].height) < 1 && Math.abs(p.top - geometry[0].top) < 1),
@@ -93,7 +132,7 @@ try {
   assert.ok(rects[0].x < rects[1].x && rects[1].x < rects[2].x);
   assert.ok(rects.every(r => Math.abs(r.y - rects[0].y) < 2));
   await evaluate("document.querySelector('.spatial-comparison').scrollIntoView({block:'start'})");
-  await delay(500);
+  await delay(1200);
   const screenshot = await call('Page.captureScreenshot', { format: 'png' });
   await writeFile('/tmp/proxiomevis-redesign-spatial.png', Buffer.from(screenshot.data, 'base64'));
   await waitFor("document.getElementById('report-download_spatial_compare_csv')?.href?.includes('download')");

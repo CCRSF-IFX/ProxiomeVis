@@ -97,7 +97,7 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
     keys[index[keep, , drop = FALSE]] <- rows$.feature_key[keep]
     widget <- plotly::add_trace(widget, type = "heatmap", x = seq_along(x), y = seq_along(y),
       z = z, text = text, hoverinfo = "text", hoverongaps = FALSE,
-      colorscale = list(c(0, "#D1D1D1"), c(1, "#D1D1D1")), zmin = 0, zmax = 1,
+      colorscale = list(c(0, "#E9EDF0"), c(1, "#E9EDF0")), zmin = 0, zmax = 1,
       showscale = FALSE, showlegend = FALSE, inherit = FALSE)
     widget <- plotly::plotly_build(widget)
     i <- which(vapply(widget$x$data, function(trace) identical(trace$type, "heatmap"), logical(1)))
@@ -138,30 +138,42 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
         showlegend = TRUE, hoverinfo = "skip")
     }
     widget <- plotly::layout(widget, legend = list(title = list(text =
-      "Significance size<br>-log10(adj. P)")))
+      "Significance<br>−log10(adj. P)")))
+  } else if (!is.null(plot$scales$get_scales("size"))) {
+    breaks <- c(.25, .5, .75, 1)
+    sizes <- plot$scales$get_scales("size")$map(breaks) * 96 / 25.4
+    size_legend <- lapply(seq_along(breaks), function(i) list(type = "scatter", mode = "markers",
+      name = paste0(breaks[[i]] * 100, "%"), legendgroup = "detection-size",
+      x = list(NA_real_), y = list(NA_real_), marker = list(size = sizes[[i]], color = "#D9D9D9",
+        line = list(color = "#596873", width = 1)), showlegend = TRUE, hoverinfo = "skip"))
+    widget <- plotly::layout(widget, legend = list(title = list(text = "Cells with<br>a score")))
   }
   if (length(size_legend)) {
     widget <- plotly::plotly_build(widget)
     widget$x$data <- c(widget$x$data, size_legend)
+    widget$x$layout$showlegend <- TRUE
   }
-  if (isTRUE(comparison)) {
+  if (length(plot$scales$get_scales("x")$limits)) {
     widget <- plotly::plotly_build(widget)
     # Reserve identical space for every panel; extra effect legends must not shrink its matrix.
-    widget$x$layout$margin <- list(l = 60, r = 150, t = 70, b = 60, autoexpand = FALSE)
+    widget$x$layout$margin <- list(l = 110, r = 150, t = 65, b = 125, autoexpand = FALSE)
     for (axis in c("xaxis", "yaxis")) {
       widget$x$layout[[axis]]$domain <- c(0, 1)
       widget$x$layout[[axis]]$automargin <- FALSE
+      widget$x$layout[[axis]]$tickfont <- list(size = 11, color = "#263238")
     }
+    widget$x$layout$xaxis$tickangle <- -45
+    widget$x$layout$yaxis$constraintoward <- "top"
     widget$x$layout$legend <- utils::modifyList(widget$x$layout$legend,
-      list(x = 1.03, y = 0.43, xanchor = "left", yanchor = "top", font = list(size = 9)))
+      list(x = 1.03, y = 0.47, xanchor = "left", yanchor = "top", font = list(size = 11)))
     widget$x$data <- lapply(widget$x$data, function(trace) {
+      if (!any(trace$legendgroup %in% c("significance-size", "detection-size"))) trace$showlegend <- FALSE
       if (!is.null(trace$marker$colorbar)) {
         trace$marker$colorbar <- utils::modifyList(trace$marker$colorbar,
           list(x = 1.03, y = 1, yanchor = "top", len = 0.46, thickness = 12,
-            xpad = 0, ypad = 0, tickfont = list(size = 9)))
-        if (isTRUE(is_difference)) {
-          trace$marker$colorbar$title <- list(text = "Difference<br>in medians", font = list(size = 10))
-        }
+            xpad = 0, ypad = 0, tickfont = list(size = 11)))
+        trace$marker$colorbar$title <- list(text = if (isTRUE(is_difference)) "Difference<br>in medians" else "Mean<br>log2 ratio",
+          font = list(size = 11))
       }
       trace
     })
@@ -169,7 +181,7 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
   widget |>
     plotly::event_register("plotly_click") |>
     plotly::layout(dragmode = "zoom", hovermode = "closest") |>
-    plotly::config(scrollZoom = TRUE, displayModeBar = TRUE,
+    plotly::config(scrollZoom = TRUE, displayModeBar = "hover",
                    displaylogo = FALSE, doubleClick = "reset")
 }
 
@@ -619,6 +631,88 @@ report_spatial_markers <- function(alignment, celltype = NULL) {
     select(alignment$profiles, c("marker_1", "marker_2")),
     select(alignment$differences, c("marker_1", "marker_2"))))
   markers[!is.na(markers) & nzchar(markers)]
+}
+
+# Union result proteins across donors/contrasts, not just the visible or significant rows.
+report_spatial_protein_set <- function(contract, celltype, alignment, history = list()) {
+  tested <- character()
+  add <- function(rows, effect = "effect_size") {
+    if (!is.data.frame(rows) || !all(c("marker_1", "marker_2", effect) %in% names(rows))) return(character())
+    if ("celltype" %in% names(rows)) rows <- rows[rows$celltype %in% celltype, , drop = FALSE]
+    rows <- rows[is.finite(rows[[effect]]), , drop = FALSE]
+    if ("is_control" %in% names(rows)) rows <- rows[!rows$is_control %in% TRUE, , drop = FALSE]
+    c(as.character(rows$marker_1), as.character(rows$marker_2))
+  }
+  for (readout in c("self_proximity", "colocalization")) {
+    for (section in c("donor_contrasts", "differential_results")) {
+      tested <- c(tested, add(as.data.frame(contract[[section]][[readout]])))
+    }
+  }
+  tested <- c(tested, add(as.data.frame(alignment$differences), "value"))
+  for (entry in history) {
+    if (identical(entry$request$celltype, celltype) &&
+        entry$request$readout %in% c("self_proximity", "colocalization")) {
+      tested <- c(tested, add(as.data.frame(entry$result$results)))
+    }
+  }
+  tested <- sort(unique(tested[!is.na(tested) & nzchar(tested)]), method = "radix")
+  if (length(tested)) return(list(markers = tested, source = "Union of spatial comparison results"))
+  profiles <- as.data.frame(alignment$profiles)
+  keep <- profiles$celltype %in% celltype & is.finite(profiles$value) & profiles$status %in% "supported"
+  if ("pct_detected" %in% names(profiles)) keep <- keep & is.finite(profiles$pct_detected) & profiles$pct_detected > 0
+  profiles <- profiles[keep, , drop = FALSE]
+  markers <- sort(unique(c(as.character(profiles$marker_1), as.character(profiles$marker_2))), method = "radix")
+  list(markers = markers, source = "Available condition profiles (no spatial comparison results)")
+}
+
+report_spatial_reference <- function(alignment, celltype) {
+  profiles <- as.data.frame(alignment$profiles)
+  profiles <- profiles[profiles$celltype %in% celltype & is.finite(profiles$value) &
+    profiles$status %in% "supported", , drop = FALSE]
+  choices <- unique(profiles[c("donor", "panel")])
+  choices <- choices[order(choices$donor, choices$panel, method = "radix"), , drop = FALSE]
+  preferred <- which(choices$donor == alignment$cfg$ordering_reference_donor &
+    choices$panel == alignment$cfg$ordering_reference_condition)
+  index <- if (length(preferred)) preferred[[1L]] else if (nrow(choices)) 1L else integer()
+  list(choices = choices, donor = choices$donor[index], condition = choices$panel[index])
+}
+
+# Order from summaries only; never load cell scores or change plotted missing values.
+report_spatial_order <- function(alignment, celltype, markers, donor, condition) {
+  markers <- sort(unique(as.character(markers)), method = "radix")
+  prepared <- as.data.frame(alignment$markers)
+  prepared <- prepared[prepared$celltype %in% celltype, , drop = FALSE]
+  reference <- report_spatial_reference(alignment, celltype)
+  default_reference <- identical(donor, reference$donor) && identical(condition, reference$condition)
+  if (length(alignment$cfg$ordering_reference_donor) == 1L && length(alignment$cfg$ordering_reference_condition) == 1L) {
+    default_reference <- identical(donor, alignment$cfg$ordering_reference_donor) &&
+      identical(condition, alignment$cfg$ordering_reference_condition)
+  }
+  if (nrow(prepared) && default_reference) {
+    if ("marker_rank" %in% names(prepared)) prepared <- prepared[order(prepared$marker_rank), , drop = FALSE]
+    stored <- unique(as.character(prepared$marker))
+    # Reuse an explicit source order; the alphabetical canonical scaffold is not a prepared order.
+    if ("marker_rank" %in% names(prepared) || !identical(stored, sort(stored, method = "radix"))) {
+      ordered <- stored[stored %in% markers]
+      return(list(markers = c(ordered, setdiff(markers, ordered)), method = "Prepared reference order"))
+    }
+  }
+  if (length(donor) != 1L || length(condition) != 1L || is.na(donor) || is.na(condition) || length(markers) < 2L) {
+    return(list(markers = markers, method = "Alphabetical (insufficient reference data)"))
+  }
+  grid <- as.data.frame(report_spatial_rows(alignment, donor, celltype, "profiles", condition, markers))
+  matrix <- matrix(grid$value, nrow = length(markers), dimnames = list(markers, markers))
+  present <- rowSums(is.finite(matrix)) > 0L
+  matrix <- matrix[present, present, drop = FALSE]
+  # Ward distances require a common observed feature space; do not impute unavailable scores.
+  complete_columns <- colSums(!is.finite(matrix)) == 0L
+  signature <- matrix[, complete_columns, drop = FALSE]
+  if (nrow(signature) < 2L || ncol(signature) < 2L) {
+    return(list(markers = markers, method = "Alphabetical (insufficient shared reference values)"))
+  }
+  tree <- stats::hclust(stats::dist(signature), method = "ward.D2")
+  ordered <- rownames(signature)[tree$order]
+  list(markers = c(ordered, setdiff(markers, ordered)), method = "Reference profile · Ward.D2")
 }
 
 # Preserve explicit missing entries; use the reverse pair only when that entry is absent.

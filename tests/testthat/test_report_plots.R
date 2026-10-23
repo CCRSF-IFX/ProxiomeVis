@@ -242,7 +242,7 @@ test_that("interactive spatial matrices retain stored values, scales, order and 
       size_legend <- Filter(function(trace) identical(trace$legendgroup, "significance-size"), built$x$data)
       expect_length(size_legend, 4L)
       expect_identical(vapply(size_legend, `[[`, character(1), "name"), c("0", "1", "2", "6 (capped)"))
-      expect_identical(built$x$layout$legend$title$text, "Significance size<br>-log10(adj. P)")
+      expect_identical(built$x$layout$legend$title$text, "Significance<br>−log10(adj. P)")
     }
     colorbars <- Filter(function(trace) !is.null(trace$marker$colorbar), built$x$data)
     limits <- contract$report$alignment$limits[[kind]]
@@ -273,7 +273,7 @@ test_that("spatial hover distinguishes unavailable pairs, zero effects and color
   tile <- Filter(function(trace) identical(trace$type, "heatmap"), serialized$data)[[1L]]
   expect_equal(tile$key[[1]][[1]], report_feature_key("A", "B"))
   expect_equal(tile$text[[1]][[1]], missing$text[1, 1])
-  expect_true(all(vapply(missing$colorscale, function(x) x[[2L]] == "#D1D1D1", logical(1))))
+  expect_true(all(vapply(missing$colorscale, function(x) x[[2L]] == "#E9EDF0", logical(1))))
   points <- Filter(function(trace) identical(trace$mode, "markers") && !is.null(trace$key), built$x$data)
   zero <- Filter(function(trace) any(grepl("Difference in medians: 0<br>", trace$text, fixed = TRUE)), points)[[1L]]
   expect_identical(zero$marker$color, "rgba(255,255,255,1)")
@@ -324,11 +324,12 @@ test_that("Spatial patterns renders its default comparison on first entry", {
       comparison = "TRT vs NC", results_view = "Spatial patterns")
     expect_identical(spatial_scope()$kind, "differences")
     expect_identical(spatial_scope()$panel, "TRT_vs_NC")
-    expect_equal(nrow(spatial_report_ggplot()$data), 4L)
-    expect_true(all(spatial_report_ggplot()$data$status == "supported"))
+    expect_equal(nrow(spatial_report_ggplot()$data), 9L)
+    expect_equal(sum(spatial_report_ggplot()$data$status == "supported"), 4L)
+    expect_setequal(spatial_markers(), c("A", "B", "C"))
     session$setInputs(spatial_kind = "profiles")
     expect_identical(spatial_scope()$panel, "TRT")
-    expect_equal(nrow(spatial_report_ggplot()$data), 4L)
+    expect_equal(nrow(spatial_report_ggplot()$data), 9L)
   })
   html <- as.character(precomputed_ui("report"))
   expect_match(html, 'id="report-spatial_loading"', fixed = TRUE)

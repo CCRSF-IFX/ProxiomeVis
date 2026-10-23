@@ -74,12 +74,15 @@ test_that("comparison panels reserve identical matrix geometry despite different
     expect_equal(widget$x$layout$yaxis$scaleratio, 1)
     expect_identical(widget$x$layout$dragmode, "zoom")
     expect_true(widget$x$config$scrollZoom)
+    expect_true(widget$x$layout$showlegend)
   }
   single <- plotly::plotly_build(report_spatial_plotly(plots[[3L]]))
   extract_values <- function(widget) lapply(widget$x$data, function(trace)
     trace[intersect(c("x", "y", "z", "text", "key", "customdata"), names(trace))])
   expect_equal(extract_values(widgets[[3L]]), extract_values(single))
-  expect_false(identical(single$x$layout$margin, widgets[[3L]]$x$layout$margin))
+  expect_identical(single$x$layout$margin, widgets[[3L]]$x$layout$margin)
+  detection <- Filter(function(trace) identical(trace$legendgroup, "detection-size"), widgets[[1L]]$x$data)
+  expect_identical(vapply(detection, `[[`, character(1), "name"), c("25%", "50%", "75%", "100%"))
 })
 
 test_that("significance size legend has drawable traces matching plotted point diameters", {

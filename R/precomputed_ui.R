@@ -7,12 +7,14 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
       shiny::tags$head(shiny::tags$script(src = "precomputed.js"),
         shiny::tags$style(shiny::HTML(
           ".spatial-plot:has(.js-plotly-plot):not(:has(.recalculating)) .spatial-loading, .spatial-plot:has(.shiny-output-error) .spatial-loading {display:none;}
-           .spatial-matrix {width:100%;max-width:900px;}
-           .spatial-matrix .plotly {aspect-ratio:6 / 5;min-height:400px;}
-           .spatial-comparison {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;}
+           .spatial-scroll {overflow:auto;max-height:85vh;}
+           .spatial-matrix {width:100%;max-width:max(900px,var(--spatial-panel-min,480px));min-width:var(--spatial-panel-min,480px);margin-inline:auto;}
+           .spatial-matrix .plotly {aspect-ratio:1;min-height:480px;}
+           .spatial-comparison {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--spatial-panel-min,480px)),1fr));gap:1rem;align-items:start;}
            .spatial-comparison .card {min-width:0;}
            .spatial-protein-controls .selectize-input {max-height:130px;overflow-y:auto;}
-           @media (max-width:1199px) {.spatial-comparison {grid-template-columns:1fr;}}")))),
+           .spatial-selection-summary {font-size:.85rem;color:#59696B;margin:.65rem 0;}
+           @media (max-width:767px) {.spatial-comparison {grid-template-columns:1fr;}}")))),
     bslib::nav_panel(
       "Overview / QC",
       shiny::uiOutput(ns("dataset_heading")),
@@ -137,25 +139,34 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
         bslib::nav_panel(
           "Spatial patterns",
           shiny::uiOutput(ns("spatial_view_control")),
-          shiny::conditionalPanel("!input.spatial_view || input.spatial_view == 'matrix'", ns = ns,
+          shiny::conditionalPanel("!input.spatial_view || input.spatial_view == 'matrix'", ns = ns, id = ns("spatial_matrix_region"),
           bslib::accordion(bslib::accordion_panel("Shared proteins and order",
-            bslib::layout_columns(col_widths = c(5, 3, 4), fill = FALSE,
-            shiny::selectizeInput(ns("spatial_markers"), "Proteins", choices = character(), multiple = TRUE,
-              width = "100%", options = list(plugins = list("remove_button"))),
+            bslib::layout_column_wrap(width = "260px", fill = FALSE,
+            shiny::selectInput(ns("spatial_set"), "Protein list", choices = c(
+              "Automatic union across comparisons" = "automatic", "My selection" = "manual")),
             shiny::selectInput(ns("spatial_order"), "Protein order", choices = c(
-              "Prepared order" = "prepared", "Alphabetical" = "alphabetical", "Custom ordered list" = "custom"), width = "100%"),
+              "Automatic reference order" = "automatic", "Alphabetical" = "alphabetical", "My order" = "custom"))),
+            shiny::conditionalPanel("input.spatial_set == 'manual'", ns = ns,
+            shiny::selectizeInput(ns("spatial_markers"), "Proteins", choices = character(), multiple = TRUE,
+              width = "100%", options = list(plugins = list("remove_button")))),
+            shiny::conditionalPanel("input.spatial_order == 'automatic'", ns = ns,
+              bslib::layout_column_wrap(width = "260px", fill = FALSE,
+                shiny::selectInput(ns("spatial_reference_donor"), "Ordering reference donor", choices = character()),
+                shiny::selectInput(ns("spatial_reference_condition"), "Ordering reference condition", choices = character()))),
             shiny::conditionalPanel("input.spatial_order == 'custom'", ns = ns,
               shiny::textAreaInput(ns("spatial_custom_order"), "Proteins in order (commas or new lines)",
                 placeholder = "CD19, CD37, CD53, CD81, CD82", rows = 3, width = "100%"),
-              shiny::tags$p(class = "small text-muted", "The custom list sets both the protein selection and its order.")
-            )),
+              shiny::tags$p(class = "small text-muted", "Use each selected protein once. Change My selection to add or remove proteins.")),
             precomputed_download_group(
               shiny::actionButton(ns("spatial_apply"), "Apply", class = "btn-primary"),
-              shiny::actionButton(ns("spatial_reset"), "Reset", class = "btn-outline-secondary"),
+              shiny::actionButton(ns("spatial_reset"), "Reset to automatic", class = "btn-outline-secondary"),
+              shiny::actionButton(ns("spatial_refresh"), "Update automatic list", class = "btn-outline-secondary"),
               shiny::downloadButton(ns("download_spatial_order"), "Protein order CSV", class = "btn-sm btn-outline-primary")),
-            shiny::textOutput(ns("spatial_selection_status")),
-            shiny::tags$p(class = "small text-muted", "All spatial matrices use this selection and order. Changes affect the display only. Missing results keep their positions; tests and adjusted P values do not change.")
-          ), open = TRUE, class = "spatial-protein-controls"),
+            shiny::textOutput(ns("spatial_auto_status")),
+            shiny::tags$p(class = "small text-muted mt-2", "The automatic list combines self-clustering and colocalization results, including nonsignificant results. Without comparisons, it uses available profiles. Update the list to include completed session comparisons. No tests are rerun.")
+          ), open = FALSE, class = "spatial-protein-controls"),
+          shiny::div(class = "spatial-selection-summary", role = "status", `aria-live` = "polite",
+            shiny::textOutput(ns("spatial_selection_status"))),
           bslib::layout_column_wrap(
             width = "280px", fill = FALSE,
             shiny::radioButtons(ns("spatial_layout"), "Panels", choices = c(
@@ -169,7 +180,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             ))
           ),
           shiny::tags$p(class = "small text-muted",
-            "Available for spatial readouts; combines self-proximity and colocalization. A mean condition profile is not the quantity used for a difference-of-medians effect. No proximity is recalculated."),
+            "Diagonal: self-clustering. Other pairs: colocalization. Gray: unavailable. Hover for values; click a pair to inspect it in Tables or Volcano."),
           shiny::conditionalPanel("!input.spatial_layout || input.spatial_layout == 'single'", ns = ns,
           bslib::card(full_screen = TRUE,
             bslib::card_header("Aligned spatial matrix"),
@@ -177,15 +188,14 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               shiny::downloadButton(ns("download_spatial_report_svg"), "Matrix SVG", class = "btn-sm btn-outline-primary"),
               shiny::downloadButton(ns("download_spatial_csv"), "Displayed spatial rows CSV", class = "btn-sm btn-outline-primary")
             ),
-            shiny::tags$p(class = "small text-muted",
-              "Hover for values and availability; click a marker pair to select it for inspection in Tables or Volcano. Every matrix uses the applied protein order. Color scales stay fixed within each quantity."),
-            shiny::div(class = "spatial-plot spatial-matrix",
+            shiny::div(class = "spatial-scroll", shiny::div(class = "spatial-plot spatial-matrix",
               shiny::div(id = ns("spatial_loading"), class = "spatial-loading alert alert-info",
                 role = "status", `aria-live` = "polite",
                 shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"),
                 "Loading spatial matrix…"),
               plotly::plotlyOutput(ns("spatial_report_plot"), height = "auto")
-            )
+            )),
+            bslib::card_footer(class = "small text-muted", "Profiles: size = fraction of cells with a score. Differences: size = −log10(adjusted P); black outline = significant at the stored threshold. White dots indicate values near zero.")
           )),
           shiny::conditionalPanel("input.spatial_layout == 'compare'", ns = ns,
             shiny::uiOutput(ns("spatial_compare_conditions")),
@@ -197,10 +207,12 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               lapply(c("reference", "target", "difference"), function(key) {
                 label <- switch(key, reference = "Reference profile", target = "Target profile", difference = "Differential effect")
                 bslib::card(full_screen = TRUE, bslib::card_header(label),
-                  shiny::div(class = "spatial-plot spatial-matrix",
+                  shiny::div(class = "spatial-scroll", shiny::div(class = "spatial-plot spatial-matrix",
                     shiny::div(class = "spatial-loading alert alert-info", role = "status",
                       shiny::span(class = "spinner-border spinner-border-sm me-2", `aria-hidden` = "true"), "Loading spatial matrix…"),
-                    plotly::plotlyOutput(ns(paste0("spatial_", key)), height = "auto")))
+                    plotly::plotlyOutput(ns(paste0("spatial_", key)), height = "auto"))),
+                  bslib::card_footer(class = "small text-muted", if (key == "difference")
+                    "Size: −log10(adjusted P). Black outline: significant at the stored threshold." else "Size: fraction of cells with a score."))
               }))
           )),
           shiny::conditionalPanel("input.spatial_view == 'network' && input.readout == 'colocalization'", ns = ns,
@@ -317,12 +329,18 @@ documentation_ui <- function() {
           tags$li("Select Matrix or Network.")),
         tags$p("Matrix shows differential effects or condition profiles. Condition profiles contain means, not differences between medians."),
         tags$h3("Use the same proteins and order"),
-        tags$ol(tags$li("Open Shared proteins and order."), tags$li("Select Proteins."),
-          tags$li("Select Prepared order or Alphabetical. For a specific sequence, select Custom ordered list and enter proteins separated by commas or new lines."),
+        tags$p("The automatic list combines proteins from self-clustering and colocalization results for the cell type, across comparisons and donors. It includes nonsignificant results. Without comparison results, it uses available condition profiles."),
+        tags$ol(tags$li("Open Shared proteins and order."),
+          tags$li("Keep Automatic union across comparisons, or choose My selection and select proteins."),
+          tags$li("Select Automatic reference order, Alphabetical, or My order. My order must contain each selected protein once, separated by commas or new lines."),
           tags$li("Click Apply."), tags$li("Select Single or Compare profiles and difference.")),
-        tags$p("The custom list sets the selection and its order. Each protein can occur only once."),
-        tags$p("All matrices keep the applied axes when you change conditions, cell types, or result sources. Reset restores the prepared order. A new dataset resets the selection."),
+        tags$p("Protein selection and order are independent. You can use automatic ordering for your own protein selection."),
+        tags$p("Automatic reference order uses the prepared order when available. Otherwise, it groups proteins by similar reference profiles with Ward.D2 clustering. Select the ordering reference donor and condition, then click Apply."),
+        tags$p("Ordering uses shared, finite reference values. It does not fill unavailable values with zero. Proteins without reference data appear at the end alphabetically. If too few shared values are available, the order is alphabetical."),
+        tags$p("Axes stay fixed when you browse donors, comparisons, and result sources for the same cell type. Click Update automatic list to include completed session comparisons. A new result does not change the applied axes by itself."),
+        tags$p("The automatic list follows the selected cell type. My selection and My order stay applied until you change them. Reset to automatic restores the current cell type's defaults. A new dataset resets the selection."),
         tags$p("Compare shows the reference profile, target profile, and differential effect. The profile panels share a color scale. The differential effect has its own scale."),
+        tags$p("Large protein lists use larger, stacked matrices. Small lists can appear side by side. Scroll within a large matrix or use the full-screen button. SVG dimensions increase with the protein count."),
         tags$p("If no differential comparison is available, select two profile conditions. The differential panel stays unavailable; the application does not calculate a difference from the means."),
         tags$p("Gray cells indicate unavailable results. They are not zero. A missing test does not remove a protein from the axes."),
         tags$p("Condition profiles can be available without differential tests. Protein selection changes only the display. It does not change tests or adjusted P values."),
