@@ -89,7 +89,8 @@ window.proxiomeCellGraphGif = function(el, graph, data) {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       status.textContent = 'GIF downloaded: ' + seconds + ' s, ' + fps + ' FPS, ' + size + ' × ' + size + ' pixels.';
     } catch (error) {
-      status.textContent = cancelled ? 'Export cancelled.' : 'GIF export failed: ' + error.message;
+      status.textContent = !el.proxiomeCell ? 'Display a cell before exporting.' :
+        cancelled ? 'Export cancelled.' : 'GIF export failed: ' + error.message;
     } finally {
       worker?.terminate();
       scene?.traverse(object => {
@@ -100,7 +101,7 @@ window.proxiomeCellGraphGif = function(el, graph, data) {
       renderer?.dispose();
       renderer?.forceContextLoss();
       if (el.proxiomeGifCancel === stop) el.proxiomeGifCancel = null;
-      button.disabled = !el.isConnected;
+      button.disabled = !el.isConnected || !el.proxiomeCell;
       if (appearance) appearance.disabled = appearanceDisabled;
       display.disabled = previousDisabled;
       inputs.forEach(input => { input.disabled = false; });

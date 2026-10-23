@@ -17,7 +17,7 @@ cell_graph_ui <- function(id) {
       shiny::tags$p(class = "small text-muted",
         "Select the same ranking marker twice for self-clustering. Pair order does not matter. Clear both ranking markers to browse without ranking."),
       shiny::tags$p(class = "small text-muted",
-        "Only Display loads a cell and updates the plot. Changing filters or highlights leaves the last displayed view unchanged. No PXL upload is needed."),
+        "Only Display loads a cell and updates the plot. Changing filters or highlights leaves the last displayed view unchanged. Loading another dataset clears the view and exports. No PXL upload is needed."),
       shiny::tags$div(class = "alert alert-info small",
         "These are abstract graph-layout coordinates, not measured physical positions or distances. Shared-node marker highlights are not a statistical colocalization test.")
     ),
@@ -285,7 +285,14 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         selected = if (ranking_requested()) unname(head(choices, 1L)) else
           precomputed_keep_selection(shiny::isolate(input$cell), unname(choices)), server = TRUE)
     })
-    displayed <- shiny::eventReactive(input$display, {
+    display_request <- shiny::reactiveVal(NULL)
+    shiny::observeEvent(data(), {
+      display_request(NULL)
+      session$sendCustomMessage("proxiome-cell-graph-reset", list(id = session$ns("plot")))
+    }, ignoreNULL = FALSE, priority = 200)
+    shiny::observeEvent(input$display, display_request(input$display), ignoreInit = TRUE)
+    displayed <- shiny::eventReactive(display_request(), {
+      shiny::validate(shiny::need(!is.null(display_request()), "Select a cell and highlight marker, then click Display."))
       shiny::req(active())
       shiny::validate(shiny::need(!handoff_pending() && length(input$condition) == 1L && nzchar(input$condition),
         "Choose a condition before clicking Display."))
@@ -307,7 +314,7 @@ cell_graph_server <- function(id, data, active = shiny::reactive(TRUE), selectio
         list(asset = asset, marker = input$markers, ranking = ranking)
       }),
         error = function(error) shiny::validate(shiny::need(FALSE, conditionMessage(error))))
-    }, ignoreInit = TRUE)
+    }, ignoreNULL = FALSE)
     asset <- shiny::reactive(displayed()$asset)
     appearance <- shiny::reactiveVal(cell_graph_appearance())
     powerpoint_appearance <- shiny::reactiveVal(cell_graph_appearance(

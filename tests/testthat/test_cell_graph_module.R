@@ -222,6 +222,60 @@ test_that("only Display loads a graph and snapshots exactly one highlight", {
   })
 })
 
+test_that("dataset replacement clears the displayed cell and exports until another Display click", {
+  fixture <- cell_graph_module_fixture()
+  current <- shiny::reactiveVal(fixture$data)
+  active <- shiny::reactiveVal(TRUE)
+  resets <- list()
+  mock <- shiny::MockShinySession$new()
+  mock$sendCustomMessage <- function(type, message) {
+    if (type == "proxiome-cell-graph-reset") resets[[length(resets) + 1L]] <<- message
+  }
+  shiny::testServer(cell_graph_server, args = list(data = current, active = active), session = mock, {
+    session$setInputs(donor = "D1", celltype = "B", condition = "NC", cell = "cell1", markers = "A")
+    session$setInputs(display = 1L)
+    expect_identical(asset()$dataset_id, "fixture-v1")
+    expect_no_error(output$model_glb)
+
+    replacement <- fixture$data
+    replacement$contract$dataset_id <- "replacement"
+    replacement_index <- fixture$index
+    replacement_index$dataset_id <- "replacement"
+    saveRDS(replacement_index, fixture$index_path)
+    current(replacement)
+    flush_graph_outputs(session)
+    expect_length(resets, 2L)
+    expect_identical(resets[[2L]]$id, session$ns("plot"))
+    for (read in list(displayed, asset, function() output$plot, function() output$summary,
+                     function() output$glb_estimate, function() output$model_glb,
+                     function() output$nodes_csv, function() output$provenance_json)) {
+      expect_error(read(), "click Display", class = "shiny.silent.error")
+    }
+    session$setInputs(markers = "A", refresh = 1L)
+    expect_length(resets, 2L)
+    expect_error(asset(), "click Display", class = "shiny.silent.error")
+    session$setInputs(display = 2L)
+    expect_identical(asset()$dataset_id, "replacement")
+    expect_no_error(output$model_glb)
+
+    active(FALSE)
+    report_only <- replacement
+    report_only$assets <- NULL
+    current(report_only)
+    flush_graph_outputs(session)
+    expect_length(resets, 3L)
+    expect_error(asset(), "click Display", class = "shiny.silent.error")
+    active(TRUE)
+    current(replacement)
+    flush_graph_outputs(session)
+    expect_error(asset(), "click Display", class = "shiny.silent.error")
+    session$setInputs(display = 3L)
+    expect_identical(asset()$dataset_id, "replacement")
+    expect_no_error(output$plot)
+    expect_false(session$isClosed())
+  })
+})
+
 test_that("ranking controls preserve pair symmetry, describe missing graphs and wait for Display", {
   fixture <- cell_graph_module_fixture()
   fixture$data$assets$proximity <- list(path = "proximity")

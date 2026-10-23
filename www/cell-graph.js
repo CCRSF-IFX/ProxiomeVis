@@ -1,3 +1,27 @@
+Shiny.addCustomMessageHandler('proxiome-cell-graph-reset', ({id}) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.proxiomeCell = el.proxiomeCamera = null;
+  el.proxiomeGifCancel?.();
+  const graph = HTMLWidgets.getInstance(el)?.widget;
+  if (graph) graph.idle = true;
+  el.proxiomeDispose?.();
+  el.proxiomeDispose = () => {};
+  el.querySelectorAll('canvas').forEach(canvas => canvas.remove());
+  for (const suffix of ['_reset', '_png', '_gif']) {
+    const button = document.getElementById(id + suffix);
+    button.disabled = true;
+    button.onclick = null;
+  }
+  for (const suffix of ['model_glb', 'nodes_csv', 'provenance_json']) {
+    const link = document.getElementById(id.replace(/plot$/, suffix));
+    link.inert = true;
+    link.classList.add('disabled');
+    link.setAttribute('aria-disabled', 'true');
+  }
+  document.getElementById(id + '_gif_status').textContent = 'Display a cell before exporting.';
+});
+
 window.proxiomeCellGraph = function(el, data) {
   const graph = HTMLWidgets.getInstance(el).widget;
   if (!el.proxiomeInitialized) {
@@ -54,6 +78,13 @@ window.proxiomeCellGraph = function(el, data) {
   }
   el.proxiomeCamera = null;
   el.proxiomeCell = data.main;
+  for (const suffix of ['_reset', '_png']) document.getElementById(el.id + suffix).disabled = false;
+  for (const suffix of ['model_glb', 'nodes_csv', 'provenance_json']) {
+    const link = document.getElementById(el.id.replace(/plot$/, suffix));
+    link.inert = false;
+    link.classList.remove('disabled');
+    link.setAttribute('aria-disabled', 'false');
+  }
   window.proxiomeCellGraphGif(el, graph, data);
   document.getElementById(el.id + '_reset').onclick = () => {
     controls.reset();
