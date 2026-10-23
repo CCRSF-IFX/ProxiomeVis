@@ -31,6 +31,76 @@ test_that("network profiles use only the chosen scope and enforce mean-score sem
   expect_error(report_network_profiles(bad, "D1", "B", "TRT vs NC"), "Multiple summaries")
 })
 
+test_that("network and matrix profiles share cell weighting and incomplete-sample protection", {
+  contract <- network_fixture()$contract
+  rows <- contract$sample_summaries$colocalization
+  at <- rows$donor == "D1" & rows$celltype == "B" & rows$condition == "NC"
+  rows$n_total_cells[at] <- rows$n_scored_cells[at] <- 10
+  rows$value[at] <- 1
+  zero <- rows[at, ]
+  zero$sample_id <- "D1_NC_zero"
+  zero$n_total_cells <- 30
+  zero$n_scored_cells <- zero$value <- 0
+  contract$sample_summaries$colocalization <- rbind(rows, zero)
+  design <- contract$sample_summaries$abundance
+  extra <- design[design$donor == "D1" & design$celltype == "B" & design$condition == "NC", ]
+  extra$sample_id <- "D1_NC_zero"
+  contract$sample_summaries$abundance <- rbind(design, extra)
+
+  network <- report_network_profiles(contract, "D1", "B", "TRT vs NC")
+  pooled <- network[network$condition == "NC", ]
+  expect_equal(pooled$value, rep(.25, 2))
+  expect_equal(pooled$pct_detected, rep(.25, 2))
+  expect_equal(pooled$n_total_cells, rep(40, 2))
+  expect_equal(pooled$n_scored_cells, rep(10, 2))
+  matrix <- report_spatial_alignment(contract)$profiles
+  expect_equal(matrix[donor == "D1" & celltype == "B" & panel == "NC", value], pooled$value)
+
+  contract$sample_summaries$colocalization <- rbind(rows, zero[zero$marker_2 != "B", ])
+  incomplete <- report_network_profiles(contract, "D1", "B", "TRT vs NC")
+  absent <- incomplete[incomplete$condition == "NC" & incomplete$marker_2 == "B", ]
+  expect_identical(absent$status, "unavailable")
+  expect_true(all(is.na(absent[c("value", "pct_detected", "n_total_cells", "n_scored_cells")])))
+  expect_equal(incomplete$value[incomplete$condition == "NC" & incomplete$marker_2 == "C"], .25)
+  plot <- plot_report_network(incomplete, c("A", "B", "C"), min_detection = 0, min_mean = 0)
+  expect_false(any(plot$data$condition == "NC" & plot$data$marker_2 == "B"))
+  matrix <- report_spatial_alignment(contract)$profiles
+  expect_true(is.na(matrix[donor == "D1" & celltype == "B" & panel == "NC" & marker_2 == "B", value]))
+})
+
+test_that("profile-only networks display scoped conditions without a differential test", {
+  data <- network_fixture()
+  rows <- data$contract$sample_summaries$colocalization
+  extra <- rows[rows$donor == "D1" & rows$celltype == "B" & rows$condition == "TRT", ]
+  extra$condition <- "Third"
+  extra$sample_id <- "D1_Third"
+  data$contract$sample_summaries$colocalization <- rbind(rows, extra)
+  selected <- report_network_profiles(data$contract, "D1", "B", "TRT vs NC")
+  expect_identical(levels(selected$condition), c("NC", "TRT"))
+  data$contract$donor_contrasts$colocalization <- data$contract$donor_contrasts$colocalization[FALSE, ]
+  original <- data$contract
+  profiles <- report_network_profiles(data$contract, "D1", "B")
+  expect_identical(levels(profiles$condition), c("NC", "TRT", "Third"))
+  expect_equal(nrow(profiles), 6L)
+  expect_identical(report_network_profiles(data$contract, "D1", "B", NA_character_), profiles)
+  expect_error(report_network_profiles(data$contract, "D1", "B", "unknown"), "comparison")
+  plot <- plot_report_network(profiles, c("A", "B", "C"))
+  expect_setequal(as.character(plot$layers[[3L]]$data$condition), c("NC", "TRT", "Third"))
+  expect_warning(plotly::plotly_build(report_network_plotly(plot)), NA)
+  expect_identical(data$contract, original)
+
+  current <- shiny::reactiveVal(data)
+  shiny::testServer(precomputed_server, args = list(data = current), {
+    session$setInputs(readout = "colocalization", donor = "D1", celltype = "B",
+      results_view = "Spatial patterns", spatial_view = "network", network_markers = c("A", "B", "C"),
+      network_detection = 0.5, network_mean = 0.1)
+    expect_equal(nrow(selected_results()), 0L)
+    expect_equal(nrow(network_profiles()), 6L)
+    expect_true(nrow(network_ggplot()$data) > 0L)
+    expect_equal(read.csv(output$download_network_csv)$value, network_ggplot()$data$value)
+  })
+})
+
 test_that("networks filter each condition and retain shared positions and scales", {
   rows <- report_network_profiles(network_fixture()$contract, "D1", "B", "TRT vs NC")
   plot <- plot_report_network(rows, c("C", "A", "B"))

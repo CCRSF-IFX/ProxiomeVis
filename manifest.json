@@ -4719,31 +4719,31 @@
       "checksum": "11611edb90b7be14ef4ad648554f14e3"
     },
     "R/hybrid_module.R": {
-      "checksum": "fa73ddc2bfb0ba5bc5a309b09e17b222"
+      "checksum": "f87be6c664f86bfd16ba82cd66674903"
     },
     "R/precomputed_contract.R": {
       "checksum": "d6d249ca67cad77ba10dd633e45f65b9"
     },
     "R/precomputed_module.R": {
-      "checksum": "cce0d11cd69aa3af0b0c174e8796540e"
+      "checksum": "9bae42836f9132bb8cc5a761adab3aec"
     },
     "R/precomputed_ui.R": {
-      "checksum": "5b12317efa97735d77c4b9b311d9f2a0"
+      "checksum": "6c5c7dd462e7619f4a43e433c49aabdc"
     },
     "R/preparation_cli.R": {
       "checksum": "693181d7aeb78ab9807ccc535ed3a3ef"
     },
     "R/proximity_store.R": {
-      "checksum": "675520f26cf445a9a49f93ff404db548"
+      "checksum": "6f8a3ec2fc159d82c0d6781259011790"
     },
     "R/report_plot_sources.R": {
-      "checksum": "fad39fdf893504a3f063f10240080694"
+      "checksum": "72d2579119bd46ebfd3cce704ff068b3"
     },
     "R/report_plots.R": {
-      "checksum": "84c0a588710d7f3cd29cd4fa9ec05266"
+      "checksum": "bbb3ca02f444c4e6d864c42b30210ca0"
     },
     "README.md": {
-      "checksum": "f49db131f213212f32c8edee167a5e42"
+      "checksum": "e179e0ff40186a3e38216d78dcac8643"
     },
     "www/cell-graph-gif-worker.js": {
       "checksum": "88c12954e64c7641906abe6a57c27c51"
@@ -4755,7 +4755,7 @@
       "checksum": "6017c8ad4963d13cf4fbf6d454821647"
     },
     "www/precomputed.js": {
-      "checksum": "fcb2b60612ed1f1909cf74b9154bea0e"
+      "checksum": "239eacabd249e38ae453e0ffeb18fcd9"
     },
     "www/proixome.css": {
       "checksum": "e37788eaf0189a243b5e06c158ab1b15"

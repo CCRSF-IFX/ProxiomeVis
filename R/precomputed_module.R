@@ -925,10 +925,10 @@ precomputed_report_celltypes <- function(contract, metadata, donor, readout, don
     eligibility <- contract$report$eligibility[[donor]][[readout]]
   }
   celltypes <- precomputed_report_values(eligibility, "celltype")
-  if (length(celltypes) == 0L && valid_scope && is.data.frame(metadata) && all(c("donor", "celltype") %in% names(metadata))) {
-    celltypes <- sort(unique(precomputed_nonempty_text(
+  if (valid_scope && is.data.frame(metadata) && all(c("donor", "celltype") %in% names(metadata))) {
+    celltypes <- unique(c(celltypes, sort(unique(precomputed_nonempty_text(
       metadata$celltype[as.character(metadata$donor) == donor]
-    )))
+    )))))
     celltypes <- celltypes[nzchar(celltypes)]
   }
   if (length(celltypes) == 0L) {
@@ -1005,6 +1005,30 @@ precomputed_searched_rows <- function(rows, indices, search = "", column_search 
   rows[unique(indices), , drop = FALSE]
 }
 
+precomputed_spatial_selection <- function(selected, order, custom, available, prepared) {
+  selected <- as.character(selected)
+  selected <- selected[nzchar(selected)]
+  if (!length(selected)) stop("Select at least one protein, then click Apply.", call. = FALSE)
+  if (anyNA(selected) || anyDuplicated(selected)) stop("Use each protein only once.", call. = FALSE)
+  unknown <- setdiff(selected, available)
+  if (length(unknown)) stop("Unknown proteins: ", paste(unknown, collapse = ", "), call. = FALSE)
+  if (identical(order, "alphabetical")) return(sort(selected, method = "radix"))
+  if (identical(order, "custom")) {
+    ordered <- trimws(unlist(strsplit(custom, "[,;\n\r]+")))
+    ordered <- ordered[nzchar(ordered)]
+    if (anyDuplicated(ordered)) stop("Use each protein only once in My order.", call. = FALSE)
+    if (!setequal(ordered, selected)) stop("My order must contain exactly the selected proteins. Change My selection to add or remove proteins.", call. = FALSE)
+    return(ordered)
+  }
+  unique(c(prepared[prepared %in% selected], sort(setdiff(selected, prepared), method = "radix")))
+}
+
+precomputed_scope_conditions <- function(data, donor, celltype) {
+  meta <- data$metadata
+  keep <- meta$donor == donor & (identical(celltype, PRECOMPUTED_ALL) | meta$celltype == celltype)
+  sort(unique(as.character(meta$condition[keep])))
+}
+
 precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(), code_dir = "R") {
   shiny::moduleServer(id, function(input, output, session) {
     current_data <- shiny::reactive({
@@ -1012,15 +1036,45 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       shiny::req(value, value$contract, value$metadata, value$embeddings)
       value
     })
-    hybrid_analysis_server("analysis", current_data, job_manager, code_dir)
+    active_result_id <- shiny::reactiveVal("prepared")
+    analysis <- hybrid_analysis_server("analysis", current_data, job_manager, code_dir,
+      on_open = function(id) {
+        active_result_id(id)
+        shiny::updateSelectInput(session, "result_source", selected = id)
+        bslib::nav_select("report_page", "Results", session = session)
+        bslib::nav_select("results_view", "Tables", session = session)
+      })
+    shiny::observeEvent(current_data(), active_result_id("prepared"), priority = 100)
+    shiny::observeEvent(input$result_source, {
+      if (input$result_source %in% c("prepared", names(analysis$history()))) active_result_id(input$result_source)
+    })
+    shiny::observe({
+      history <- analysis$history()
+      choices <- c("Prepared results" = "prepared", stats::setNames(as.character(names(history)),
+        vapply(history, function(entry) paste("Session:", entry$label), character(1))))
+      shiny::updateSelectInput(session, "result_source", choices = choices, selected = active_result_id())
+    })
+    active_entry <- shiny::reactive(analysis$history()[[active_result_id()]])
+    # Only the viewer contract changes; workers and 3D retain the original dataset.
+    view_data <- shiny::reactive({
+      value <- current_data()
+      entry <- active_entry()
+      if (!is.null(entry)) value$contract <- hybrid_result_contract(value, entry)
+      value
+    })
     graph_selection <- shiny::reactiveVal(NULL)
     cell_graph_server("graph", current_data,
       active = shiny::reactive(identical(input$report_page, "Cell 3D")), selection = graph_selection)
 
-    scope <- shiny::reactive(precomputed_explorer_scope(current_data(),
-      input$readout, input$donor, input$celltype, input$comparison))
-    shiny::observeEvent(list(input$readout, input$results_view), {
-      disabled <- identical(precomputed_scope_value(input$readout, "abundance"), "abundance")
+    scope <- shiny::reactive({
+      entry <- active_entry()
+      if (is.null(entry)) return(precomputed_explorer_scope(view_data(),
+        input$readout, input$donor, input$celltype, input$comparison))
+      request <- entry$request
+      precomputed_explorer_scope(view_data(), request$readout, request$donor, request$celltype)
+    })
+    shiny::observeEvent(list(scope()$readout, input$results_view), {
+      disabled <- identical(scope()$readout, "abundance")
       session$sendCustomMessage("precomputed-spatial-availability",
         list(id = session$ns("results_view"), disabled = disabled))
       if (disabled && identical(input$results_view, "Spatial patterns")) {
@@ -1035,8 +1089,8 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
 
     readout_tables <- shiny::reactive({
-      value <- current_data()
-      readout <- input$readout
+      value <- view_data()
+      readout <- scope()$readout
       if (is.null(readout) || !readout %in% unname(PRECOMPUTED_READOUTS)) {
         readout <- unname(PRECOMPUTED_READOUTS)[1L]
       }
@@ -1085,22 +1139,31 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         server = TRUE
       )
 
+    }, ignoreInit = FALSE)
+
+    shiny::observeEvent(view_data(), {
+      value <- view_data()
       available_readouts <- unname(PRECOMPUTED_READOUTS)[vapply(
         unname(PRECOMPUTED_READOUTS),
         function(readout) nrow(precomputed_contract_table(value$contract, "differential_results", readout)) > 0L ||
-          nrow(precomputed_contract_table(value$contract, "donor_contrasts", readout)) > 0L,
+          nrow(precomputed_contract_table(value$contract, "donor_contrasts", readout)) > 0L ||
+          nrow(precomputed_contract_table(value$contract, "sample_summaries", readout)) > 0L ||
+          (readout != "abundance" && NROW(value$contract$report$alignment$profiles) > 0L),
         logical(1)
       )]
+      if (!length(available_readouts)) available_readouts <- "abundance"
       choices <- PRECOMPUTED_READOUTS[PRECOMPUTED_READOUTS %in% available_readouts]
       shiny::updateSelectInput(
         session,
         "readout",
         choices = choices,
-        selected = precomputed_keep_selection(shiny::isolate(input$readout), unname(choices))
+        selected = precomputed_keep_selection(
+          if (is.null(active_entry())) shiny::isolate(input$readout) else active_entry()$request$readout,
+          unname(choices))
       )
     }, ignoreInit = FALSE)
 
-    shiny::observeEvent(list(current_data(), input$readout, input$donor), {
+    shiny::observeEvent(list(view_data(), input$readout, input$donor), {
       selection <- scope()
       shiny::updateSelectInput(session, "celltype",
         choices = c(stats::setNames(selection$celltypes, selection$celltypes), "All cell types" = PRECOMPUTED_ALL),
@@ -1118,11 +1181,11 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
         comparison = selected$comparison, include_controls = TRUE)
       conditions <- unique(c(as.character(rows$group_a), as.character(rows$group_b)))
-      samples[samples$condition %in% conditions, , drop = FALSE]
+      if (length(conditions)) samples[samples$condition %in% conditions, , drop = FALSE] else samples
     })
 
     selected_key <- shiny::reactiveVal(NULL)
-    shiny::observeEvent(input$readout, {
+    shiny::observeEvent(scope()$readout, {
       pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
       if (length(pair) == 2L &&
           xor(scope()$readout == "colocalization", pair[1L] != pair[2L])) {
@@ -1172,10 +1235,10 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (!is.character(pair) || length(pair) != 2L || anyNA(pair) ||
           !all(pair %in% rownames(current_data()$abundance))) return(invisible(NULL))
       selected_key(report_feature_key(pair[1L], pair[2L]))
-      if (from_spatial) shiny::updateSelectInput(session, "readout",
+      if (from_spatial && is.null(active_entry())) shiny::updateSelectInput(session, "readout",
         selected = if (pair[1L] == pair[2L]) "self_proximity" else "colocalization")
     }
-    for (view in c("volcano", "spatial", "network")) local({
+    for (view in c("volcano", "spatial", "spatial_reference", "spatial_target", "spatial_difference", "network")) local({
       plot_view <- view
       shiny::observeEvent({
         shiny::req(session$rootScope()$input[[paste0("plotly_click-", session$ns(plot_view))]])
@@ -1183,7 +1246,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }, {
         event <- plotly::event_data("plotly_click", source = session$ns(plot_view), priority = "event")
         key <- if (!is.null(event$key)) event$key else event$customdata
-        if (length(key)) select_feature(key[1L], from_spatial = plot_view %in% c("spatial", "network"))
+        if (length(key)) select_feature(key[1L], from_spatial = plot_view != "volcano")
       })
     })
     shiny::observeEvent(input$results_table_rows_selected, {
@@ -1214,9 +1277,11 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = shared$donor,
         comparison = shared$comparison, include_controls = TRUE)
+      conditions <- unique(c(as.character(rows$group_a), as.character(rows$group_b)))
+      if (!length(conditions)) conditions <- precomputed_scope_conditions(current_data(), shared$donor, shared$celltype)
       graph_selection(list(donor = shared$donor, celltype = shared$celltype,
         marker_1 = pair[1L], marker_2 = pair[2L],
-        conditions = unique(c(as.character(rows$group_a), as.character(rows$group_b))),
+        conditions = conditions,
         token = input$explore_3d))
       bslib::nav_select("report_page", "Cell 3D", session = session)
     })
@@ -1316,7 +1381,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }
       precomputed_report_plot(
         "plot_report_volcano",
-        contract = current_data()$contract,
+        contract = view_data()$contract,
         readout = scope$readout,
         donor = scope$donor,
         celltype = scope$celltype,
@@ -1354,9 +1419,9 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     network_profiles <- shiny::reactive({
       selected <- scope()
       shiny::validate(shiny::need(selected$readout == "colocalization", "Network is available for Colocalization."))
-      report_network_profiles(current_data()$contract, selected$donor, selected$celltype, selected$comparison)
+      report_network_profiles(view_data()$contract, selected$donor, selected$celltype, selected$comparison)
     })
-    shiny::observeEvent(list(current_data(), input$donor, input$celltype, input$comparison, input$readout), {
+    shiny::observeEvent(list(view_data(), input$donor, input$celltype, input$comparison, input$readout), {
       rows <- tryCatch(network_profiles(), error = function(e) NULL)
       choices <- sort(unique(c(rows$marker_1, rows$marker_2)))
       selected <- intersect(shiny::isolate(input$network_markers), choices)
@@ -1397,54 +1462,210 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }
     )
 
+    prepared_alignment <- shiny::reactive(report_spatial_alignment(current_data()$contract))
+    spatial_alignment <- shiny::reactive({
+      if (is.null(active_entry())) prepared_alignment() else report_spatial_alignment(view_data()$contract)
+    })
+    spatial_markers <- shiny::reactiveVal(character())
+    spatial_selection_error <- shiny::reactiveVal(NULL)
+    spatial_auto <- shiny::reactiveVal(NULL)
+    spatial_applied_mode <- shiny::reactiveVal("automatic")
+    spatial_applied_order <- shiny::reactiveVal("automatic")
+    spatial_order_note <- shiny::reactiveVal("")
+    spatial_reference_choices <- shiny::reactive(report_spatial_reference(prepared_alignment(), scope()$celltype))
+    refresh_spatial_auto <- function(reset = FALSE) {
+      reference <- spatial_reference_choices()
+      donor <- if (reset) reference$donor else precomputed_keep_selection(input$spatial_reference_donor, unique(reference$choices$donor))
+      conditions <- reference$choices$panel[reference$choices$donor %in% donor]
+      condition <- if (reset) reference$condition else precomputed_keep_selection(input$spatial_reference_condition, conditions)
+      auto <- report_spatial_protein_set(current_data()$contract, scope()$celltype,
+        prepared_alignment(), analysis$history())
+      auto$markers <- intersect(auto$markers, rownames(current_data()$abundance))
+      ordered <- report_spatial_order(prepared_alignment(), scope()$celltype, auto$markers, donor, condition)
+      auto$markers <- ordered$markers
+      auto$method <- ordered$method
+      auto$donor <- donor
+      auto$condition <- condition
+      auto$celltype <- scope()$celltype
+      auto$history_ids <- names(analysis$history())
+      spatial_auto(auto)
+      spatial_selection_error(NULL)
+      shiny::updateSelectInput(session, "spatial_reference_donor", choices = unique(reference$choices$donor), selected = donor)
+      shiny::updateSelectInput(session, "spatial_reference_condition", choices = conditions, selected = condition)
+      shiny::updateSelectizeInput(session, "spatial_markers", choices = rownames(current_data()$abundance),
+        selected = if (reset) auto$markers else spatial_markers(), server = TRUE)
+      if (reset || (identical(spatial_applied_mode(), "automatic") && !identical(spatial_applied_order(), "custom"))) {
+        order <- if (!reset && identical(spatial_applied_order(), "alphabetical")) sort(auto$markers, method = "radix") else auto$markers
+        spatial_markers(order)
+        spatial_order_note(paste(auto$source, "·", if (!reset && identical(spatial_applied_order(), "alphabetical")) "Alphabetical" else auto$method,
+          if (length(donor) == 1L && length(condition) == 1L && !anyNA(c(donor, condition))) paste0("(", donor, " / ", condition, ")") else ""))
+        shiny::updateTextAreaInput(session, "spatial_custom_order", value = paste(order, collapse = ", "))
+      }
+      if (reset) {
+        spatial_applied_mode("automatic")
+        spatial_applied_order("automatic")
+        shiny::updateSelectInput(session, "spatial_set", selected = "automatic")
+        shiny::updateSelectInput(session, "spatial_order", selected = "automatic")
+      }
+    }
+    shiny::observeEvent(current_data(), refresh_spatial_auto(TRUE), priority = 50)
+    shiny::observeEvent(scope()$celltype, {
+      if (!identical(spatial_auto()$celltype, scope()$celltype) &&
+          identical(spatial_applied_mode(), "automatic") && !identical(spatial_applied_order(), "custom"))
+        refresh_spatial_auto(TRUE)
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$spatial_reset, refresh_spatial_auto(TRUE))
+    shiny::observeEvent(input$spatial_refresh, refresh_spatial_auto())
+    shiny::observeEvent(input$spatial_reference_donor, {
+      choices <- spatial_reference_choices()$choices
+      conditions <- choices$panel[choices$donor %in% input$spatial_reference_donor]
+      shiny::updateSelectInput(session, "spatial_reference_condition", choices = conditions,
+        selected = precomputed_keep_selection(input$spatial_reference_condition, conditions))
+    })
+    shiny::observeEvent(input$spatial_apply, {
+      tryCatch({
+        if (!identical(spatial_auto()$celltype, scope()$celltype)) refresh_spatial_auto()
+        mode <- precomputed_scope_value(input$spatial_set, "automatic")
+        order <- precomputed_scope_value(input$spatial_order, "automatic")
+        selected <- if (mode == "automatic") spatial_auto()$markers else input$spatial_markers
+        donor <- if (is.null(input$spatial_reference_donor)) spatial_auto()$donor else input$spatial_reference_donor
+        condition <- if (is.null(input$spatial_reference_condition)) spatial_auto()$condition else input$spatial_reference_condition
+        references <- spatial_reference_choices()
+        if (!any(donor %in% references$choices$donor)) donor <- references$donor
+        conditions <- references$choices$panel[references$choices$donor %in% donor]
+        if (!any(condition %in% conditions)) condition <- conditions[1L]
+        ordered <- if (order %in% c("automatic", "prepared")) report_spatial_order(prepared_alignment(), scope()$celltype,
+          unique(c(spatial_auto()$markers, selected)), donor, condition) else list(markers = selected, method = if (order == "custom") "My order" else "Alphabetical")
+        markers <- precomputed_spatial_selection(selected, order, input$spatial_custom_order,
+          rownames(current_data()$abundance), ordered$markers)
+        spatial_markers(markers)
+        spatial_applied_mode(mode)
+        spatial_applied_order(order)
+        spatial_order_note(paste(if (mode == "automatic") spatial_auto()$source else "My selection", "·", ordered$method,
+          if (order == "automatic" && length(donor) == 1L && length(condition) == 1L && !anyNA(c(donor, condition))) paste0("(", donor, " / ", condition, ")") else ""))
+        spatial_selection_error(NULL)
+        shiny::updateSelectizeInput(session, "spatial_markers", selected = markers)
+      }, error = function(e) spatial_selection_error(conditionMessage(e)))
+    })
+    output$spatial_selection_status <- shiny::renderText({
+      if (!is.null(spatial_selection_error())) return(paste("Not applied:", spatial_selection_error()))
+      markers <- spatial_markers()
+      paste(length(markers), "proteins applied ·", spatial_order_note())
+    })
+    output$spatial_auto_status <- shiny::renderText({
+      auto <- spatial_auto()
+      if (is.null(auto)) return("")
+      history <- analysis$history()
+      related <- vapply(history, function(entry) identical(entry$request$celltype, scope()$celltype) &&
+        entry$request$readout %in% c("self_proximity", "colocalization"), logical(1))
+      new_results <- setdiff(names(history)[related], auto$history_ids)
+      paste(length(auto$markers), "proteins in the automatic list for", auto$celltype,
+        "across comparisons and donors.",
+        if (length(new_results)) "New session results are available. Click Update automatic list to include them." else "")
+    })
+    shiny::observeEvent(spatial_markers(), {
+      session$sendCustomMessage("precomputed-spatial-size", list(id = session$ns("spatial_matrix_region"),
+        proteins = length(spatial_markers())))
+    })
+    output$download_spatial_order <- shiny::downloadHandler(
+      filename = function() "proxiomevis_protein_order.csv",
+      content = function(file) utils::write.csv(data.frame(position = seq_along(spatial_markers()),
+        protein = spatial_markers()), file, row.names = FALSE)
+    )
     spatial_scope <- shiny::reactive({
       shared <- scope()
-      contract <- current_data()$contract
+      contract <- view_data()$contract
+      # Populate controls without assembling spatial grids while the tab is hidden.
       alignment <- contract$report$alignment
       kind <- precomputed_scope_value(input$spatial_kind, "differences")
       if (!kind %in% c("differences", "profiles")) kind <- "differences"
       donor_rows <- precomputed_filter_table(
         precomputed_contract_table(contract, "donor_contrasts", shared$readout),
         donor = shared$donor, comparison = shared$comparison, include_controls = TRUE)
-      groups <- unique(c(as.character(donor_rows$group_a), as.character(donor_rows$group_b)))
+      condition_rows <- as.data.frame(alignment$profiles)
+      conditions <- if (nrow(condition_rows)) unique(as.character(condition_rows$panel[
+        condition_rows$donor == shared$donor & condition_rows$celltype == shared$celltype])) else character()
+      summary_conditions <- unlist(lapply(c("self_proximity", "colocalization"), function(readout) {
+        rows <- precomputed_filter_table(precomputed_contract_table(contract, "sample_summaries", readout),
+          donor = shared$donor, celltype = shared$celltype, include_controls = TRUE)
+        as.character(rows$condition[rows$metric == "population_mean_log2_ratio_missing_zero"])
+      }), use.names = FALSE)
+      # Prepared conditions can have unavailable grids; metadata excludes unrelated panels.
+      in_scope <- precomputed_scope_conditions(current_data(), shared$donor, shared$celltype)
+      conditions <- intersect(unique(c(conditions, alignment$conditions, summary_conditions)), in_scope)
+      candidates <- unlist(lapply(contract$report$source_results[[shared$donor]], function(rows) {
+        if (!all(c("contrast", "target", "reference") %in% names(rows))) return(character())
+        matched <- as.character(rows$target) %in% donor_rows$group_a &
+                   as.character(rows$reference) %in% donor_rows$group_b
+        unique(as.character(rows$contrast[matched]))
+      }), use.names = FALSE)
+      candidates <- unique(c(candidates, as.character(donor_rows$comparison), as.character(donor_rows$analysis_id)))
+      stored_comparisons <- if (is.null(alignment$differences)) unique(as.character(donor_rows$comparison)) else
+        precomputed_report_values(alignment$contrasts, "comparison")
+      differences <- intersect(stored_comparisons, candidates)
+      difference <- if (length(differences) == 1L) differences else NA_character_
       if (identical(kind, "profiles")) {
-        panels <- intersect(precomputed_report_values(alignment$conditions, "condition"), groups)
+        panels <- conditions
         panel <- precomputed_keep_selection(input$spatial_panel, panels)
       } else {
-        candidates <- unlist(lapply(contract$report$source_results[[shared$donor]], function(rows) {
-          if (!all(c("contrast", "target", "reference") %in% names(rows))) return(character())
-          matched <- as.character(rows$target) %in% donor_rows$group_a &
-                     as.character(rows$reference) %in% donor_rows$group_b
-          unique(as.character(rows$contrast[matched]))
-        }), use.names = FALSE)
-        panels <- intersect(precomputed_report_values(alignment$contrasts, "comparison"), candidates)
-        panel <- if (length(panels) == 1L) panels else NA_character_
+        panels <- differences
+        panel <- difference
       }
-      list(kind = kind, donor = shared$donor, celltype = shared$celltype, panels = panels, panel = panel)
+      reference <- unique(as.character(donor_rows$group_b))
+      target <- unique(as.character(donor_rows$group_a))
+      fixed_conditions <- length(reference) == 1L && length(target) == 1L
+      if (!fixed_conditions) {
+        reference <- precomputed_keep_selection(input$spatial_reference_condition, conditions)
+        target <- precomputed_keep_selection(input$spatial_target_condition, setdiff(conditions, reference))
+      }
+      list(kind = kind, donor = shared$donor, celltype = shared$celltype, panels = panels, panel = panel,
+        conditions = conditions, difference = difference,
+        reference = reference, target = target, fixed_conditions = fixed_conditions)
+    })
+    output$spatial_compare_conditions <- shiny::renderUI({
+      selected <- spatial_scope()
+      if (selected$fixed_conditions) return(shiny::tags$p(class = "small text-muted",
+        paste("Reference:", selected$reference, "· Target:", selected$target, "— conditions from the selected comparison.")))
+      bslib::layout_column_wrap(width = "260px", fill = FALSE,
+        shiny::selectInput(session$ns("spatial_reference_condition"), "Reference profile condition",
+          choices = selected$conditions, selected = selected$reference),
+        shiny::selectInput(session$ns("spatial_target_condition"), "Target profile condition",
+          choices = setdiff(selected$conditions, selected$reference), selected = selected$target))
     })
     shiny::observeEvent(list(scope(), input$spatial_kind), {
       selected <- spatial_scope()
       shiny::updateSelectInput(session, "spatial_panel", choices = selected$panels, selected = selected$panel)
     })
-    spatial_report_ggplot <- shiny::reactive({
+    shiny::observeEvent(list(view_data(), scope()$readout), {
+      selected <- spatial_scope()
+      if (length(selected$conditions) && (length(selected$difference) != 1L || is.na(selected$difference)))
+        shiny::updateRadioButtons(session, "spatial_kind", selected = "profiles")
+    })
+    spatial_plot <- function(kind, panel) {
       if (identical(scope()$readout, "abundance")) return(precomputed_empty_plot(
         "Select Self-proximity or Colocalization to view the spatial matrix.", "Spatial patterns"))
-      scope <- spatial_scope()
-      if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
+      selected <- spatial_scope()
+      if (identical(selected$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
         "Select one cell type for its spatial matrix.", "Spatial patterns"))
-      if (!length(scope$donor) || is.na(scope$donor) || !length(scope$celltype) || is.na(scope$celltype) ||
-          !length(scope$panel) || is.na(scope$panel)) {
-        return(precomputed_empty_plot("No aligned spatial report panel is stored.", "Original spatial report view"))
+      if (length(panel) != 1L || is.na(panel)) {
+        return(precomputed_empty_plot(if (kind == "profiles") "No condition profile is available."
+          else "No differential result is available. Select Condition profile to browse stored profiles.", "Spatial patterns"))
       }
       precomputed_report_plot(
         "plot_report_spatial",
-        contract = current_data()$contract,
-        donor = scope$donor,
-        celltype = scope$celltype,
-        kind = scope$kind,
-        panel = scope$panel,
-        title = "Original spatial report view"
+        contract = view_data()$contract,
+        donor = selected$donor,
+        celltype = selected$celltype,
+        kind = kind,
+        panel = panel,
+        markers = spatial_markers(),
+        alignment = spatial_alignment(),
+        title = "Spatial patterns"
       )
+    }
+    spatial_report_ggplot <- shiny::reactive({
+      selected <- spatial_scope()
+      spatial_plot(selected$kind, selected$panel)
     })
     output$spatial_report_plot <- plotly::renderPlotly(
       report_spatial_plotly(spatial_report_ggplot(), source = session$ns("spatial")))
@@ -1453,7 +1674,44 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         spatial_scope()$donor, spatial_scope()$celltype, spatial_scope()$kind,
         spatial_scope()$panel, "spatial-report"
       ), ".svg"),
-      content = function(file) precomputed_write_svg(spatial_report_ggplot(), file, 12, 9)
+      content = function(file) {
+        edge <- max(9, length(spatial_markers()) * .16 + 3)
+        precomputed_write_svg(spatial_report_ggplot(), file, edge, edge)
+      }
+    )
+    spatial_comparison_plots <- shiny::reactive({
+      selected <- spatial_scope()
+      list(reference = spatial_plot("profiles", selected$reference),
+        target = spatial_plot("profiles", selected$target),
+        difference = spatial_plot("differences", selected$difference))
+    })
+    for (panel in c("reference", "target", "difference")) local({
+      name <- panel
+      output[[paste0("spatial_", name)]] <- plotly::renderPlotly(
+        report_spatial_plotly(spatial_comparison_plots()[[name]],
+          source = session$ns(paste0("spatial_", name)), comparison = TRUE))
+    })
+    output$download_spatial_compare_svg <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, "spatial-comparison"), ".svg"),
+      content = function(file) {
+        plots <- spatial_comparison_plots()
+        edge <- max(8, length(spatial_markers()) * .16 + 3)
+        grDevices::svg(file, width = 3 * edge, height = edge)
+        on.exit(grDevices::dev.off(), add = TRUE)
+        grobs <- lapply(plots, ggplot2::ggplotGrob)
+        widths <- Reduce(grid::unit.pmax, lapply(grobs, `[[`, "widths"))
+        heights <- Reduce(grid::unit.pmax, lapply(grobs, `[[`, "heights"))
+        grid::grid.newpage()
+        grid::pushViewport(grid::viewport(layout = grid::grid.layout(1, 3)))
+        for (i in seq_along(grobs)) {
+          grobs[[i]]$widths <- widths
+          grobs[[i]]$heights <- heights
+          grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = i))
+          grid::grid.draw(grobs[[i]])
+          grid::popViewport()
+        }
+      }
     )
 
     output$fdr_controls <- shiny::renderUI({
@@ -1469,7 +1727,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       shiny::tagList(
         shiny::numericInput(session$ns("fdr_cutoff"), "Stored FDR display cutoff", value = 0.05, min = 0, max = 1, step = 0.01),
         shiny::checkboxInput(session$ns("fdr_filter"), "Show only rows at or below this stored FDR", value = FALSE),
-        shiny::tags$p(class = "text-muted small", "Table filters affect the tables and Filtered CSV downloads only. Plots and Original report SVG retain frozen thresholds; All stored rows ignores table searches and FDR filters.")
+        shiny::tags$p(class = "text-muted small", "Table filters affect the tables and Filtered CSV downloads only. Volcano plots and their SVG retain stored thresholds; All stored rows ignores table searches and FDR filters.")
       )
     })
 
@@ -1478,13 +1736,16 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       rows <- selected$rows
       groups <- if (nrow(rows)) unique(paste(rows$group_a, "−", rows$group_b)) else character()
       direction <- if (length(groups)) paste(groups, collapse = "; ") else
-        paste(selected$comparison, "— no stored effects in this scope")
+        "No differential comparison in this scope"
       shiny::div(class = "alert alert-light border",
         shiny::tags$strong(paste("Donor:", selected$donor, "·",
           if (selected$celltype == PRECOMPUTED_ALL) "All cell types" else selected$celltype, "·",
           direction, "·", names(PRECOMPUTED_READOUTS)[match(selected$readout, PRECOMPUTED_READOUTS)])),
         shiny::tags$p(class = "small mb-1", "Positive effects mean target exceeds reference. ",
-          "Stored single-donor results; no analysis was recalculated."),
+          if (is.null(active_entry())) "Prepared single-donor results; display controls do not run tests."
+          else "Session comparison; display controls do not run tests."),
+        if (!nrow(rows)) shiny::tags$p(class = "small mb-1",
+          "Browse available condition profiles in Spatial patterns, or use New comparison to run a test."),
         shiny::tags$p(class = "small mb-0",
           "Exploratory component-level tests, where stored, are not donor-population inference. ",
           nrow(rows), " stored effects. Missing or untested values are not zero.")
@@ -1496,8 +1757,12 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
         comparison = selected$comparison, include_controls = TRUE)
       conditions <- unique(c(as.character(rows$group_b), as.character(rows$group_a)))
+      if (!length(conditions)) conditions <- precomputed_scope_conditions(current_data(), selected$donor, selected$celltype)
       pair <- tryCatch(jsonlite::fromJSON(selected_key()), error = function(e) character())
-      precomputed_feature_distribution_data(current_data(), selected$readout, selected$donor,
+      readout <- selected$readout
+      if (readout != "abundance" && length(pair) == 2L)
+        readout <- if (pair[[1L]] == pair[[2L]]) "self_proximity" else "colocalization"
+      precomputed_feature_distribution_data(current_data(), readout, selected$donor,
         selected$celltype, conditions, pair)
     })
     detail_ggplot <- shiny::reactive({
@@ -1573,22 +1838,43 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     )
     spatial_rows <- shiny::reactive({
       selected <- spatial_scope()
-      rows <- current_data()$contract$report$alignment[[selected$kind]]
-      if (!is.data.frame(rows)) return(precomputed_empty_table())
-      rows <- as.data.frame(rows)
-      rows[!is.na(rows$panel) & rows$donor == selected$donor & rows$celltype == selected$celltype &
-        rows$panel %in% selected$panel, , drop = FALSE]
+      shiny::validate(shiny::need(selected$celltype != PRECOMPUTED_ALL, "Select one cell type for its spatial matrix."))
+      if (length(selected$panel) != 1L || is.na(selected$panel)) return(precomputed_empty_table())
+      as.data.frame(report_spatial_rows(spatial_alignment(), selected$donor, selected$celltype,
+        selected$kind, selected$panel, spatial_markers()))
     })
     output$download_spatial_csv <- shiny::downloadHandler(
       filename = function() paste0(precomputed_safe_filename(spatial_scope()$donor,
         spatial_scope()$celltype, spatial_scope()$kind, spatial_scope()$panel, "spatial"), ".csv"),
       content = function(file) utils::write.csv(spatial_rows(), file, row.names = FALSE, na = "")
     )
+    spatial_comparison_rows <- shiny::reactive({
+      selected <- spatial_scope()
+      shiny::validate(shiny::need(selected$celltype != PRECOMPUTED_ALL, "Select one cell type for its spatial matrix."))
+      specifications <- list(reference = list(kind = "profiles", panel = selected$reference),
+        target = list(kind = "profiles", panel = selected$target),
+        difference = list(kind = "differences", panel = selected$difference))
+      rows <- lapply(names(specifications), function(name) {
+        spec <- specifications[[name]]
+        if (length(spec$panel) != 1L || is.na(spec$panel)) return(NULL)
+        rows <- report_spatial_rows(spatial_alignment(), selected$donor, selected$celltype,
+          spec$kind, spec$panel, spatial_markers())
+        rows$view <- name
+        rows$quantity <- spec$kind
+        rows
+      })
+      as.data.frame(data.table::rbindlist(rows, fill = TRUE))
+    })
+    output$download_spatial_compare_csv <- shiny::downloadHandler(
+      filename = function() paste0(precomputed_safe_filename(scope()$donor, scope()$celltype,
+        scope()$comparison, "spatial-comparison"), ".csv"),
+      content = function(file) utils::write.csv(spatial_comparison_rows(), file, row.names = FALSE, na = "")
+    )
     output$methods_ui <- shiny::renderUI({
       selected <- scope()
       rows <- selected$rows
       fields <- if (nrow(rows)) intersect(c("metric", "method", "replicate_unit", "inference", "adjustment_family"), names(rows)) else character()
-      settings <- current_data()$contract$report$settings[[selected$donor]]
+      settings <- view_data()$contract$report$settings[[selected$donor]]
       section <- switch(selected$readout, abundance = "abundance", self_proximity = "clustering",
         colocalization = "colocalization")
       shiny::tagList(

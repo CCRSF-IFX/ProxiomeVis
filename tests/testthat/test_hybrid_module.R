@@ -2,6 +2,7 @@ hybrid_module_fixture <- function() {
   data <- hybrid_fixture()
   data$bundle_path <- "/trusted/analysis.rds"
   data$bundle_md5 <- paste(rep("a", 32), collapse = "")
+  data$assets$proximity <- list(path = "proximity")
   data$embeddings <- lapply(data$embeddings, function(coordinates) {
     matrix(seq_len(2L * nrow(data$metadata)), ncol = 2L,
            dimnames = list(data$metadata$component, colnames(coordinates)))
@@ -28,9 +29,13 @@ hybrid_module_probe <- function() {
 }
 
 hybrid_module_result <- function(request) {
-  list(results = data.frame(feature_id = request$markers, effect_size = 0.2, p_value = 0.01,
-                            p_adj = 0.02, n_cells_a = length(request$group_a_cells),
-                            n_cells_b = length(request$group_b_cells)),
+  rows <- hybrid_feature_table(request)
+  rows$effect_size <- 0.2
+  rows$p_value <- 0.01
+  rows$p_adj <- 0.02
+  rows$n_cells_a <- length(request$group_a_cells)
+  rows$n_cells_b <- length(request$group_b_cells)
+  list(results = rows,
        provenance = list(dataset_id = request$dataset_id, bundle_md5 = request$bundle_md5, request = request,
                          filters = list(donor_isotype_fraction_cutoff = 0.001)))
 }
@@ -173,4 +178,132 @@ test_that("worker failures are actionable and cancellation covers buttons and cl
     probe$state$jobs[[3L]]$reject(simpleError("Analysis cancelled."))
     expect_warning(for (i in seq_len(3L)) later::run_now(0), "Analysis cancelled")
   })
+})
+
+test_that("completed comparisons stay in history and open only on an explicit request", {
+  current <- shiny::reactiveVal(hybrid_module_fixture())
+  probe <- hybrid_module_probe()
+  opened <- character()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir(), on_open = function(id) opened <<- c(opened, id)), {
+    session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
+      readout = "abundance", acknowledge = TRUE, run = 1L)
+    first <- probe$state$jobs[[1L]]
+    first$resolve(hybrid_module_result(first$request))
+    settle_module_task(session, task)
+    first_id <- selected_id()
+    expect_length(history(), 1L)
+    expect_length(opened, 0L)
+    expect_null(open_result())
+    session$setInputs(target = "NC", reference = "TRT", run = 2L)
+    expect_identical(result()$provenance$request, first$request)
+    second <- probe$state$jobs[[2L]]
+    second$resolve(hybrid_module_result(second$request))
+    settle_module_task(session, task)
+    expect_length(history(), 2L)
+    expect_identical(selected_entry()$request, second$request)
+    session$setInputs(history_id = first_id, open_result = 1L)
+    expect_identical(opened, first_id)
+    expect_identical(open_result()$request, first$request)
+    expect_identical(result()$provenance$request, first$request)
+    expect_match(output$result_scope, "TRT minus NC", fixed = TRUE)
+    package <- readRDS(output$result_rds)
+    expect_identical(package$result_version, 1L)
+    expect_identical(package$entry, history()[[first_id]])
+    expect_named(package, c("result_version", "entry"))
+    exported <- utils::read.csv(output$results_csv)
+    expect_equal(exported$effect_size, history()[[first_id]]$result$results$effect_size)
+    replacement <- current()
+    replacement$bundle_md5 <- paste(rep("b", 32), collapse = "")
+    current(replacement)
+    session$flushReact()
+    expect_length(history(), 0L)
+    expect_null(open_result())
+    expect_error(result(), class = "shiny.silent.error")
+  })
+})
+
+test_that("preflight checks missing inputs and invalid scopes without starting a worker", {
+  current <- shiny::reactiveVal(hybrid_module_fixture())
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
+      readout = "abundance", acknowledge = TRUE)
+    expect_null(prepared_request()$error)
+    expect_match(output$readiness$html, "42 target cells", fixed = TRUE)
+    replacement <- current()
+    replacement$counts <- NULL
+    current(replacement)
+    session$flushReact()
+    expect_match(prepared_request()$error, "Raw counts are not stored")
+    session$setInputs(run = 1L)
+    expect_length(probe$state$jobs, 0L)
+    replacement$assets$proximity <- NULL
+    current(replacement)
+    session$setInputs(readout = "self_proximity", min_cells_per_group = 20L, run = 2L)
+    expect_match(prepared_request()$error, "proximity sidecar is not configured")
+    expect_length(probe$state$jobs, 0L)
+    session$setInputs(target = "NC")
+    expect_match(prepared_request()$error, "two different conditions")
+    session$setInputs(target = "TRT", min_cells_per_group = 43L)
+    expect_match(prepared_request()$error, "at least 43")
+  })
+})
+
+test_that("a late successful completion after cancellation does not enter history", {
+  current <- shiny::reactiveVal(hybrid_module_fixture())
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(donor = "D1", celltype = "B", target = "TRT", reference = "NC",
+      readout = "abundance", acknowledge = TRUE, run = 1L)
+    session$setInputs(cancel = 1L)
+    pending <- probe$state$jobs[[1L]]
+    pending$resolve(hybrid_module_result(pending$request))
+    settle_module_task(session, task)
+    expect_length(history(), 0L)
+    expect_match(output$status, "Analysis cancelled")
+    expect_error(result(), class = "shiny.silent.error")
+  })
+})
+
+test_that("session adapters preserve results and profiles without reusing saved differential statistics", {
+  data <- hybrid_module_fixture()
+  data$contract$report <- list(source_results = list(old = "old test"),
+    eligibility = list(old = "old eligibility"), abundance_heatmaps = list(old = "old matrix"),
+    alignment = list(profiles = data.frame(value = 1.3), differences = data.frame(value = 99),
+      contrasts = "old contrast", limits = list(profiles = 2, differences = 99)))
+  original <- data$contract
+  request <- validate_hybrid_request(data, hybrid_request("colocalization"))
+  value <- hybrid_module_result(request)
+  value$results$n_scored_a <- 40L
+  value$results$n_scored_b <- 39L
+  value$results$status <- "tested"
+  entry <- list(id = "session-1", label = "New result", request = request, result = value)
+  contract <- hybrid_result_contract(data, entry)
+  rows <- contract$donor_contrasts$colocalization
+  for (field in names(value$results)) expect_identical(rows[[field]], value$results[[field]])
+  expect_identical(rows$group_a, rep(request$target, nrow(rows)))
+  expect_identical(rows$group_b, rep(request$reference, nrow(rows)))
+  expect_identical(rows$metric, rep("delta_median_log2_ratio", nrow(rows)))
+  expect_true(all(is.na(rows$value_a)))
+  expect_true(all(is.na(rows$value_b)))
+  expect_equal(nrow(contract$donor_contrasts$abundance), 0L)
+  expect_true(all(vapply(contract$differential_results, nrow, integer(1)) == 0L))
+  expect_identical(contract$sample_summaries, original$sample_summaries)
+  expect_identical(contract$report$alignment$profiles, original$report$alignment$profiles)
+  expect_null(contract$report$alignment$differences)
+  expect_null(contract$report$alignment$contrasts)
+  expect_null(contract$report$source_results)
+  expect_null(contract$report$eligibility)
+  expect_identical(data$contract, original)
+  invalid <- entry
+  invalid$result$provenance$dataset_id <- "another dataset"
+  expect_error(hybrid_result_contract(data, invalid), "provenance does not match")
+  invalid <- entry
+  invalid$result$results$marker_2 <- "unknown marker"
+  expect_error(hybrid_result_contract(data, invalid), "features do not match")
+  entry$request$bundle_md5 <- "another bundle"
+  expect_error(hybrid_result_contract(data, entry), "does not belong")
 })
