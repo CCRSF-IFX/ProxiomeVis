@@ -79,7 +79,10 @@ test_that("PXL preparation maps cells and matches finite observed score filterin
   scoped <- read_proximity_subset(data, out, narrowed)
   expect_setequal(scoped$component, c(narrowed$group_a_cells, narrowed$group_b_cells))
   expect_equal(scoped$log2_ratio, unname(expected_scores[scoped$component]))
-  expect_equal(read_proximity_subset(data, out, request, marker_1 = "A"), scores)
+  batched <- read_proximity_subset(data, out, request, marker_1 = "A")
+  # Arrow can return the same rows in a different partition order.
+  expect_equal(dplyr::arrange(batched, component, marker_1, marker_2),
+               dplyr::arrange(scores, component, marker_1, marker_2))
   expect_equal(nrow(read_proximity_subset(data, out, request, marker_1 = "B")), 0L)
   pinned <- data
   pinned$contract$proximity_source$pxl_manifest <- data.frame(
