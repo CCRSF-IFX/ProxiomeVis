@@ -28,7 +28,7 @@ hybrid_analysis_ui <- function(id) {
     shiny::uiOutput(ns("availability")),
     shiny::uiOutput(ns("readiness")),
     shiny::tags$div(role = "status", `aria-live` = "polite", shiny::textOutput(ns("status"))),
-    bslib::card(full_screen = TRUE,
+    bslib::card(full_screen = TRUE, class = "hybrid-history-card",
       bslib::card_header("Completed comparisons in this session"),
       bslib::card_body(fill = FALSE,
         shiny::tags$p("Choose a completed comparison, then open it in Results. Saved dataset results stay unchanged."),

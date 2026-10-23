@@ -431,6 +431,12 @@ body {
   overflow: visible;
 }
 
+/* Do not stretch the short session-history card to match the analysis sidebar. */
+.hybrid-history-card {
+  align-self: start;
+  height: fit-content;
+}
+
 .loading-state {
   display: flex;
   align-items: center;
