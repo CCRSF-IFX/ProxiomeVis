@@ -181,12 +181,10 @@ read_proximity_subset <- function(data, asset_root, request, marker_1 = request$
   markers <- request$markers
   first_markers <- marker_1
   query <- arrow::open_dataset(prepared$paths)
-  # Prepared partitions use source PXL IDs. Return the bundle's current IDs.
-  mapping <- data$cell_sources[data$cell_sources$component %in% cells, c("component", "original_id"), drop = FALSE]
-  source_cells <- unique(c(mapping$original_id, cells))
+  # Preparation already stores application IDs; overlapping source IDs must not be remapped.
   # FilterProximityScores(background_threshold_pct = cutoff) uses pmin(p1, p2) >= cutoff.
   # The sidecar stores that minimum, so apply the identical filter before collection.
-  query <- dplyr::filter(query, component %in% source_cells, marker_1 %in% markers, marker_2 %in% markers,
+  query <- dplyr::filter(query, component %in% cells, marker_1 %in% markers, marker_2 %in% markers,
                          marker_1 %in% first_markers,
                          min_marker_fraction >= cutoff, is.finite(log2_ratio))
   query <- if (request$readout == "self_proximity") {
@@ -195,9 +193,6 @@ read_proximity_subset <- function(data, asset_root, request, marker_1 = request$
     dplyr::filter(query, marker_1 != marker_2)
   }
   scores <- as.data.frame(dplyr::collect(utils::head(query, HYBRID_LIMITS$rows + 1L)))
-  if (nrow(scores) && all(scores$component %in% mapping$original_id)) {
-    scores$component <- mapping$component[match(scores$component, mapping$original_id)]
-  }
   if (nrow(scores) > HYBRID_LIMITS$rows) stop("Too many proximity rows; use precomputed results or run this comparison offline.", call. = FALSE)
   if (anyDuplicated(scores[c("component", "marker_1", "marker_2")])) stop("Duplicate proximity observations.", call. = FALSE)
   attr(scores, "provenance") <- list(manifest_md5 = unname(tools::md5sum(prepared$manifest_path)),

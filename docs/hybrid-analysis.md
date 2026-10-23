@@ -105,6 +105,10 @@ partition per sample. Each row contains `component`, canonical `marker_1` and
 counts divided by that cell's total count). Storing the minimum is equivalent
 to requiring both marker fractions to pass the same threshold.
 
+`component` contains the current application cell ID. Preparation converts the
+source PXL IDs with the exact per-sample cell mapping. The reader preserves these
+IDs and selects only the requested application cells; it does not infer the ID type.
+
 The manifest contains the dataset ID, a fingerprint of metadata, counts,
 cell-ID mapping and filter settings, donor cutoffs, row counts, partition MD5s,
 and source PXL paths/checksums. Preparation verifies source checksums against

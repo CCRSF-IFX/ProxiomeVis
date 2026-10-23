@@ -45,6 +45,9 @@ test_that("PXL preparation maps cells and matches finite observed score filterin
   skip_if_not_installed("duckdb")
   skip_if_not_installed("arrow")
   data <- hybrid_fixture()
+  # Overlapping ID sets must not trigger a second mapping after preparation.
+  data$cell_sources$original_id <- rev(data$cell_sources$component)
+  expected_scores <- stats::setNames(log2(seq_len(nrow(data$metadata)) + 1), data$metadata$component)
   root <- tempfile(); dir.create(root)
   paths <- setNames(file.path(root, c("NC.pxl", "TRT.pxl")), c("D1_NC", "D1_TRT"))
   for (sample in names(paths)) {
@@ -54,6 +57,7 @@ test_that("PXL preparation maps cells and matches finite observed score filterin
                        marker_2 = rep(c("A", "B", "B"), each = nrow(ids)),
                        join_count = rep(c(0, 8, 3), each = nrow(ids)), join_count_expected_mean = 2)
     raw$join_count[1L] <- NA_real_
+    raw$join_count[raw$marker_1 != raw$marker_2] <- 2 * (match(ids$component, data$metadata$component) + 1)
     con <- DBI::dbConnect(duckdb::duckdb(), dbdir = paths[[sample]], config = list(threads = "1"))
     DBI::dbWriteTable(con, "proximity", raw)
     DBI::dbDisconnect(con, shutdown = TRUE)
@@ -68,7 +72,13 @@ test_that("PXL preparation maps cells and matches finite observed score filterin
   expect_equal(nrow(scores), 84L)
   expect_true(all(scores$component %in% data$metadata$component))
   expect_true(all(scores$marker_1 == "A" & scores$marker_2 == "B"))
-  expect_equal(scores$log2_ratio, rep(2, 84L))
+  expect_equal(scores$log2_ratio, unname(expected_scores[scores$component]))
+  narrowed <- request
+  narrowed$group_a_cells <- head(request$group_a_cells, 40L)
+  narrowed$group_b_cells <- tail(request$group_b_cells, 40L)
+  scoped <- read_proximity_subset(data, out, narrowed)
+  expect_setequal(scoped$component, c(narrowed$group_a_cells, narrowed$group_b_cells))
+  expect_equal(scoped$log2_ratio, unname(expected_scores[scoped$component]))
   expect_equal(read_proximity_subset(data, out, request, marker_1 = "A"), scores)
   expect_equal(nrow(read_proximity_subset(data, out, request, marker_1 = "B")), 0L)
   pinned <- data
