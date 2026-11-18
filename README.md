@@ -20,6 +20,14 @@ Spatial matrices share a protein selection and order.
 The **Compare profiles and difference** option shows two condition profiles and their differential result.
 Unavailable results keep their positions on the axes.
 
+## Workflow
+
+The analysis has five stages.
+Stages 1 to 4 run before the application and produce the source analysis.
+Stage 5 prepares that analysis for ProxiomeVis and shows it.
+
+![Five-stage analysis workflow: processing, load and QC, abundance, spatial analysis, and interactive visualization.](docs/assets/analysis-workflow.svg)
+
 ## Technical terms
 
 | Term | Meaning |
@@ -201,6 +209,12 @@ On the same computer, open `http://127.0.0.1:3838`.
 For remote access, use the secure proxy that your server environment supplies.
 
 ## Use the application
+
+The figure shows stage 5 in use.
+After you start the application, explore the data, then choose prepared **Results** or a **New comparison**.
+Dashed outlines mark analyses that last only for the session.
+
+![Application journey: prepare and load a bundle, start the application, explore, then inspect prepared results or run a new comparison.](docs/assets/application-journey.svg)
 
 The navigation bar contains these tabs:
 

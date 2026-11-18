@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1333.3 750" width="1333.3" height="750" font-family="Calibri, Carlito, 'Segoe UI', Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">ProxiomeVis analysis workflow</title><desc id="d">Five stages: processing, load and QC, abundance, spatial analysis, interactive visualization.</desc>
+<defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#52607A"/></marker><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0B7A6F"/></marker><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3F5BD9"/></marker><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#E5603F"/></marker><marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14213D"/></marker><marker id="aS" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#52607A"/></marker></defs>
+<rect width="1333.3" height="750" fill="#FFFFFF"/>
+<text x="50" y="59" font-family="Cambria, Caladea, Georgia, serif" font-size="38" font-weight="700" fill="#14213D">Analysis workflow</text>
+<text x="50" y="86" font-size="16" fill="#52607A">From Pixelgen proxiome reads to linked, interactive views</text>
+<rect x="900" y="55" width="30" height="20" rx="4" fill="#E3ECF5" stroke="#52607A" stroke-width="1.5"/><text x="940" y="70" font-size="14" fill="#0F172A">Data object</text>
+<rect x="900" y="87" width="30" height="20" rx="4" fill="#FFFFFF" stroke="#52607A" stroke-width="1.5"/><text x="940" y="102" font-size="14" fill="#0F172A">Analysis step</text>
+<path d="M1070,65 L1115,65" stroke="#52607A" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#aS)"/><text x="1125" y="70" font-size="14" fill="#0F172A">Dependency</text>
+<text x="1070" y="102" font-size="14" fill="#0F172A">Annotation defines target cells</text>
+<rect x="50" y="135" width="225" height="28" rx="14" fill="#F1F4F9"/>
+<text x="162.5" y="153.5" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#52607A">UPSTREAM</text>
+<rect x="302" y="135" width="729" height="28" rx="14" fill="#F1F4F9"/>
+<text x="666.5" y="153.5" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#52607A">ANALYSIS IN R</text>
+<rect x="1058" y="135" width="225" height="28" rx="14" fill="#F1F4F9"/>
+<text x="1170.5" y="153.5" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#52607A">APP</text>
+<rect x="50" y="175" width="225" height="85" rx="8" fill="#52607A"/>
+<circle cx="86" cy="217.5" r="17" fill="#FFFFFF"/><text x="86" y="224.5" text-anchor="middle" font-size="20" font-weight="700" fill="#52607A">1</text>
+<text fill="#FFFFFF"><tspan x="122" y="213" font-size="17" font-weight="700">Processing</tspan><tspan x="122" y="232" font-size="13" font-weight="400">vendor software</tspan></text>
+<path d="M275,217.5 L301,217.5" stroke="#52607A" stroke-width="2" marker-end="url(#aS)"/>
+<path d="M162.5,260 L162.5,279" stroke="#52607A" stroke-width="1.8" marker-end="url(#a1)"/>
+<rect x="50" y="280" width="225" height="46" rx="6" fill="#E3ECF5" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="300">Sample design</tspan><tspan x="162.5" y="315">and metadata</tspan></text>
+<path d="M162.5,326 L162.5,339" stroke="#52607A" stroke-width="1.6" marker-end="url(#a1)"/>
+<rect x="50" y="340" width="225" height="46" rx="6" fill="#E3ECF5" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="360">FASTQ files</tspan><tspan x="162.5" y="375">(sequencing reads)</tspan></text>
+<path d="M162.5,386 L162.5,399" stroke="#52607A" stroke-width="1.6" marker-end="url(#a1)"/>
+<rect x="50" y="400" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="420">nf-core/pixelator</tspan><tspan x="162.5" y="435">pipeline</tspan></text>
+<path d="M162.5,446 L162.5,459" stroke="#52607A" stroke-width="1.6" marker-end="url(#a1)"/>
+<rect x="50" y="460" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="480">Demultiplex, collapse,</tspan><tspan x="162.5" y="495">build graphs</tspan></text>
+<path d="M162.5,506 L162.5,519" stroke="#52607A" stroke-width="1.6" marker-end="url(#a1)"/>
+<rect x="50" y="520" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="547.5">Cell graph layouts</tspan></text>
+<path d="M162.5,566 L162.5,579" stroke="#52607A" stroke-width="1.6" marker-end="url(#a1)"/>
+<rect x="50" y="580" width="225" height="46" rx="6" fill="#E3ECF5" stroke="#52607A" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="162.5" y="607.5">PXL files (DuckDB)</tspan></text>
+<rect x="302" y="175" width="225" height="85" rx="8" fill="#0B7A6F"/>
+<circle cx="338" cy="217.5" r="17" fill="#FFFFFF"/><text x="338" y="224.5" text-anchor="middle" font-size="20" font-weight="700" fill="#0B7A6F">2</text>
+<text fill="#FFFFFF"><tspan x="374" y="213" font-size="17" font-weight="700">Load and QC</tspan><tspan x="374" y="232" font-size="13" font-weight="400">pixelatorR / Seurat</tspan></text>
+<path d="M527,217.5 L553,217.5" stroke="#52607A" stroke-width="2" marker-end="url(#aS)"/>
+<path d="M414.5,260 L414.5,279" stroke="#0B7A6F" stroke-width="1.8" marker-end="url(#a2)"/>
+<rect x="302" y="280" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="300">Load and merge samples</tspan><tspan x="414.5" y="315">(ReadPNA_Seurat)</tspan></text>
+<path d="M414.5,326 L414.5,339" stroke="#0B7A6F" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="302" y="340" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="360">Attach donor and</tspan><tspan x="414.5" y="375">condition metadata</tspan></text>
+<path d="M414.5,386 L414.5,399" stroke="#0B7A6F" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="302" y="400" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="427.5">Exclude low UMI count</tspan></text>
+<path d="M414.5,446 L414.5,459" stroke="#0B7A6F" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="302" y="460" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="487.5">Exclude low or high Tau</tspan></text>
+<path d="M414.5,506 L414.5,519" stroke="#0B7A6F" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="302" y="520" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="540">Exclude high</tspan><tspan x="414.5" y="555">isotype-control %</tspan></text>
+<path d="M414.5,566 L414.5,579" stroke="#0B7A6F" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="302" y="580" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#0B7A6F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="414.5" y="600">Review cell counts</tspan><tspan x="414.5" y="615">per QC step</tspan></text>
+<rect x="554" y="175" width="225" height="85" rx="8" fill="#3F5BD9"/>
+<circle cx="590" cy="217.5" r="17" fill="#FFFFFF"/><text x="590" y="224.5" text-anchor="middle" font-size="20" font-weight="700" fill="#3F5BD9">3</text>
+<text fill="#FFFFFF"><tspan x="626" y="213" font-size="17" font-weight="700">Abundance</tspan><tspan x="626" y="232" font-size="13" font-weight="400">pixelatorR / Seurat</tspan></text>
+<path d="M779,217.5 L805,217.5" stroke="#52607A" stroke-width="2" marker-end="url(#aS)"/>
+<path d="M666.5,260 L666.5,279" stroke="#3F5BD9" stroke-width="1.8" marker-end="url(#a3)"/>
+<rect x="554" y="280" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="307.5">CLR normalization</tspan></text>
+<path d="M666.5,326 L666.5,339" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="340" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="367.5">PCA</tspan></text>
+<path d="M666.5,386 L666.5,399" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="400" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="420">Harmony integration</tspan><tspan x="666.5" y="435">(batch correction)</tspan></text>
+<path d="M666.5,446 L666.5,459" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="460" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="480">UMAP, neighbors,</tspan><tspan x="666.5" y="495">clustering</tspan></text>
+<path d="M666.5,506 L666.5,519" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="520" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="540">Cluster markers</tspan><tspan x="666.5" y="555">(FindAllMarkers)</tspan></text>
+<path d="M666.5,566 L666.5,579" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="580" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="600">Cell type annotation</tspan><tspan x="666.5" y="615">(canonical-marker check)</tspan></text>
+<path d="M666.5,626 L666.5,639" stroke="#3F5BD9" stroke-width="1.6" marker-end="url(#a3)"/>
+<rect x="554" y="640" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#3F5BD9" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="666.5" y="660">Differential abundance</tspan><tspan x="666.5" y="675">(RunDAA)</tspan></text>
+<rect x="806" y="175" width="225" height="85" rx="8" fill="#E5603F"/>
+<circle cx="842" cy="217.5" r="17" fill="#FFFFFF"/><text x="842" y="224.5" text-anchor="middle" font-size="20" font-weight="700" fill="#E5603F">4</text>
+<text fill="#FFFFFF"><tspan x="878" y="213" font-size="17" font-weight="700">Spatial analysis</tspan><tspan x="878" y="232" font-size="13" font-weight="400">pixelatorR</tspan></text>
+<path d="M1031,217.5 L1057,217.5" stroke="#52607A" stroke-width="2" marker-end="url(#aS)"/>
+<path d="M918.5,260 L918.5,279" stroke="#E5603F" stroke-width="1.8" marker-end="url(#a4)"/>
+<rect x="806" y="280" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="300">Select target cells</tspan><tspan x="918.5" y="315">(annotated types)</tspan></text>
+<path d="M918.5,326 L918.5,339" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="340" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="360">Proximity scores:</tspan><tspan x="918.5" y="375">clustering, colocalization</tspan></text>
+<path d="M918.5,386 L918.5,399" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="400" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="420">Filter low-abundance</tspan><tspan x="918.5" y="435">markers (isotype cutoff)</tspan></text>
+<path d="M918.5,446 L918.5,459" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="460" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="480">Proximity score profiling</tspan><tspan x="918.5" y="495">(heatmaps)</tspan></text>
+<path d="M918.5,506 L918.5,519" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="520" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="540">Differential clustering</tspan><tspan x="918.5" y="555">(rank test, BH)</tspan></text>
+<path d="M918.5,566 L918.5,579" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="580" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="600">Differential colocalization</tspan><tspan x="918.5" y="615">(rank test, BH)</tspan></text>
+<path d="M918.5,626 L918.5,639" stroke="#E5603F" stroke-width="1.6" marker-end="url(#a4)"/>
+<rect x="806" y="640" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#E5603F" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="918.5" y="660">Cell visualization</tspan><tspan x="918.5" y="675">(2D and 3D graphs)</tspan></text>
+<rect x="1058" y="175" width="225" height="85" rx="8" fill="#14213D"/>
+<circle cx="1094" cy="217.5" r="17" fill="#FFFFFF"/><text x="1094" y="224.5" text-anchor="middle" font-size="20" font-weight="700" fill="#14213D">5</text>
+<text fill="#FFFFFF"><tspan x="1130" y="203.5" font-size="17" font-weight="700">Interactive</tspan><tspan x="1130" y="222.5" font-size="17" font-weight="700">visualization</tspan><tspan x="1130" y="241.5" font-size="13" font-weight="400">ProxiomeVis</tspan></text>
+<path d="M1170.5,260 L1170.5,279" stroke="#14213D" stroke-width="1.8" marker-end="url(#a5)"/>
+<rect x="1058" y="280" width="225" height="46" rx="6" fill="#E3ECF5" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="300">Prepared app data</tspan><tspan x="1170.5" y="315">(results, embeddings)</tspan></text>
+<path d="M1170.5,326 L1170.5,339" stroke="#14213D" stroke-width="1.6" marker-end="url(#a5)"/>
+<rect x="1058" y="340" width="225" height="46" rx="6" fill="#E3ECF5" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="360">Per-cell proximity and</tspan><tspan x="1170.5" y="375">graph layouts</tspan></text>
+<path d="M1170.5,386 L1170.5,399" stroke="#14213D" stroke-width="1.6" marker-end="url(#a5)"/>
+<rect x="1058" y="400" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="420">Validate data contract</tspan><tspan x="1170.5" y="435">and checksums</tspan></text>
+<path d="M1170.5,446 L1170.5,459" stroke="#14213D" stroke-width="1.6" marker-end="url(#a5)"/>
+<rect x="1058" y="460" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="480">ProxiomeVis Shiny app</tspan><tspan x="1170.5" y="495">(linked views)</tspan></text>
+<path d="M1170.5,506 L1170.5,519" stroke="#14213D" stroke-width="1.6" marker-end="url(#a5)"/>
+<rect x="1058" y="520" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="540">Export figures,</tspan><tspan x="1170.5" y="555">GIF and 3D models</tspan></text>
+<path d="M1170.5,566 L1170.5,579" stroke="#14213D" stroke-width="1.6" marker-end="url(#a5)"/>
+<rect x="1058" y="580" width="225" height="46" rx="6" fill="#FFFFFF" stroke="#14213D" stroke-width="1.5"/>
+<text text-anchor="middle" font-size="13" fill="#0F172A"><tspan x="1170.5" y="600">Provenance: config,</tspan><tspan x="1170.5" y="615">versions, MD5</tspan></text>
+<path d="M779,603 L792.5,603 L792.5,303 L805,303" fill="none" stroke="#52607A" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#aS)"/>
+</svg>
