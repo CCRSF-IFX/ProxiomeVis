@@ -11,8 +11,9 @@ The configured file must exist and end in `.rds`.
 ## The RDS fails contract validation
 
 The app accepts a plain application bundle with `bundle_version = 2L` or a
-legacy Seurat RDS. Both retain the frozen contract's `schema_version = 1L`;
-these version numbers describe different structures and should not be changed
+legacy Seurat RDS. The analysis contract can use `schema_version = 1L` or `2L`.
+Version 2 adds donor measurements and comparison design; version 1 stays readable.
+These version numbers describe different structures and should not be changed
 to make an incompatible file load.
 
 Validation checks metadata mappings, coordinates, matrix/cell alignment,
@@ -42,10 +43,14 @@ and feature that has stored rows. The application does not calculate missing
 results automatically. Condition profiles in **Spatial patterns** can be
 available without differential results.
 
-To run a test, open **New comparison**. Select one donor, one cell type, and two
-conditions. Click **Run comparison** to test all cells and markers in that scope.
-Raw counts are required for abundance tests. A proximity sidecar is required for
-spatial tests. Select the completed comparison and click **Open in Results**.
+To run a test, open **New comparison**. Select within-donor exploration or an
+across-donor comparison. Compare conditions in one cell type, or cell types
+in one condition. Across-donor conditions can use matching donors or separate
+donor groups; cell-type comparisons require matching donors.
+Click **Run comparison** to test all cells and markers in scope.
+Raw counts are required for within-donor abundance, not across-donor abundance.
+A proximity sidecar is required for new spatial tests.
+Select the completed comparison and click **Open in Results**.
 The application does not change the prepared results.
 
 ## PXL files are unavailable
@@ -121,8 +126,9 @@ healthy process.
 
 ## A worker cannot start or reports a missing package
 
-The analysis subprocess uses the app's R installation and library paths. New
-tests require pixelatorR, Seurat, and SeuratObject; spatial querying also needs
+The analysis subprocess uses the app's R installation and library paths.
+Within-donor tests require pixelatorR, Seurat, and SeuratObject. Across-donor
+abundance uses stored normalized values; spatial querying also needs
 Arrow and dplyr. The report-only viewer does not install these optional packages.
 See [Hybrid analysis](hybrid-analysis.md#dependencies-and-preparation).
 
@@ -137,27 +143,34 @@ that process's sessions. Busy requests are rejected with a retry message, not
 queued. Retry after the current job finishes or is cancelled. Closing a session
 cancels its running analysis.
 
-Each job has a 120-second timeout and limits of 2,000 selected cells, 160 markers,
-1,000 unordered colocalization pairs, and 1 million retained score rows. Select
-fewer cells or markers to reduce work; colocalization is limited to 45 markers
-because 46 produce more than 1,000 pairs. The app never silently downsamples a
+Each job has a 120-second timeout. Limits are 2,000 cells per donor, 40 selected
+donors, 80,000 cells in total, and 160 markers. Spatial processing uses batches
+of at most 1,000 pairs and 1 million retained score rows. The complete comparison
+can contain more than 1,000 pairs. Select a smaller donor or cell-type scope
+to reduce work. The app never silently downsamples a
 request. Deployment-level RAM/CPU quotas are still needed: these workload limits
 are not a memory guarantee, and multiple Shiny processes each have their own
 worker limit.
 
 ## A new result has missing statistics or differs from the report
 
-Abundance requires at least 3 selected cells per condition. Spatial features
-require at least 20 retained observations per group for self-proximity, or 40
-for colocalization. Inspect `n_cells_a/b`, `n_scored_a/b`, and `status` in the
+Abundance requires at least 3 cells per donor and group. Spatial default
+minimums are 20 retained observations per group for self-proximity, or 40
+for colocalization. Check the submitted minimum. Inspect `n_cells_a/b`, `n_scored_a/b`, and `status` in the
 result table. Missing or filtered scores are not imputed as zeros, so selecting
-enough cells does not guarantee every feature is testable.
+enough cells does not guarantee every feature is testable. Across-donor results
+also record eligible donor counts and complete pair counts. Paired tests need
+at least two complete pairs; independent tests need two eligible donors in each
+group. This is only a computational minimum. Degenerate data can still prevent
+a finite test result. Inspect donor points and the status field.
 
-New tests use the submitted cells and eligible selected-marker testing family.
-Restricting markers can change BH-adjusted p-values even when raw p-values agree
+New tests use the submitted scope and eligible tested-feature family.
+A different tested-feature family can change BH-adjusted P values even when raw P values agree
 with the report. Changing controls does not change the completed result until
 another run; check its recorded scope and downloaded provenance. Neither result
-supports population-level inference from cells in a single donor.
+supports population-level inference from cells in a single donor. Across-donor
+tests instead use independent donor summaries as their observations. Do not
+combine cell-level P values to create an across-donor test.
 
 ## The bundle or sidecar checksum does not match
 

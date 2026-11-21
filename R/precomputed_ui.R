@@ -112,10 +112,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
         ),
         bslib::nav_panel(
           "Volcano",
-          shiny::tags$div(class = "alert alert-warning small mt-2",
-            shiny::tags$strong("Exploratory component-level test. "),
-            "Stored P values describe cells within the selected donor, not a population-level treatment effect. Table filters do not change the original report thresholds or plot."
-          ),
+          shiny::uiOutput(ns("volcano_notice")),
           bslib::layout_columns(
             col_widths = c(6, 6), fill = FALSE,
             bslib::card(full_screen = TRUE,
@@ -125,13 +122,12 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
                 shiny::downloadButton(ns("download_report_volcano_csv"), "All stored volcano rows CSV", class = "btn-sm btn-outline-primary")
               ),
               shiny::tags$p(class = "small text-muted",
-                "Click a point to update the cell distribution alongside. Hover for details; scroll or drag a box to zoom; double-click to reset."),
+                "Click a point to update its measurements alongside. Hover for details; scroll or drag a box to zoom; double-click to reset."),
               plotly::plotlyOutput(ns("report_volcano_plot"), height = "650px")
             ),
             bslib::card(full_screen = TRUE,
-              bslib::card_header("Selected feature — cell distribution"),
-              shiny::tags$p(class = "small text-muted",
-                "Violin and boxplot show available cell values, not a new test. Plotted cells can differ from the original test cohort. Spatial distributions require the proximity sidecar."),
+              bslib::card_header("Selected feature — measurements"),
+              shiny::uiOutput(ns("detail_notice")),
               plotly::plotlyOutput(ns("volcano_distribution"), height = "650px")
             )
           )
@@ -173,10 +169,10 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               "Single" = "single", "Compare profiles and difference" = "compare"), inline = TRUE),
             shiny::conditionalPanel("!input.spatial_layout || input.spatial_layout == 'single'", ns = ns,
             shiny::radioButtons(ns("spatial_kind"), "Spatial quantity", choices = c(
-              "Differential effect (difference of medians)" = "differences",
-              "Condition profile (mean proximity)" = "profiles"), selected = "differences"),
+              "Differential effect" = "differences",
+              "Group profile" = "profiles"), selected = "differences"),
             shiny::conditionalPanel("input.spatial_kind == 'profiles'", ns = ns,
-              shiny::selectInput(ns("spatial_panel"), "Condition", choices = character())
+              shiny::selectInput(ns("spatial_panel"), "Group", choices = character())
             ))
           ),
           shiny::tags$p(class = "small text-muted",
@@ -202,7 +198,7 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
             precomputed_download_group(
               shiny::downloadButton(ns("download_spatial_compare_svg"), "Comparison SVG", class = "btn-sm btn-outline-primary"),
               shiny::downloadButton(ns("download_spatial_compare_csv"), "Comparison rows CSV", class = "btn-sm btn-outline-primary")),
-            shiny::tags$p(class = "small text-muted", "The two profiles share a color scale. The differential panel uses a separate effect scale. A difference in profile means is not the stored difference in medians."),
+            shiny::tags$p(class = "small text-muted", "The two profiles share a color scale. The differential panel uses a separate effect scale. The stored method defines each summary; profile subtraction does not replace the stored test."),
             shiny::div(class = "spatial-comparison",
               lapply(c("reference", "target", "difference"), function(key) {
                 label <- switch(key, reference = "Reference profile", target = "Target profile", difference = "Differential effect")
@@ -224,10 +220,9 @@ precomputed_ui <- function(id, dataset_control = NULL, dataset_status = NULL) {
               shiny::numericInput(ns("network_mean"), "Minimum absolute mean proximity (greater than)",
                 value = 0.1, min = 0, step = 0.05)
             ),
-            shiny::tags$p(class = "small text-muted",
-              "Each condition is filtered separately. The initial marker set uses up to 10 markers from the strongest stored pairs. Color shows mean log2 ratio; line width shows its absolute magnitude. Positions and scales are shared across conditions. These display thresholds are not significance tests. Stored population means include missing scores as zero."),
+            shiny::uiOutput(ns("network_notice")),
             bslib::card(full_screen = TRUE,
-              bslib::card_header("Colocalization network — mean proximity by condition"),
+              bslib::card_header("Colocalization network — group profiles"),
               precomputed_download_group(
                 shiny::downloadButton(ns("download_network_svg"), "Network SVG", class = "btn-sm btn-outline-primary"),
                 shiny::downloadButton(ns("download_network_csv"), "Displayed edges CSV", class = "btn-sm btn-outline-primary")
@@ -292,6 +287,7 @@ documentation_ui <- function() {
           tags$li("Cell-level spatial distributions, cell ranking, and custom spatial tests need the proximity sidecar."),
           tags$li("The Cell 3D view needs the graph sidecar. PXL files are not necessary during application use.")),
         tags$p("For local use, the administrator can enable server-path entry. Use RDS files only from approved sources."),
+        tags$p("The application accepts analysis schema versions 1 and 2. Version 1 results keep their original methods and values. Version 2 adds comparison design and donor measurements."),
         tags$p("To use your own annotated Seurat data, run scripts/prepare_user_bundle.R before application use. The input can have no saved differential tests."),
         tags$p(tags$a(href = "https://github.com/CCRSF-IFX/ProxiomeVis/blob/main/docs/prepare-user-data.md",
           target = "_blank", rel = "noopener noreferrer", "Prepare your own data (opens in a new tab)"))
@@ -306,20 +302,30 @@ documentation_ui <- function() {
       ),
       bslib::accordion_panel("Results",
         tags$p("Results shows prepared analyses and comparisons completed in this session. Both use the same tables and plots. Display controls do not calculate new tests."),
-        tags$ol(tags$li("Open Results."), tags$li("Select a Result source."), tags$li("For prepared results, select one donor if more than one is available."),
-          tags$li("Select a Cell type."), tags$li("Select a Comparison (target − reference)."), tags$li("Select a Readout.")),
-        tags$p("A session comparison keeps its submitted donor, cell type, conditions, and readout. Select Prepared results to return to the original analyses."),
+        tags$ol(tags$li("Open Results."), tags$li("Select a Result source."), tags$li("Select a Readout."),
+          tags$li("For prepared results, select an Analysis scope if the control is available. Select an individual donor or Across donors — stored summary."),
+          tags$li("Select a Cell type."), tags$li("Select a Comparison (target − reference).")),
+        tags$p("Prepared results and new comparisons support Within-donor exploration. Biological replicates are not necessary for this exploratory view."),
+        tags$p("Across-donor comparisons use donors as biological replicates. They do not replace Within-donor exploration."),
+        tags$p("A session comparison keeps its submitted scope, groups, donor design, and readout. Display changes do not change these settings. Select Prepared results to return to the original analyses."),
         tags$p("Abundance describes marker amounts. Self-clustering describes proximity for one marker. Colocalization describes proximity between different markers."),
         tags$h3("Tables and Volcano"),
         tags$ol(tags$li("Click a result row in Tables to select a marker or pair."),
           tags$li("Open Volcano to see effects and statistical evidence."),
-          tags$li("Click a volcano point to change the adjacent violin and boxplot.")),
-        tags$p("The distribution shows available cell values by condition. Missing proximity scores are excluded, not replaced with zero."),
+          tags$li("Click a volcano point to change the adjacent measurements.")),
+        tags$p("Within-donor exploration shows a violin and boxplot of available cell values. Groups can be conditions or cell types. Missing proximity scores are excluded, not replaced with zero."),
         tags$p("The displayed cells can differ from the original test group. The distribution does not calculate a new test."),
+        tags$p("With stored donor measurements, across-donor plots show one point per donor and group. Lines connect paired donors only. Independent donor groups have no connecting lines."),
         tags$h3("Statistical limits"),
-        tags$p("A positive effect means that the target value exceeds the reference value. Spatial differential effects are differences between medians."),
-        tags$p("P values describe cells within the selected donor. Cells are not independent biological replicates."),
-        tags$p("These exploratory results do not establish a treatment effect across a population of donors."),
+        tags$p("A positive effect means that the target value exceeds the reference value. Read the stored metric and method before you compare effects."),
+        tags$p("Within-donor P values describe cells within the selected donor. Cells are not independent biological replicates."),
+        tags$p("These exploratory results do not establish a treatment effect across a population of donors. Do not pool cells from different donors to create biological replicates."),
+        tags$p("New across-donor abundance analyses use the mean stored normalized abundance for each donor and group. Spatial analyses use the median retained observed log2 ratio for each donor and group."),
+        tags$p("Each donor has equal weight. Samples from the same donor do not add biological replicates."),
+        tags$p("Paired comparisons use the mean within-donor difference and a paired t-test. Independent comparisons use the difference between donor-group means and a Welch t-test."),
+        tags$p("A paired test needs at least two complete eligible donor pairs. A Welch test needs at least two eligible donors in each group. These minimum counts do not show that a study has sufficient statistical power."),
+        tags$p("The tests assume independent donors. Paired tests assume approximately normal donor differences. Welch tests assume approximately normal donor summaries. Few donors make these assumptions difficult to assess."),
+        tags$p("Results with insufficient donor support or an undefined test keep P values as NA. NA means unavailable, not zero and not nonsignificant. A descriptive effect can still be available."),
         tags$p("FDR means false discovery rate. Table FDR controls do not change the original report thresholds."),
         tags$p("The Statistical methods and original thresholds section gives the stored method settings.")
       ),
@@ -327,7 +333,8 @@ documentation_ui <- function() {
         tags$p("Spatial patterns is unavailable for abundance. Network is available only for colocalization."),
         tags$ol(tags$li("Select a spatial readout under Results."), tags$li("Open Spatial patterns."),
           tags$li("Select Matrix or Network.")),
-        tags$p("Matrix shows differential effects or condition profiles. Condition profiles contain means, not differences between medians."),
+        tags$p("Matrix shows differential effects or group profiles. Groups can be conditions or cell types. The stored method defines each summary."),
+        tags$p("Prepared condition profiles can contain means. New across-donor spatial profiles average eligible donor medians. Do not substitute profile subtraction for the stored differential test."),
         tags$h3("Use the same proteins and order"),
         tags$p("The automatic list combines proteins from self-clustering and colocalization results for the cell type, across comparisons and donors. It includes nonsignificant results. Without comparison results, it uses available condition profiles."),
         tags$ol(tags$li("Open Shared proteins and order."),
@@ -355,15 +362,29 @@ documentation_ui <- function() {
         tags$p("Network means include missing scores as zero. Network thresholds control the display; they do not test statistical significance.")
       ),
       bslib::accordion_panel("New comparison",
-        tags$ol(tags$li("Open New comparison."), tags$li("Select one donor."), tags$li("Select one cell type."),
-          tags$li("Select the target and reference conditions."), tags$li("Select the readout."),
-          tags$li("For spatial tests, set Minimum observed cells per condition if necessary."),
-          tags$li("Check the cell counts and readiness message."),
-          tags$li("Read the exploratory-analysis notice."), tags$li("Select its confirmation checkbox."),
+        tags$p("Select an Analysis scope and a comparison type. Five designs are available."),
+        tags$ul(
+          tags$li("Within-donor exploration, Conditions: select one donor, one cell type, and two conditions."),
+          tags$li("Within-donor exploration, Cell types: select one donor, one condition, and two cell types."),
+          tags$li("Across donors, Conditions, Paired: select one cell type and two conditions. Use donors measured in both conditions."),
+          tags$li("Across donors, Cell types, Paired: select one condition and two cell types. Use donors with both cell types."),
+          tags$li("Across donors, Conditions, Independent: select one cell type and two conditions. The conditions must have different donors.")
+        ),
+        tags$p("Within-donor exploration remains available without biological replicates. It supports prepared results and new comparisons."),
+        tags$ol(tags$li("Open New comparison."), tags$li("Select the Analysis scope and Compare settings."),
+          tags$li("Select the donor or donors. For Across donors, select the Donor design."),
+          tags$li("Select the fixed cell type or condition. Select the target and reference groups."),
+          tags$li("Select the Readout."),
+          tags$li("For spatial tests, set Minimum observed cells per donor and group if necessary."),
+          tags$li("Check the retained cell counts, donor counts, exclusions, and readiness message."),
+          tags$li("For Within-donor exploration, read the notice and select its confirmation checkbox."),
           tags$li("Click Run comparison.")),
         tags$p("The comparison uses all cells in the selected scope. It tests all dataset markers or different-marker pairs."),
+        tags$p("Paired designs exclude donors without both groups. The worker also excludes incomplete pairs for each feature after score filtering. Independent groups cannot share donors."),
+        tags$p("Across-donor abundance uses stored normalized values. Raw counts are not necessary for this mode. New within-donor abundance tests require raw counts."),
         tags$p("Spatial tests apply isotype-background filtering before the minimum observation count. The analysis adjusts P values across the tested features."),
-        tags$p("One job permits at most 2,000 cells, 160 markers, and 120 seconds. Larger comparisons require analysis outside the application."),
+        tags$p("Missing or filtered spatial scores are not zeros. A low score count can make a donor measurement unavailable."),
+        tags$p("One job permits at most 2,000 cells per donor and 80,000 cells in total. It permits at most 40 donors, 160 markers, and 120 seconds. Larger comparisons require analysis outside the application."),
         tags$p("You can use other tabs during the analysis. New comparisons do not replace prepared results."),
         tags$ol(tags$li("When the analysis ends, select a Completed comparison."),
           tags$li("Click Open in Results to inspect its tables, volcano, and available spatial views."),

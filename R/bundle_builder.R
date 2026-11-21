@@ -94,7 +94,7 @@ user_bundle_data <- function(object, title = "My proximity dataset", dataset_id 
   }
   data$contract$qc$cell_counts <- qc
   if (!is.null(saved_results)) {
-    sections <- c("sample_summaries", "donor_contrasts", "differential_results")
+    sections <- c("sample_summaries", "donor_contrasts", "differential_results", "donor_values")
     if (!is.list(saved_results) || is.null(names(saved_results)) || anyDuplicated(names(saved_results)) ||
         any(!names(saved_results) %in% c(sections, "report", "provenance"))) {
       stop("Saved results must contain named result sections, with optional report and provenance entries.", call. = FALSE)
@@ -103,6 +103,11 @@ user_bundle_data <- function(object, title = "My proximity dataset", dataset_id 
       values <- saved_results[[section]]
       if (!is.list(values) || is.null(names(values)) || anyDuplicated(names(values)) ||
           any(!names(values) %in% PROXIOMEVIS_READOUTS)) stop("Invalid saved-result readouts in ", section, ".", call. = FALSE)
+      if (section == "donor_values") {
+        if (!length(values)) stop("Saved donor_values must include a table template.", call. = FALSE)
+        data$contract[[section]] <- stats::setNames(lapply(PROXIOMEVIS_READOUTS,
+          function(readout) values[[1L]][FALSE, , drop = FALSE]), PROXIOMEVIS_READOUTS)
+      }
       for (readout in names(values)) data$contract[[section]][[readout]] <- values[[readout]]
     }
     if (!is.null(saved_results$report)) data$contract$report <- saved_results$report
@@ -240,7 +245,36 @@ import_user_comparison <- function(bundle_path, comparison_path, output_rds) {
   }
   entry <- exported$entry
   validate_hybrid_request(data, entry$request)
-  data$contract <- hybrid_result_contract(data, entry)
+  original <- data$contract
+  adapted <- hybrid_result_contract(data, entry)
+  existing_ids <- unique(unlist(lapply(c("donor_contrasts", "differential_results"), function(section)
+    unlist(lapply(original[[section]], function(rows) rows$analysis_id), use.names = FALSE)), use.names = FALSE))
+  if (entry$id %in% existing_ids) stop("This analysis ID is already stored. Use a new comparison ID.", call. = FALSE)
+  normalize_context <- function(rows) {
+    if (!"comparison_axis" %in% names(rows)) rows$comparison_axis <- rep("condition", nrow(rows))
+    if (!"design" %in% names(rows)) rows$design <- rep("within_donor", nrow(rows))
+    if (!"fixed_condition" %in% names(rows)) rows$fixed_condition <- rep(NA_character_, nrow(rows))
+    rows
+  }
+  for (section in c("donor_contrasts", "differential_results", "donor_values")) {
+    if (is.null(original[[section]]) && is.null(adapted[[section]])) next
+    for (readout in PROXIOMEVIS_READOUTS) {
+      old <- original[[section]][[readout]]
+      added <- adapted[[section]][[readout]]
+      if (is.null(old)) old <- added[FALSE, , drop = FALSE]
+      if (is.null(added)) added <- old[FALSE, , drop = FALSE]
+      if (!nrow(added)) next
+      original[[section]][[readout]] <- as.data.frame(data.table::rbindlist(
+        list(normalize_context(old), normalize_context(added)), use.names = TRUE, fill = TRUE))
+    }
+    if (is.null(original[[section]])) original[[section]] <- adapted[[section]]
+    for (readout in PROXIOMEVIS_READOUTS) if (is.null(original[[section]][[readout]]))
+      original[[section]][[readout]] <- adapted[[section]][[readout]][FALSE, , drop = FALSE]
+  }
+  original$schema_version <- max(original$schema_version, adapted$schema_version)
+  original$comparison_provenance[[entry$id]] <- adapted$session_result
+  original$session_result <- NULL
+  data$contract <- original
   # The reader has resolved aliases; original overlapping mappings no longer describe this metadata.
   mappings <- list(sample_column = "sample_id", donor_column = "donor", condition_column = "condition",
     celltype_column = "celltype", cluster_column = "cluster")

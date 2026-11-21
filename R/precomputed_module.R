@@ -965,20 +965,93 @@ precomputed_metric_card <- function(label, output_id) {
 precomputed_explorer_scope <- function(data, readout = NULL, donor = NULL, celltype = NULL, comparison = NULL) {
   readouts <- unname(PRECOMPUTED_READOUTS)
   readout <- precomputed_keep_selection(readout, readouts)
-  rows <- precomputed_contract_table(data$contract, "donor_contrasts", readout)
+  contrasts <- precomputed_contract_table(data$contract, "donor_contrasts", readout)
+  aggregate <- precomputed_contract_table(data$contract, "differential_results", readout)
   donors <- sort(unique(as.character(data$metadata$donor)))
-  donor <- precomputed_keep_selection(donor, donors)
-  donor_rows <- precomputed_filter_table(rows, donor = donor, include_controls = TRUE)
-  celltypes <- precomputed_report_celltypes(data$contract, data$metadata, donor, readout, donor_rows)
+  choices <- if (nrow(aggregate)) c(donors, PRECOMPUTED_ALL) else donors
+  donor <- precomputed_keep_selection(donor, choices,
+    if (!nrow(contrasts) && nrow(aggregate)) PRECOMPUTED_ALL else NULL)
+  across <- identical(donor, PRECOMPUTED_ALL)
+  donor_rows <- if (across) aggregate else precomputed_filter_table(contrasts, donor = donor, include_controls = TRUE)
+  celltypes <- if (across) precomputed_available_values(donor_rows, "celltype") else
+    precomputed_report_celltypes(data$contract, data$metadata, donor, readout, donor_rows)
   if (!length(celltypes)) celltypes <- sort(unique(as.character(data$metadata$celltype)))
   celltype <- precomputed_keep_selection(celltype, c(celltypes, PRECOMPUTED_ALL))
-  comparisons <- precomputed_available_values(donor_rows, "comparison")
-  comparison <- precomputed_keep_selection(comparison, comparisons)
-  selected <- if (length(comparison) && !is.na(comparison)) {
-    precomputed_filter_table(donor_rows, celltype = celltype, comparison = comparison, include_controls = TRUE)
-  } else donor_rows[FALSE, , drop = FALSE]
+  donor_rows <- precomputed_filter_table(donor_rows, celltype = celltype, include_controls = TRUE)
+  definitions <- if (nrow(donor_rows)) unique(donor_rows[c("analysis_id", "comparison")]) else
+    data.frame(analysis_id = character(), comparison = character())
+  ambiguous <- duplicated(definitions$comparison) | duplicated(definitions$comparison, fromLast = TRUE)
+  definitions$key <- ifelse(ambiguous,
+    paste0(definitions$comparison, " [", definitions$analysis_id, "]"), definitions$comparison)
+  comparison_key <- precomputed_keep_selection(comparison, definitions$key)
+  definition <- definitions[definitions$key %in% comparison_key, , drop = FALSE]
+  comparison <- if (nrow(definition)) definition$comparison[[1L]] else NA_character_
+  analysis_id <- if (nrow(definition)) definition$analysis_id[[1L]] else NA_character_
+  selected <- precomputed_filter_table(donor_rows, celltype = celltype, include_controls = TRUE)
+  if (nrow(selected)) selected <- selected[selected$analysis_id %in% analysis_id, , drop = FALSE]
+  context <- function(field, fallback) {
+    values <- unique(as.character(selected[[field]]))
+    values <- values[!is.na(values) & nzchar(values)]
+    if (length(values) == 1L) values else fallback
+  }
   list(readout = readout, donor = donor, donors = donors, celltype = celltype, celltypes = celltypes,
-       comparison = comparison, comparisons = comparisons, rows = selected)
+       comparison = comparison, comparison_key = comparison_key,
+       comparisons = stats::setNames(definitions$key, definitions$key), analysis_id = analysis_id,
+       registered = analysis_id %in% names(data$contract$comparison_provenance) ||
+         identical(analysis_id, data$contract$session_result$id),
+       across = across, comparison_axis = context("comparison_axis", "condition"),
+       design = context("design", if (across) "paired" else "within_donor"),
+       fixed_condition = context("fixed_condition", NA_character_), rows = selected)
+}
+
+precomputed_scope_contract <- function(contract, scope) {
+  for (section in c("donor_contrasts", "differential_results", "donor_values")) {
+    for (readout in names(contract[[section]])) {
+      rows <- contract[[section]][[readout]]
+      if (!nrow(rows)) next
+      keep <- rows$comparison %in% scope$comparison
+      if (isTRUE(scope$registered) || scope$comparison_axis == "celltype" ||
+          any(scope$rows$design %in% c("paired", "independent")) || identical(readout, scope$readout)) {
+        keep <- keep & rows$analysis_id %in% scope$analysis_id
+      }
+      if ("design" %in% names(rows)) keep <- keep & rows$design %in% scope$design
+      if ("comparison_axis" %in% names(rows)) keep <- keep & rows$comparison_axis %in% scope$comparison_axis
+      if (identical(scope$comparison_axis, "celltype") && "fixed_condition" %in% names(rows))
+        keep <- keep & rows$fixed_condition %in% scope$fixed_condition
+      contract[[section]][[readout]] <- rows[keep, , drop = FALSE]
+    }
+  }
+  if (isTRUE(scope$registered) && is.list(contract$report)) {
+    contract$report$source_results <- NULL
+    contract$report$eligibility <- NULL
+    if (is.list(contract$report$alignment)) {
+      contract$report$alignment$differences <- NULL
+      contract$report$alignment$contrasts <- NULL
+    }
+  }
+  contract
+}
+
+plot_precomputed_donor_values <- function(rows, paired = TRUE, title = "Donor measurements") {
+  if (!nrow(rows)) return(precomputed_empty_plot("No donor measurements were stored for this feature.", title))
+  rows <- rows[rows$eligible %in% TRUE & is.finite(rows$value), , drop = FALSE]
+  if (!nrow(rows)) return(precomputed_empty_plot("No donor measurements pass the support requirement.", title))
+  if (paired) {
+    key <- paste(rows$analysis_id, rows$feature_id, rows$donor, sep = "\r")
+    rows <- rows[key %in% names(which(table(key) == 2L)), , drop = FALSE]
+    if (!nrow(rows)) return(precomputed_empty_plot("No complete eligible donor pairs are available for this feature.", title))
+  }
+  rows$group <- factor(rows$group, levels = unique(c(as.character(rows$group_b), as.character(rows$group_a))))
+  rows$hover <- paste0("Donor: ", rows$donor, "<br>Group: ", rows$group,
+    "<br>Value: ", signif(rows$value, 5), "<br>Observed cells: ", rows$n_scored_cells,
+    " / ", rows$n_total_cells)
+  p <- ggplot2::ggplot(rows, ggplot2::aes(x = group, y = value, color = donor,
+    group = interaction(analysis_id, feature_id, donor), text = hover))
+  if (paired) p <- p + ggplot2::geom_line(alpha = .5, linewidth = .6)
+  p + ggplot2::geom_point(size = 3) + ggplot2::scale_x_discrete(drop = FALSE) + ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::labs(title = title, x = NULL, y = "Donor summary", color = "Donor",
+      subtitle = if (paired) "One point per donor and group; lines connect complete donor pairs."
+        else "One point per donor; the two groups contain independent donors.")
 }
 
 precomputed_display_rows <- function(rows, filter = FALSE, cutoff = 0.05) {
@@ -1071,8 +1144,11 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (is.null(entry)) return(precomputed_explorer_scope(view_data(),
         input$readout, input$donor, input$celltype, input$comparison))
       request <- entry$request
-      precomputed_explorer_scope(view_data(), request$readout, request$donor, request$celltype)
+      precomputed_explorer_scope(view_data(), request$readout,
+        if (identical(request$analysis_scope, "across_donors")) PRECOMPUTED_ALL else request$donor,
+        request$celltype)
     })
+    scoped_contract <- shiny::reactive(precomputed_scope_contract(view_data()$contract, scope()))
     shiny::observeEvent(list(scope()$readout, input$results_view), {
       disabled <- identical(scope()$readout, "abundance")
       session$sendCustomMessage("precomputed-spatial-availability",
@@ -1083,9 +1159,12 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     })
     output$donor_control <- shiny::renderUI({
       donors <- sort(unique(as.character(current_data()$metadata$donor)))
-      if (length(donors) == 1L) return(shiny::tags$p(class = "pt-2", shiny::tags$strong("Donor: "), donors))
-      shiny::selectInput(session$ns("donor"), "Donor", choices = donors,
-        selected = precomputed_keep_selection(shiny::isolate(input$donor), donors))
+      aggregate <- precomputed_contract_table(view_data()$contract, "differential_results", scope()$readout)
+      choices <- stats::setNames(donors, paste("Within donor:", donors))
+      if (nrow(aggregate)) choices <- c(choices, "Across donors — stored summary" = PRECOMPUTED_ALL)
+      if (length(choices) == 1L) return(shiny::tags$p(class = "pt-2", shiny::tags$strong("Donor: "), donors))
+      shiny::selectInput(session$ns("donor"), "Analysis scope", choices = choices,
+        selected = scope()$donor)
     })
 
     readout_tables <- shiny::reactive({
@@ -1163,21 +1242,33 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       )
     }, ignoreInit = FALSE)
 
-    shiny::observeEvent(list(view_data(), input$readout, input$donor), {
+    shiny::observeEvent(list(view_data(), input$readout, input$donor, input$celltype), {
       selection <- scope()
       shiny::updateSelectInput(session, "celltype",
         choices = c(stats::setNames(selection$celltypes, selection$celltypes), "All cell types" = PRECOMPUTED_ALL),
         selected = selection$celltype)
-      shiny::updateSelectInput(session, "comparison", choices = selection$comparisons, selected = selection$comparison)
+      shiny::updateSelectInput(session, "comparison", choices = selection$comparisons, selected = selection$comparison_key)
     })
 
     selected_results <- shiny::reactive(scope()$rows)
-    selected_contrasts <- shiny::reactive(selected_results())
+    selected_contrasts <- shiny::reactive(precomputed_filter_table(
+      precomputed_contract_table(scoped_contract(), "donor_contrasts", scope()$readout),
+      donor = scope()$donor, celltype = scope()$celltype, include_controls = TRUE))
+
+    selected_donor_values <- shiny::reactive(precomputed_filter_table(
+      precomputed_contract_table(scoped_contract(), "donor_values", scope()$readout),
+      donor = scope()$donor, celltype = scope()$celltype, include_controls = TRUE))
 
     selected_samples <- shiny::reactive({
       selected <- scope()
+      donor_values <- selected_donor_values()
+      if (nrow(donor_values)) return(donor_values)
       samples <- precomputed_filter_table(readout_tables()$samples, donor = selected$donor,
-        celltype = selected$celltype, include_controls = TRUE)
+        celltype = if (selected$comparison_axis == "celltype") PRECOMPUTED_ALL else selected$celltype,
+        include_controls = TRUE)
+      if (selected$comparison_axis == "celltype") return(samples[
+        samples$celltype %in% c(selected$rows$group_a, selected$rows$group_b) &
+          samples$condition %in% selected$fixed_condition, , drop = FALSE])
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
         comparison = selected$comparison, include_controls = TRUE)
       conditions <- unique(c(as.character(rows$group_a), as.character(rows$group_b)))
@@ -1223,9 +1314,18 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       if (input$detail_feature %in% c(feature_rows()$key, selected_key())) selected_key(input$detail_feature)
     })
     shiny::observeEvent(current_data(), { selected_key(NULL) }, ignoreInit = TRUE)
-    detail_results <- shiny::reactive(precomputed_empty_table())
+    detail_results <- shiny::reactive({
+      rows <- if (scope()$across) selected_results() else precomputed_empty_table()
+      if (!nrow(rows) || !length(selected_key())) return(rows[FALSE, , drop = FALSE])
+      rows[report_feature_key(rows$marker_1, rows$marker_2) == selected_key(), , drop = FALSE]
+    })
     detail_contrasts <- shiny::reactive({
-      rows <- scope()$rows
+      rows <- selected_contrasts()
+      if (!nrow(rows) || !length(selected_key())) return(rows[FALSE, , drop = FALSE])
+      rows[report_feature_key(rows$marker_1, rows$marker_2) == selected_key(), , drop = FALSE]
+    })
+    detail_donor_values <- shiny::reactive({
+      rows <- selected_donor_values()
       if (!nrow(rows) || !length(selected_key())) return(rows[FALSE, , drop = FALSE])
       rows[report_feature_key(rows$marker_1, rows$marker_2) == selected_key(), , drop = FALSE]
     })
@@ -1275,10 +1375,15 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         shiny::showNotification("Choose one cell type and a feature before exploring cells.", type = "warning")
         return()
       }
+      if (shared$across) {
+        shiny::showNotification("Select an individual donor in Results before opening Cell 3D.", type = "warning")
+        return()
+      }
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = shared$donor,
         comparison = shared$comparison, include_controls = TRUE)
       conditions <- unique(c(as.character(rows$group_a), as.character(rows$group_b)))
       if (!length(conditions)) conditions <- precomputed_scope_conditions(current_data(), shared$donor, shared$celltype)
+      if (shared$comparison_axis == "celltype") conditions <- shared$fixed_condition
       graph_selection(list(donor = shared$donor, celltype = shared$celltype,
         marker_1 = pair[1L], marker_2 = pair[2L],
         conditions = conditions,
@@ -1371,6 +1476,18 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
 
     report_scope <- scope
 
+    output$volcano_notice <- shiny::renderUI({
+      selected <- scope()
+      shiny::tags$div(class = paste("alert small mt-2", if (selected$across) "alert-info" else "alert-warning"),
+        shiny::tags$strong(if (selected$across) "Across-donor comparison. " else "Exploratory component-level test. "),
+        if (selected$across) "Stored donor summaries are the observations. Missing P values indicate descriptive or unsupported results."
+          else "Stored P values describe cells within the selected donor, not reproducibility across donors.",
+        " Display filters do not change stored tests.")
+    })
+    output$detail_notice <- shiny::renderUI(shiny::tags$p(class = "small text-muted",
+      if (scope()$across) "Points show stored donor summaries. Lines connect paired donors only. No test is rerun."
+        else "Violin and boxplot show available cell values, not a new test. Plotted cells can differ from the original test cohort. Spatial distributions require the proximity sidecar."))
+
     report_volcano_ggplot <- shiny::reactive({
       scope <- report_scope()
       if (identical(scope$celltype, PRECOMPUTED_ALL)) return(precomputed_empty_plot(
@@ -1381,7 +1498,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       }
       precomputed_report_plot(
         "plot_report_volcano",
-        contract = view_data()$contract,
+        contract = scoped_contract(),
         readout = scope$readout,
         donor = scope$donor,
         celltype = scope$celltype,
@@ -1419,8 +1536,14 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     network_profiles <- shiny::reactive({
       selected <- scope()
       shiny::validate(shiny::need(selected$readout == "colocalization", "Network is available for Colocalization."))
-      report_network_profiles(view_data()$contract, selected$donor, selected$celltype, selected$comparison)
+      report_network_profiles(scoped_contract(), selected$donor, selected$celltype, selected$comparison)
     })
+    output$network_notice <- shiny::renderUI(shiny::tags$p(class = "small text-muted",
+      "Groups share marker positions and color scales. Display filters do not run tests. ",
+      if (scope()$across) paste("Color shows the equal-weight mean of eligible donor medians.",
+        "Detection is the mean within-donor observed cell fraction. Missing scores are not zero.") else
+        "Color shows stored population mean log2 ratio. These legacy profiles retain their prepared missing-zero policy.",
+      " Line width shows absolute magnitude. The initial list uses up to 10 markers from the strongest available pairs."))
     shiny::observeEvent(list(view_data(), input$donor, input$celltype, input$comparison, input$readout), {
       rows <- tryCatch(network_profiles(), error = function(e) NULL)
       choices <- sort(unique(c(rows$marker_1, rows$marker_2)))
@@ -1464,7 +1587,10 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
 
     prepared_alignment <- shiny::reactive(report_spatial_alignment(current_data()$contract))
     spatial_alignment <- shiny::reactive({
-      if (is.null(active_entry())) prepared_alignment() else report_spatial_alignment(view_data()$contract)
+      selected <- scope()
+      if (selected$across || selected$comparison_axis == "celltype") return(report_comparison_alignment(
+        scoped_contract(), selected$donor, selected$celltype, selected$comparison))
+      if (is.null(active_entry()) && !selected$registered) prepared_alignment() else report_spatial_alignment(scoped_contract())
     })
     spatial_markers <- shiny::reactiveVal(character())
     spatial_selection_error <- shiny::reactiveVal(NULL)
@@ -1579,6 +1705,20 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       alignment <- contract$report$alignment
       kind <- precomputed_scope_value(input$spatial_kind, "differences")
       if (!kind %in% c("differences", "profiles")) kind <- "differences"
+      if (shared$across || shared$comparison_axis == "celltype") {
+        alignment <- spatial_alignment()
+        conditions <- unique(as.character(alignment$profiles$panel))
+        groups <- unique(shared$rows[c("group_b", "group_a")])
+        reference <- if (nrow(groups) == 1L) as.character(groups$group_b) else head(conditions, 1L)
+        target <- if (nrow(groups) == 1L) as.character(groups$group_a) else head(setdiff(conditions, reference), 1L)
+        differences <- unique(as.character(alignment$differences$panel))
+        difference <- if (shared$comparison %in% differences) shared$comparison else NA_character_
+        panels <- if (kind == "profiles") conditions else differences
+        panel <- if (kind == "profiles") precomputed_keep_selection(input$spatial_panel, panels) else difference
+        return(list(kind = kind, donor = shared$donor, celltype = shared$celltype,
+          panels = panels, panel = panel, conditions = conditions, difference = difference,
+          reference = reference, target = target, fixed_conditions = nrow(groups) == 1L))
+      }
       donor_rows <- precomputed_filter_table(
         precomputed_contract_table(contract, "donor_contrasts", shared$readout),
         donor = shared$donor, comparison = shared$comparison, include_controls = TRUE)
@@ -1625,7 +1765,7 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
     output$spatial_compare_conditions <- shiny::renderUI({
       selected <- spatial_scope()
       if (selected$fixed_conditions) return(shiny::tags$p(class = "small text-muted",
-        paste("Reference:", selected$reference, "· Target:", selected$target, "— conditions from the selected comparison.")))
+        paste("Reference:", selected$reference, "· Target:", selected$target, "— groups from the selected comparison.")))
       bslib::layout_column_wrap(width = "260px", fill = FALSE,
         shiny::selectInput(session$ns("spatial_reference_condition"), "Reference profile condition",
           choices = selected$conditions, selected = selected$reference),
@@ -1738,22 +1878,24 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       direction <- if (length(groups)) paste(groups, collapse = "; ") else
         "No differential comparison in this scope"
       shiny::div(class = "alert alert-light border",
-        shiny::tags$strong(paste("Donor:", selected$donor, "·",
+        shiny::tags$strong(paste(if (selected$across) "Across donors" else paste("Donor:", selected$donor), "·",
           if (selected$celltype == PRECOMPUTED_ALL) "All cell types" else selected$celltype, "·",
           direction, "·", names(PRECOMPUTED_READOUTS)[match(selected$readout, PRECOMPUTED_READOUTS)])),
         shiny::tags$p(class = "small mb-1", "Positive effects mean target exceeds reference. ",
-          if (is.null(active_entry())) "Prepared single-donor results; display controls do not run tests."
+          if (is.null(active_entry())) "Prepared results; display controls do not run tests."
           else "Session comparison; display controls do not run tests."),
         if (!nrow(rows)) shiny::tags$p(class = "small mb-1",
           "Browse available condition profiles in Spatial patterns, or use New comparison to run a test."),
         shiny::tags$p(class = "small mb-0",
-          "Exploratory component-level tests, where stored, are not donor-population inference. ",
+          if (selected$across) paste0("Donor design: ", selected$design, ". ") else
+            "Exploratory component-level tests, where stored, are not donor-population inference. ",
           nrow(rows), " stored effects. Missing or untested values are not zero.")
       )
     })
 
     detail_distribution <- shiny::reactive({
       selected <- scope()
+      if (selected$across) stop("Select an individual donor to inspect cell distributions.", call. = FALSE)
       rows <- precomputed_filter_table(readout_tables()$contrasts, donor = selected$donor,
         comparison = selected$comparison, include_controls = TRUE)
       conditions <- unique(c(as.character(rows$group_b), as.character(rows$group_a)))
@@ -1762,6 +1904,16 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       readout <- selected$readout
       if (readout != "abundance" && length(pair) == 2L)
         readout <- if (pair[[1L]] == pair[[2L]]) "self_proximity" else "colocalization"
+      if (selected$comparison_axis == "celltype") {
+        groups <- unique(selected$rows[c("group_b", "group_a")])
+        if (nrow(groups) != 1L) stop("Choose one cell-type comparison.", call. = FALSE)
+        rows <- precomputed_feature_distribution_data(current_data(), readout, selected$donor,
+          PRECOMPUTED_ALL, selected$fixed_condition, pair)
+        rows <- rows[rows$celltype %in% unlist(groups), , drop = FALSE]
+        rows$condition <- factor(rows$celltype, levels = unname(unlist(groups)))
+        rows$celltype <- paste(groups$group_a, "vs", groups$group_b)
+        return(rows)
+      }
       precomputed_feature_distribution_data(current_data(), readout, selected$donor,
         selected$celltype, conditions, pair)
     })
@@ -1776,12 +1928,21 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
       } else if (nrow(detail_results()) > 0L) {
         feature_label <- precomputed_feature_labels(detail_results())[1L]
       }
+      if (scope()$across) {
+        values <- detail_donor_values()
+        if (nrow(values)) return(plot_precomputed_donor_values(values,
+          paired = scope()$design == "paired", title = paste(feature_label, "donor measurements")))
+        return(plot_precomputed_condition_detail(contrasts, colors = donor_colors,
+          title = paste(feature_label, "paired donor values")))
+      }
       if (is.null(input$results_view) || input$results_view %in% c("Tables", "Volcano")) {
         tryCatch({
           rows <- detail_distribution()
-          plot_precomputed_feature_distribution(rows, scope()$readout,
+          plot <- plot_precomputed_feature_distribution(rows, scope()$readout,
             colors = precomputed_colors(value$contract, "condition", as.character(rows$condition)),
             title = paste(feature_label, "cell-level distribution"))
+          if (scope()$comparison_axis == "celltype") plot <- plot + ggplot2::labs(x = "Cell type", fill = "Cell type")
+          plot
         }, error = function(e) precomputed_empty_plot(conditionMessage(e), "Cell-level distribution unavailable"))
       } else if (identical(input$detail_display, "conditions")) {
         plot_precomputed_condition_detail(
@@ -1879,14 +2040,22 @@ precomputed_server <- function(id, data, job_manager = new_hybrid_job_manager(),
         colocalization = "colocalization")
       shiny::tagList(
         if (!nrow(rows)) shiny::tags$p("No stored differential test is available in this scope."),
-        shiny::tags$p("These are frozen single-donor contrasts. Cells are not independent biological donors; ",
-          "stored component-level P values are exploratory. Display filters never rerun or readjust tests."),
+        shiny::tags$p(if (selected$across)
+          "These are frozen across-donor results. Each donor contributes one summary per group; cell counts do not increase the number of replicates."
+          else "These are frozen within-donor contrasts. Stored component-level P values are exploratory, not donor-population inference.",
+          " Display filters never rerun or readjust tests."),
         shiny::tags$dl(lapply(fields, function(field) shiny::tagList(shiny::tags$dt(field),
           shiny::tags$dd(paste(unique(as.character(rows[[field]])), collapse = "; "))))),
-        shiny::tags$p("Spatial condition profiles use the stored profile summary (mean in this demo); ",
-          "spatial differential effects use differences of observed medians. Profile differences must not be substituted for stored effects. ",
-          "Condition values are shown only if persisted. Missing stored entries are not replaced with zero; ",
-          "profile means retain the upstream missing-observation policy shown in the frozen settings."),
+        shiny::tags$p(if (selected$across) paste(
+          "New donor-level abundance results compare donor means of the stored normalized layer.",
+          "New spatial results compare donor medians of retained observed scores.",
+          "Paired tests use complete donor differences; independent tests use Welch's method.",
+          "Profile panels show equal-weight means of eligible donor summaries.",
+          "Legacy summaries retain their original stored method. Missing values are not zeros.") else paste(
+          "Spatial condition profiles use the stored profile summary (mean in this demo);",
+          "spatial differential effects use differences of observed medians. Profile differences must not be substituted for stored effects.",
+          "Condition values are shown only if persisted. Missing stored entries are not replaced with zero;",
+          "profile means retain the upstream missing-observation policy shown in the frozen settings.")),
         shiny::tags$details(shiny::tags$summary("Frozen plot and filtering settings"),
           shiny::tags$pre(as.character(jsonlite::toJSON(list(
             analysis = settings[[section]], thresholds = settings$thresholds, spatial = settings$spatial),

@@ -15,7 +15,8 @@ It does not load all sidecar data into each Shiny session.
 Custom analyses do not replace precomputed results.
 
 Use **Results** to inspect prepared analyses and completed session comparisons.
-Use **New comparison** to submit a test for one donor and one cell type.
+Use **New comparison** for within-donor exploration or an across-donor comparison.
+Compare conditions in one cell type, or compare cell types in one condition.
 Spatial matrices share a protein selection and order.
 The **Compare profiles and difference** option shows two condition profiles and their differential result.
 Unavailable results keep their positions on the axes.
@@ -35,7 +36,7 @@ Stage 5 prepares that analysis for ProxiomeVis and shows it.
 | Application bundle | An RDS file that contains prepared data, precomputed results, and references to sidecar files. |
 | Sidecar | A file outside the application bundle that supplies data to the application. |
 | Precomputed results | Results that an analysis calculated before application use. The application does not change these results. |
-| Custom analysis | An exploratory analysis that the user starts in the application. |
+| Custom analysis | A within-donor exploration or across-donor comparison that the user starts in the application. |
 | Analysis worker | An isolated R process that calculates a custom analysis. |
 | Provenance | A record of data sources, analysis settings, methods, and software. |
 
@@ -247,17 +248,17 @@ Select **Prepared results** or a completed session comparison in **Result source
 Session comparisons keep their submitted scope.
 
 The **Tables**, **Volcano**, and **Spatial patterns** views use the same selections.
-Under **Tables**, select a marker or pair to show its cell-level violin and boxplot by condition.
-Under **Volcano**, click a point to update the violin and boxplot beside it.
-The plot uses normalized abundance or observed proximity scores for the selected donor and cell type.
+Under **Tables**, select a marker or pair to inspect its measurements.
+Under **Volcano**, click a point to update the measurements beside it.
+Within-donor results show cell-level violin and boxplots.
+Across-donor results show donor measurements, with lines for paired donors only.
 Missing proximity scores are excluded; they are not replaced with zero.
 The plot does not calculate a new statistical test.
 These selections are the donor, cell type, comparison, and readout.
 If the dataset has one donor, the application shows the donor name as a fixed label.
-If the dataset has more than one donor, select one donor.
-
-The results come from the selected donor.
-They do not include results from other donors.
+If the dataset has more than one donor, select an individual donor or a stored across-donor summary.
+Within-donor results remain available without biological replicates.
+An across-donor summary uses its stored donor set; display controls do not change that set.
 The tables can show all cell types.
 One cell type is necessary for the volcano and spatial views.
 The **Spatial patterns** tab is disabled for abundance.
@@ -322,16 +323,26 @@ These views do not load graph sidecars.
 
 ### New comparison
 
-1. Select one donor.
-2. Select one cell type.
-3. Select two conditions.
-4. For clustering or colocalization, set **Minimum observed cells per condition** if necessary.
+1. Choose **Within-donor exploration** and select one donor.
+2. Or select **Across donors**, select donors, and choose paired or independent groups.
+3. Compare two conditions in one cell type, or two cell types in one condition. Cell-type comparisons use paired donors.
+4. For clustering or colocalization, set **Minimum observed cells per donor and group** if necessary.
 5. Check the cell counts and readiness message.
-6. Select the checkbox for the exploratory-analysis notice.
+6. For within-donor exploration, select the confirmation checkbox.
 7. Click **Run comparison**.
 
-The comparison includes all cells in the selected donor, cell type, and conditions.
-If the scope exceeds the 2,000-cell limit, use precomputed results or run the comparison offline.
+The comparison includes all cells in the selected scope.
+Limits are 2,000 cells per donor, 40 donors, 80,000 cells in total, and 160 markers.
+The app worker has a 120-second time limit. The offline command uses the same cell and batch limits without that time limit.
+
+Across-donor abundance uses each donor's mean stored normalized abundance.
+Across-donor spatial analysis uses each donor's median retained observed proximity score.
+Paired comparisons test complete donor differences. Independent comparisons use a Welch t-test on donor summaries.
+Each donor has equal weight. Technical samples do not increase the donor count.
+These tests require independent donors and suitable distribution assumptions.
+Fewer than two complete pairs, fewer than two donors per independent group, or an undefined test produce descriptive results without P values.
+Two donors is a calculation minimum, not evidence of sufficient power.
+See [comparison methods and offline examples](docs/hybrid-analysis.md).
 
 The analysis tests all dataset markers, or all different-marker pairs for colocalization.
 Spatial tests require sufficient observed scores in each condition.
@@ -491,7 +502,9 @@ If a worker is active, the application rejects a second job with a retry message
 | Limit | Maximum for one job |
 | --- | --- |
 | Time | 120 seconds |
-| Cells | 2,000 |
+| Cells per donor | 2,000 |
+| Donors | 40 |
+| Total cells | 80,000 |
 | Markers | 160 |
 | Pairs per spatial batch | 1,000 |
 | Collected score rows per spatial batch | 1 million |

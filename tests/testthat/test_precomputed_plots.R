@@ -170,7 +170,8 @@ test_that("the report UI groups stored views under shared navigation and selecti
                "results_table", "fdr_controls")) {
     expect_equal(sum(gregexpr(paste0('id="report-', id, '"'), ui, fixed = TRUE)[[1L]] > 0L), 1L)
   }
-  expect_match(ui, "Exploratory component-level test", fixed = TRUE)
+  expect_match(ui, 'id="report-volcano_notice"', fixed = TRUE)
+  expect_match(ui, 'id="report-detail_notice"', fixed = TRUE)
   expect_false(grepl('data-value="Volcano rows"', ui, fixed = TRUE))
   expect_false(grepl('id="report-report_volcano_table"', ui, fixed = TRUE))
   expect_false(grepl('id="report-download_filtered_report_csv"', ui, fixed = TRUE))

@@ -171,8 +171,17 @@ validated_proximity_partitions <- function(data, asset_root, cells) {
 }
 
 read_proximity_subset <- function(data, asset_root, request, marker_1 = request$markers) {
+  query_donor <- request$donor
   request <- validate_hybrid_request(data, request)
   cells <- c(request$group_a_cells, request$group_b_cells)
+  if (identical(request$analysis_scope, "across_donors")) {
+    if (!is.character(query_donor) || length(query_donor) != 1L ||
+        !query_donor %in% request$donors) {
+      stop("Read proximity scores for one selected donor at a time.", call. = FALSE)
+    }
+    cells <- intersect(cells, data$metadata$component[data$metadata$donor == query_donor])
+    request$donor <- query_donor
+  }
   prepared <- validated_proximity_partitions(data, asset_root, cells)
   cutoff <- prepared$manifest$donor_cutoffs[[request$donor]]
   if (is.null(cutoff) || length(cutoff) != 1L || !is.finite(cutoff) || cutoff < 0 || cutoff > 1) {

@@ -1,7 +1,7 @@
 # Results and new comparisons
 
 Use **Results** to view saved analyses and completed session comparisons.
-Use **New comparison** to run a test for one donor and one cell type.
+Use **New comparison** to run a within-donor or an across-donor analysis.
 Both result sources use the same tables, volcano, and spatial views.
 Display filters do not change stored statistics. New spatial tests read the
 prepared proximity files, not the source PXL files.
@@ -12,16 +12,35 @@ The general preparation script does not require the demo report folders.
 ## Run a new comparison
 
 1. Open **New comparison**.
-2. Select a readout, one donor, one cell type, a target condition, and a reference condition.
-3. For a spatial test, set **Minimum observed cells per condition** if necessary.
+2. Select **Analysis scope**, **Compare**, and a readout. Use the table below to select the groups.
+3. For a spatial test, set **Minimum observed cells per donor and group** if necessary.
 4. Read the readiness message. Check the target and reference cell counts, protein count, and required data.
-5. Confirm the exploratory-analysis notice. Click **Run comparison**.
+5. For within-donor exploration, confirm the exploratory-analysis notice. Click **Run comparison**.
+
+| Analysis scope | Compare | Select |
+| --- | --- | --- |
+| Within-donor exploration | Conditions | One donor, one cell type, and two conditions |
+| Within-donor exploration | Cell types | One donor, one condition, and two cell types |
+| Across donors, paired | Conditions | Matching donors, one cell type, and two conditions |
+| Across donors, paired | Cell types | Matching donors, one condition, and two cell types |
+| Across donors, independent | Conditions | Different donors in each condition, one cell type, and two conditions |
+
+Within-donor exploration is available for prepared results and new comparisons.
+It does not require biological replicates. Its cell-level tests are exploratory;
+they do not establish that an effect is reproducible across donors.
+
+Use **Paired** when the same donors provide both groups. Donors without cells in
+both groups are excluded and listed. Each feature can have fewer complete pairs
+after score filtering. Use **Independent** only when the two groups have no
+donors in common. The app rejects overlapping donor groups for this design.
+Cell-type comparisons use paired donors, or one donor for exploration.
 
 The test uses all dataset markers and all cells in the selected scope.
 There is no marker-test selector or cell-subset selector. The embedding does
-not select cells for this test. Target and reference must be different conditions.
+not select cells for this test. Target and reference must be different groups.
 
-Abundance tests require stored raw counts. Spatial tests require a configured
+Within-donor abundance tests require stored raw counts. Across-donor abundance
+tests use stored normalized values and do not require counts. Spatial tests require a configured
 proximity sidecar. Readiness checks the scope and input declarations before
 the worker starts. The worker checks sidecar integrity and available score
 coverage. A configured sidecar does not guarantee that all pairs have enough
@@ -31,14 +50,17 @@ A separate R process runs the test. You can use the other app views while it
 runs. Click **Cancel running analysis** to stop it. A control change does not
 start another test or change a completed result.
 
-Only one analysis runs at a time per application process. Each comparison is
-limited to 2,000 cells, 160 markers, and 120 seconds. Spatial tests use batches
+Only one analysis runs at a time per application process. The app permits at
+most 2,000 cells per donor, 40 selected donors, 80,000 cells in total, 160 markers,
+and 120 seconds per comparison. A within-donor comparison has a 2,000-cell limit
+across its two groups. Spatial tests use batches
 of at most 1,000 pairs and 1,000,000 score rows. These are batch limits, not a
 1,000-pair limit on the complete comparison. Colocalization tests all pairs
 of different markers. For example, 46 markers produce 1,035 pairs and can use
 more than one batch. The app does not silently remove cells to meet a limit.
-For a larger comparison, run the analysis offline and prepare its results for
-the app.
+For data above these cell or protein limits, use your analysis workflow outside
+the app and import validated result tables. The offline command below uses the
+same cell, donor, protein, and batch limits.
 
 ## Open and keep completed comparisons
 
@@ -50,8 +72,8 @@ view. A failed or cancelled test does not remove earlier completed comparisons.
 
 Use **Results CSV**, **Analysis provenance JSON**, or **Comparison RDS** to
 keep the selected comparison. The JSON includes the submitted scope and cell
-IDs. The RDS includes results and settings. It does not include the source
-Seurat object or cell-level measurements. See
+IDs. The RDS includes results, settings, and donor summaries for an across-donor
+analysis. It does not include the source Seurat object or cell-level measurements. See
 [Prepare your data](prepare-user-data.md) for offline reuse of a comparison.
 Use only trusted RDS files.
 
@@ -81,8 +103,15 @@ use the same protein positions and matrix dimensions. On a narrow screen, the
 panels are stacked.
 
 The two profiles share a fixed color scale. Differential effects use a separate
-fixed scale. A profile is a mean proximity score. The differential effect is a
-difference in medians; it is not calculated by subtracting the profile means.
+fixed scale. New across-donor spatial profiles use the mean of eligible donor
+medians. Each donor has equal weight. Paired profiles and effects use only
+complete eligible donor pairs for each feature. Group eligibility counts can
+include a donor with a measurement in only one group; `n_pairs` records the
+complete pairs used for the test.
+
+Older prepared profiles can use mean proximity scores. Their stored spatial
+effects can be differences in medians. Those profile means do not reconstruct
+the stored effects. The app keeps these older summary methods unchanged.
 Diagonal entries show self-proximity. Other entries show colocalization.
 The pairs A–B and B–A identify the same feature.
 
@@ -96,7 +125,9 @@ change the underlying saved tables or their full-row exports.
 
 ## Methods and interpretation
 
-| Readout | Effect: target minus reference | Test and minimum support |
+### Within-donor exploration
+
+| Readout | Effect: target minus reference | Test and default minimum support |
 | --- | --- | --- |
 | Abundance | Mean stored normalized abundance | `pixelatorR::RunDAA`, using Seurat's two-sided Wilcoxon test; at least 3 cells per group |
 | Self-proximity | Median observed `log2_ratio` for each marker paired with itself | `pixelatorR::DifferentialProximityAnalysis(metric_type = "self")`; at least 20 retained observations per marker in each group |
@@ -125,6 +156,41 @@ These are exploratory comparisons of cells within **one donor**. Cells are not
 independent biological replicates, and the results do not establish an effect
 across donors. A small P value does not remove this limitation.
 
+### Across-donor comparisons
+
+The analysis first creates one value for each donor, group, and feature:
+
+- Abundance: mean stored normalized abundance.
+- Self-proximity and colocalization: median retained, finite, observed `log2_ratio`.
+
+Cells from samples of the same donor and group are combined before this summary.
+Additional samples do not increase the number of biological replicates. Donors
+have equal weight, even when they have different cell counts. Abundance requires
+at least three cells per donor and group. Spatial minimums apply to observed
+scores for each marker or pair after filtering.
+
+For a **paired** comparison, the effect is the mean of donor target-minus-reference
+differences. A two-sided one-sample t-test tests those differences against zero.
+The displayed minimum and maximum effects are the range of donor differences,
+not a confidence interval. Only complete, eligible donor pairs enter the test.
+
+For an **independent** comparison, the effect is the target donor mean minus the
+reference donor mean. A two-sided Welch t-test compares the donor values. There
+are no paired differences or donor-effect ranges. Different donors must be
+independent. Paired tests also require independent donors and approximately
+normal donor differences. Welch tests assume approximately normal group values;
+they do not require equal group variances.
+
+The software needs at least two complete pairs, or two eligible donors in each
+independent group, to attempt a test. This is a computational minimum, not
+evidence of adequate power or reliable assumptions. Inspect the donor points.
+Use caution with few donors or strong outliers. A test that lacks support or
+cannot return a finite P value has descriptive results and `NA` P values.
+
+BH correction applies to the eligible tested features in that request. Changing
+the donor set requires a new comparison. Display filters do not recalculate
+P values. The model does not adjust for age, race, or other covariates.
+
 ## Missing scores and filtering
 
 Preparation retains observed cell–pair rows. Before a spatial test, both
@@ -140,27 +206,87 @@ stored report configuration. The current preparer supports this isotype mode
 without extra marker-count or pair-count filters; incompatible configurations
 are rejected instead of silently changed.
 
-Results distinguish `n_cells_a/b` (all cells in scope) from `n_scored_a/b`
+Within-donor results distinguish `n_cells_a/b` (all cells in scope) from `n_scored_a/b`
 (retained observations for this particular feature). Spatial eligibility uses
 the latter. Unsupported features have missing statistics and an explicit
 status. Stored spatial report profiles may use a different missing-observation
 summary convention; those means are never used to reconstruct new tests.
 
+Across-donor results also record eligible donor counts for each group and the
+number of complete pairs. An unavailable donor measurement stays `NA`; it is
+not a zero. A measured score of zero remains valid. The donor plots connect
+paired measurements only. Independent-group points have no connecting lines.
+
+## Prepare a comparison outside the app
+
+Use the same calculation code to prepare a result before launch. The request
+is a JSON file. Use exact donor, condition, and cell-type names from the bundle.
+These examples test all dataset markers. Add `"markers": ["CD19", "CD82"]`
+only when you need a restricted test family outside the app.
+
+Paired conditions, saved as `paired_conditions.json`:
+
+```json
+{"analysis_scope":"across_donors","comparison_axis":"condition","design":"paired","readout":"abundance","celltype":"B","target":"treatment","reference":"control","donors":["D1","D2","D3"]}
+```
+
+Paired cell types in one condition:
+
+```json
+{"analysis_scope":"across_donors","comparison_axis":"celltype","design":"paired","readout":"self_proximity","celltype":"T","condition":"control","target":"T","reference":"B","donors":["D1","D2","D3"],"min_cells_per_group":20}
+```
+
+Independent conditions. The selected donors must belong to separate groups:
+
+```json
+{"analysis_scope":"across_donors","comparison_axis":"condition","design":"independent","readout":"colocalization","celltype":"B","target":"treatment","reference":"control","donors":["C1","C2","T1","T2"],"min_cells_per_group":40}
+```
+
+Run the command from the repository:
+
+```sh
+Rscript scripts/run_comparison.R output/my_dataset/analysis.rds \
+  paired_conditions.json paired_comparison.rds \
+  --id paired-treatment-B --label "Paired treatment comparison: B cells" \
+  --output-bundle output/my_dataset/with_comparison.rds
+```
+
+The three positional arguments are the input bundle, request JSON, and new
+comparison RDS. `--id` and `--label` are optional. `--output-bundle` also appends
+the comparison to a new application RDS. Existing results are retained. The
+import validates the result and rejects a duplicate analysis ID. Existing files
+are not overwritten. With sidecars, keep the new bundle beside the input bundle.
+The command has the same calculation and size limits as the app. It does not
+have the Shiny worker's 120-second timeout. Use only trusted input files.
+
 ## Application bundle and sidecar schemas
 
 The version 2 application RDS is a plain R list, not a Seurat object:
 
-- `bundle_version = 2L`; `contract` retains the version 1 frozen-analysis
-  contract, report settings, defaults, QC, and provenance.
+- `bundle_version = 2L`; `contract` contains report settings, defaults, QC, and
+  provenance. The reader accepts analysis `schema_version = 1L` or `2L`.
+  New donor-level and cell-type comparisons use schema version 2. Old version 1
+  result tables retain their original values and meaning.
 - `metadata` and `embeddings` contain prepared cell annotations and coordinates.
 - `abundance` and optional `counts` are aligned marker-by-cell sparse matrices.
-  Counts are required for new abundance tests and proximity preparation.
+  Counts are required for within-donor abundance tests and proximity preparation,
+  not for across-donor abundance tests.
 - `cell_sources`, when present, maps `component`, `original_id`, and `sample_id`
   exactly from the original FSMap; IDs are never inferred by stripping prefixes.
 - `assets$proximity = list(path = "proximity", manifest = "manifest.rds")`
   locates the proximity sidecar relative to the bundle directory.
 - `assets$graphs = list(path = "graphs", index = "index.rds")` locates the
   optional node-only 3D sidecar.
+
+Schema version 2 adds comparison-axis and donor-design fields. Its optional
+`donor_values` section contains a named table for each readout. Each row stores
+one donor, group, and feature value, cell counts, and an eligibility flag.
+`source_celltype` identifies the actual source cell type. The `celltype` field
+anchors a cell-type comparison to its target cell type. `fixed_condition`
+identifies its common condition. `donor_contrasts` stores paired donor
+differences or within-donor exploratory results. `differential_results` stores
+across-donor effects and tests. Independent comparisons have no paired rows;
+their `n_pairs` is zero and their donor-effect range is `NA`.
 
 ### Proximity sidecar
 
@@ -294,7 +420,9 @@ Install the CRAN renderer with `install.packages("threejs")` (version >= 0.3.4).
 Install the packages in `DESCRIPTION`'s `Imports`, including Seurat.
 A plain application bundle does not contain Seurat or PNA objects. Legacy
 Seurat RDS inputs require SeuratObject, and PNA inputs require pixelatorR.
-Background analysis requires pixelatorR, Seurat, and SeuratObject.
+Within-donor tests require pixelatorR, Seurat, and SeuratObject. Across-donor
+abundance uses stored normalized values. Spatial tests also need the proximity
+reader packages below.
 Spatial queries and **Cell 3D** require Arrow and dplyr in the Shiny environment.
 Offline graph preparation requires the source Seurat/PNA object,
 pixelatorR, Arrow, and dplyr; PXL-to-Parquet preparation also uses DBI and DuckDB.

@@ -13,7 +13,7 @@ test_that("versioned input resolves defaults and works with unavailable PXLs", {
 
 test_that("invalid schema, annotation defaults and duplicated results are rejected", {
   object <- precomputed_fixture()
-  object@misc$proxiomevis$schema_version <- 2L
+  object@misc$proxiomevis$schema_version <- 3L
   expect_error(validate_precomputed_object(object), "schema_version")
   object@misc$proxiomevis$schema_version <- 1.5
   expect_error(validate_precomputed_object(object), "schema_version")

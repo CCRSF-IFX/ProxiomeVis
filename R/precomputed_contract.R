@@ -1,4 +1,4 @@
-PROXIOMEVIS_SCHEMA_VERSION <- 1L
+PROXIOMEVIS_SCHEMA_VERSION <- 2L
 PROXIOMEVIS_BUNDLE_VERSION <- 2L
 PROXIOMEVIS_READOUTS <- c("abundance", "self_proximity", "colocalization")
 
@@ -21,8 +21,8 @@ require_contract_columns <- function(table, columns, label, keys) {
 validate_precomputed_header <- function(contract) {
   if (!is.list(contract) || !is.numeric(contract$schema_version) ||
       length(contract$schema_version) != 1L || is.na(contract$schema_version) ||
-      contract$schema_version != PROXIOMEVIS_SCHEMA_VERSION) {
-    contract_error("expected an analysis contract with schema_version = 1.")
+      !contract$schema_version %in% c(1L, PROXIOMEVIS_SCHEMA_VERSION)) {
+    contract_error("expected an analysis contract with schema_version = 1 or 2.")
   }
   for (field in c("dataset_id", "title")) {
     if (!is.character(contract[[field]]) || length(contract[[field]]) != 1L ||
@@ -39,6 +39,38 @@ validate_precomputed_header <- function(contract) {
     contract_error("defaults must name the reductions, metadata columns, assay, and abundance layer.")
   }
   invisible(TRUE)
+}
+
+validate_contract_comparison <- function(table, label, sample_design, allowed_cells, schema_version) {
+  axis <- if ("comparison_axis" %in% names(table)) table$comparison_axis else rep("condition", nrow(table))
+  design <- if ("design" %in% names(table)) table$design else rep("within_donor", nrow(table))
+  if (anyNA(axis) || !all(axis %in% c("condition", "celltype")) ||
+      anyNA(design) || !all(design %in% c("within_donor", "paired", "independent"))) {
+    contract_error(paste(label, "has an invalid comparison axis or donor design."))
+  }
+  if (schema_version == 1L && any(axis != "condition" | design != "within_donor")) {
+    contract_error(paste(label, "requires schema_version = 2 for this comparison."))
+  }
+  if (any(axis == "celltype" & design == "independent")) {
+    contract_error(paste(label, "cell-type comparisons require paired donors or within-donor exploration."))
+  }
+  if (anyNA(table[c("group_a", "group_b")]) || any(table$group_a == table$group_b) ||
+      !all(c(table$group_a[axis == "condition"], table$group_b[axis == "condition"]) %in% sample_design$condition) ||
+      !all(c(table$group_a[axis == "celltype"], table$group_b[axis == "celltype"]) %in% allowed_cells)) {
+    contract_error(paste(label, "has an invalid contrast."))
+  }
+  fixed <- if ("fixed_condition" %in% names(table)) as.character(table$fixed_condition) else rep(NA_character_, nrow(table))
+  cells <- axis == "celltype"
+  if (anyNA(fixed[cells]) || !all(fixed[cells] %in% sample_design$condition) ||
+      any(table$celltype[cells] != table$group_a[cells])) {
+    contract_error(paste(label, "cell-type contrasts must name a fixed condition and anchor celltype to group_a."))
+  }
+  context <- data.frame(analysis_id = table$analysis_id, comparison_axis = axis, design = design,
+    group_a = table$group_a, group_b = table$group_b, fixed_condition = fixed)
+  if (anyDuplicated(unique(context)$analysis_id)) {
+    contract_error(paste(label, "has inconsistent comparison context for an analysis_id."))
+  }
+  list(axis = axis, design = design, fixed_condition = fixed)
 }
 
 validate_precomputed_data <- function(data) {
@@ -123,7 +155,15 @@ validate_precomputed_data <- function(data) {
   result_columns <- c(feature_columns, group_columns, "effect_size", "min_effect", "max_effect",
                       "n_pairs", "direction_consistent", "p_value", "p_adj", "adjustment_family",
                       "method", "replicate_unit", "inference")
-  for (section in c("sample_summaries", "donor_contrasts", "differential_results")) {
+  donor_columns <- c(feature_columns, group_columns, "comparison_axis", "design", "fixed_condition",
+    "donor", "group", "source_celltype", "condition", "value", "eligible", "n_total_cells",
+    "n_evaluable_cells", "n_scored_cells")
+  sections <- c("sample_summaries", "donor_contrasts", "differential_results")
+  if (!is.null(contract$donor_values)) {
+    if (contract$schema_version < 2L) contract_error("donor_values requires schema_version = 2.")
+    sections <- c(sections, "donor_values")
+  }
+  for (section in sections) {
     if (!is.list(contract[[section]]) || !all(PROXIOMEVIS_READOUTS %in% names(contract[[section]]))) {
       contract_error(paste(section, "must contain all three readouts."))
     }
@@ -131,10 +171,12 @@ validate_precomputed_data <- function(data) {
       table <- contract[[section]][[readout]]
       label <- paste(section, readout)
       columns <- switch(section, sample_summaries = sample_columns,
-                        donor_contrasts = contrast_columns, differential_results = result_columns)
+                        donor_contrasts = contrast_columns, differential_results = result_columns,
+                        donor_values = donor_columns)
       keys <- switch(section, sample_summaries = c("sample_id", "celltype", "feature_id"),
                      donor_contrasts = c("analysis_id", "celltype", "feature_id", "donor"),
-                     differential_results = c("analysis_id", "celltype", "feature_id"))
+                     differential_results = c("analysis_id", "celltype", "feature_id"),
+                     donor_values = c("analysis_id", "celltype", "feature_id", "donor", "group"))
       require_contract_columns(table, columns, label, keys)
       if (!all(table$celltype %in% allowed_cells)) contract_error(paste(label, "has an unknown cell type."))
       if (!is.logical(table$is_control) || anyNA(table$is_control)) contract_error(paste(label, "has invalid control flags."))
@@ -149,7 +191,7 @@ validate_precomputed_data <- function(data) {
       }
       number_columns <- intersect(c("value", "value_a", "value_b", "effect_size", "min_effect", "max_effect",
                                     "n_total_cells", "n_evaluable_cells", "n_scored_cells", "n_cells_a", "n_cells_b",
-                                    "n_pairs", "p_value", "p_adj"), names(table))
+                                    "n_pairs", "n_donors_a", "n_donors_b", "p_value", "p_adj"), names(table))
       for (field in number_columns) {
         if (!is.numeric(table[[field]]) || any(is.infinite(table[[field]]))) contract_error(paste(label, field, "must be numeric and finite or NA."))
         if (startsWith(field, "n_") && any(table[[field]] < 0 | table[[field]] != floor(table[[field]]), na.rm = TRUE)) {
@@ -171,16 +213,14 @@ validate_precomputed_data <- function(data) {
           contract_error(paste(label, "has inconsistent support counts."))
         }
       } else {
-        if (anyNA(table[c("group_a", "group_b")]) || any(table$group_a == table$group_b) ||
-            !all(c(table$group_a, table$group_b) %in% sample_design$condition)) {
-          contract_error(paste(label, "has an invalid contrast."))
-        }
+        context <- validate_contract_comparison(table, label, sample_design, allowed_cells, contract$schema_version)
         if (section == "donor_contrasts") {
           if (!all(table$donor %in% sample_design$donor) ||
+              any(context$design == "independent") ||
               any(abs(table$effect_size - (table$value_a - table$value_b)) > 1e-8, na.rm = TRUE)) {
             contract_error(paste(label, "has an invalid donor or contrast direction."))
           }
-        } else {
+        } else if (section == "differential_results") {
           descriptive <- table$inference == "descriptive"
           if (anyNA(descriptive) || any(descriptive & (!is.na(table$p_value) | !is.na(table$p_adj)))) {
             contract_error(paste(label, "descriptive effects cannot contain inferential p-values."))
@@ -188,6 +228,91 @@ validate_precomputed_data <- function(data) {
           if (any(table$min_effect > table$effect_size | table$effect_size > table$max_effect, na.rm = TRUE)) {
             contract_error(paste(label, "has an inconsistent donor-effect range."))
           }
+          across <- context$design != "within_donor"
+          if (any(across)) {
+            if (!all(c("n_donors_a", "n_donors_b") %in% names(table)) ||
+                anyNA(table[across, c("n_pairs", "n_donors_a", "n_donors_b")]) ||
+                anyNA(table$replicate_unit[across]) || any(table$replicate_unit[across] != "donor") ||
+                anyNA(table$inference[across]) || !all(table$inference[across] %in% c("donor_level", "descriptive")) ||
+                any(table$inference[across] == "donor_level" &
+                    (!is.finite(table$p_value[across]) | !is.finite(table$p_adj[across])))) {
+              contract_error(paste(label, "donor-level comparisons require donor counts, donor replication, and valid inference labels."))
+            }
+            paired <- context$design == "paired"
+            independent <- context$design == "independent"
+            if (any(table$n_pairs[paired] > pmin(table$n_donors_a[paired], table$n_donors_b[paired])) ||
+                any(table$n_pairs[independent] != 0) ||
+                any(!is.na(table$min_effect[independent]) | !is.na(table$max_effect[independent]))) {
+              contract_error(paste(label, "has inconsistent donor support or donor-effect ranges."))
+            }
+          }
+        } else {
+          if (any(context$design == "within_donor") || !is.logical(table$eligible) || anyNA(table$eligible) ||
+              !all(table$donor %in% sample_design$donor) ||
+              any(table$group != table$group_a & table$group != table$group_b)) {
+            contract_error(paste(label, "has invalid donor measurements or group membership."))
+          }
+          condition_axis <- context$axis == "condition"
+          if (anyNA(table[c("source_celltype", "condition")]) ||
+              any(table$source_celltype[condition_axis] != table$celltype[condition_axis]) ||
+              any(table$condition[condition_axis] != table$group[condition_axis]) ||
+              any(table$source_celltype[!condition_axis] != table$group[!condition_axis]) ||
+              any(table$condition[!condition_axis] != context$fixed_condition[!condition_axis])) {
+            contract_error(paste(label, "does not match its comparison groups."))
+          }
+          counts <- table[c("n_total_cells", "n_evaluable_cells", "n_scored_cells")]
+          if (anyNA(counts) || any(table$n_scored_cells > table$n_evaluable_cells |
+              table$n_evaluable_cells > table$n_total_cells) ||
+              any(table$eligible & (!is.finite(table$value) | table$n_scored_cells == 0)) ||
+              any(!table$eligible & !is.na(table$value))) {
+            contract_error(paste(label, "has inconsistent support counts or eligibility; missing measurements must stay NA."))
+          }
+          actual <- table(metadata[[defaults$donor_column]], metadata[[defaults$condition_column]],
+                          metadata[[defaults$celltype_column]])
+          index <- cbind(match(table$donor, dimnames(actual)[[1]]),
+            match(table$condition, dimnames(actual)[[2]]), match(table$source_celltype, dimnames(actual)[[3]]))
+          if (anyNA(index) || any(table$n_total_cells > as.numeric(actual[index]))) {
+            contract_error(paste(label, "support exceeds the cells in the donor design."))
+          }
+          independent <- table[context$design == "independent" & table$n_total_cells > 0, , drop = FALSE]
+          if (anyDuplicated(unique(independent[c("analysis_id", "donor", "group")])[c("analysis_id", "donor")])) {
+            contract_error(paste(label, "independent groups cannot share donors."))
+          }
+        }
+      }
+    }
+  }
+  if (!is.null(contract$donor_values)) for (readout in PROXIOMEVIS_READOUTS) {
+    values <- contract$donor_values[[readout]]
+    contrasts <- contract$donor_contrasts[[readout]]
+    results <- contract$differential_results[[readout]]
+    contexts <- lapply(list(values, contrasts, results), function(rows) {
+      context <- validate_contract_comparison(rows, readout, sample_design, allowed_cells, contract$schema_version)
+      data.frame(analysis_id = rows$analysis_id, comparison_axis = context$axis, design = context$design,
+        group_a = rows$group_a, group_b = rows$group_b, fixed_condition = context$fixed_condition)
+    })
+    if (anyDuplicated(unique(do.call(rbind, contexts))$analysis_id)) {
+      contract_error(paste(readout, "has inconsistent comparison context across result tables."))
+    }
+    for (i in seq_len(nrow(results))) {
+      result <- results[i, , drop = FALSE]
+      rows <- values[values$analysis_id == result$analysis_id & values$celltype == result$celltype &
+        values$feature_id == result$feature_id, , drop = FALSE]
+      if (!nrow(rows)) next
+      a <- rows[rows$eligible & rows$group == result$group_a, , drop = FALSE]
+      b <- rows[rows$eligible & rows$group == result$group_b, , drop = FALSE]
+      pairs <- intersect(a$donor, b$donor)
+      if (result$n_donors_a != nrow(a) || result$n_donors_b != nrow(b) ||
+          (rows$design[1] == "paired" && result$n_pairs != length(pairs))) {
+        contract_error(paste(readout, "result donor counts do not match eligible donor measurements."))
+      }
+      if (rows$design[1] == "paired") {
+        paired <- contrasts[contrasts$analysis_id == result$analysis_id & contrasts$celltype == result$celltype &
+          contrasts$feature_id == result$feature_id, , drop = FALSE]
+        if (!setequal(paired$donor, pairs) || anyNA(paired[c("value_a", "value_b", "effect_size")]) ||
+            any(abs(paired$value_a - a$value[match(paired$donor, a$donor)]) > 1e-8) ||
+            any(abs(paired$value_b - b$value[match(paired$donor, b$donor)]) > 1e-8)) {
+          contract_error(paste(readout, "paired contrasts do not match eligible donor measurements."))
         }
       }
     }

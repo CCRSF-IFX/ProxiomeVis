@@ -142,7 +142,8 @@ test_that("the real demo builds atomically and preserves every report statistic"
   object <- readRDS(output)
   expect_true(validate_precomputed_object(object))
   contract <- object@misc$proxiomevis
-  expect_match(contract$dataset_id, "^pixelgen-demo-v1-[0-9a-f]{16}$")
+  expect_identical(contract$schema_version, PROXIOMEVIS_SCHEMA_VERSION)
+  expect_match(contract$dataset_id, paste0("^pixelgen-demo-v", PROXIOMEVIS_SCHEMA_VERSION, "-[0-9a-f]{16}$"))
   expect_identical(names(contract$report$source_results), c("d1", "d2"))
   expect_identical(names(contract$report$source_results$d1), DEMO_READOUTS)
   expect_identical(contract$report$status$analysis$status, "PASS")

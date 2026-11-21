@@ -50,7 +50,8 @@ report_volcano_plotly <- function(plot, source = "A") {
       marker = "Marker", marker_1 = "Marker 1", marker_2 = "Marker 2",
       target = "Target", reference = "Reference", celltype = "Cell type",
       difference = "Abundance difference", diff_median = "Median difference",
-      p = "P value", p_adj = "Adjusted P value"
+      effect_size = "Effect", n_donors_a = "Target donors", n_donors_b = "Reference donors",
+      n_pairs = "Donor pairs", p = "P value", p_adj = "Adjusted P value"
     )
     report_interactive_layer(layer, plot$data, fields)
   })
@@ -66,7 +67,8 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
     marker_1 = "Marker 1", marker_2 = "Marker 2", donor = "Donor",
     celltype = "Cell type", panel = "Condition / comparison",
     value = if (is.null(plot$labels$fill)) "Stored value" else plot$labels$fill,
-    p_adj = "Adjusted P value", status = "Availability", pct_detected = "Fraction detected"
+    p_adj = "Adjusted P value", status = "Availability", pct_detected = "Fraction detected",
+    n_donors = "Eligible donors", n_donors_a = "Target donors", n_donors_b = "Reference donors"
   )
   # One heatmap replaces thousands of separate polygons for unavailable pairs.
   tiles <- Filter(function(layer) inherits(layer$geom, "GeomTile") &&
@@ -146,7 +148,8 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
       name = paste0(breaks[[i]] * 100, "%"), legendgroup = "detection-size",
       x = list(NA_real_), y = list(NA_real_), marker = list(size = sizes[[i]], color = "#D9D9D9",
         line = list(color = "#596873", width = 1)), showlegend = TRUE, hoverinfo = "skip"))
-    widget <- plotly::layout(widget, legend = list(title = list(text = "Cells with<br>a score")))
+    widget <- plotly::layout(widget, legend = list(title = list(text =
+      if (identical(plot$labels$fill, "Mean donor median log2 ratio")) "Mean per-donor<br>cell coverage" else "Cells with<br>a score")))
   }
   if (length(size_legend)) {
     widget <- plotly::plotly_build(widget)
@@ -172,7 +175,10 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
         trace$marker$colorbar <- utils::modifyList(trace$marker$colorbar,
           list(x = 1.03, y = 1, yanchor = "top", len = 0.46, thickness = 12,
             xpad = 0, ypad = 0, tickfont = list(size = 11)))
-        trace$marker$colorbar$title <- list(text = if (isTRUE(is_difference)) "Difference<br>in medians" else "Mean<br>log2 ratio",
+        label <- plot$labels$fill
+        trace$marker$colorbar$title <- list(text = if (identical(label, "Mean donor difference")) "Mean donor<br>difference"
+          else if (identical(label, "Mean donor median log2 ratio")) "Mean donor<br>median log2 ratio"
+          else if (isTRUE(is_difference)) "Difference<br>in medians" else "Mean<br>log2 ratio",
           font = list(size = 11))
       }
       trace
@@ -187,6 +193,18 @@ report_spatial_plotly <- function(plot, source = "A", comparison = FALSE) {
 
 report_network_profiles <- function(contract, donor, celltype, comparison = NULL) {
   if (identical(celltype, PRECOMPUTED_ALL)) stop("Select one cell type for its network.", call. = FALSE)
+  definitions <- precomputed_result_rows_for_donor(contract, "colocalization", donor)
+  definitions <- precomputed_filter_table(definitions, comparison = comparison, celltype = celltype, include_controls = TRUE)
+  if (identical(donor, PRECOMPUTED_ALL) || any(definitions$comparison_axis %in% "celltype")) {
+    alignment <- report_comparison_alignment(contract, donor, celltype, comparison)
+    rows <- as.data.frame(alignment$profiles)
+    rows <- rows[rows$celltype == celltype & rows$donor == donor & rows$marker_1 != rows$marker_2, , drop = FALSE]
+    if (!nrow(rows)) stop("No stored donor or cell-type profiles are available for this scope.", call. = FALSE)
+    rows$key <- report_feature_key(rows$marker_1, rows$marker_2)
+    rows$condition <- factor(rows$panel, levels = unique(rows$panel))
+    rows$panel <- NULL
+    return(rows)
+  }
   rows <- precomputed_filter_table(
     precomputed_contract_table(contract, "sample_summaries", "colocalization"),
     donor = donor, celltype = celltype, include_controls = TRUE)
@@ -255,6 +273,7 @@ plot_report_network <- function(rows, markers, min_detection = 0.5, min_mean = 0
   empty_conditions <- setdiff(levels(rows$condition), as.character(edges$condition))
   notes <- data.frame(condition = factor(empty_conditions, levels = levels(rows$condition)),
     label = rep("No pairs pass the display filters", length(empty_conditions)))
+  donor_summary <- "n_donors" %in% names(rows)
   ggplot2::ggplot(edges) +
     ggplot2::geom_segment(ggplot2::aes(x = x, y = y, xend = xend, yend = yend,
       color = value, linewidth = abs(value))) +
@@ -264,13 +283,15 @@ plot_report_network <- function(rows, markers, min_detection = 0.5, min_mean = 0
     ggplot2::geom_text(data = notes, ggplot2::aes(x = 0, y = -1.25, label = label), size = 3) +
     ggplot2::facet_wrap(~condition, nrow = 1, drop = FALSE) +
     ggplot2::scale_color_gradient2(low = "#1F395F", mid = "#FFFFFF", high = "#B54868",
-      midpoint = 0, limits = c(-limit, limit), name = "Mean log2 ratio") +
+      midpoint = 0, limits = c(-limit, limit), name = if (donor_summary) "Mean donor median log2 ratio" else "Mean log2 ratio") +
     ggplot2::scale_linewidth_continuous(range = c(0.4, 5), limits = c(0, limit), guide = "none") +
     ggplot2::scale_x_continuous(limits = c(-1.4, 1.4)) +
     ggplot2::scale_y_continuous(limits = c(-1.4, 1.4)) +
-    ggplot2::labs(title = "Colocalization network", subtitle = paste(unique(rows$donor), unique(rows$celltype),
+    ggplot2::labs(title = "Colocalization network", subtitle = paste(
+      if (donor_summary) "Across donors" else unique(rows$donor), unique(rows$celltype),
       paste0("detection > ", min_detection, "; |mean| > ", min_mean), sep = " · "),
-      caption = "Stored population means include missing scores as zero. Display thresholds are not significance tests.") +
+      caption = if (donor_summary) "Equal-weight means of eligible donor medians. Missing scores are not zero. Display thresholds are not tests."
+        else "Stored population means include missing scores as zero. Display thresholds are not significance tests.") +
     ggplot2::theme_void() + ggplot2::theme(aspect.ratio = 1,
       strip.text = ggplot2::element_text(size = 12), panel.border = ggplot2::element_rect(fill = NA, color = "grey70"))
 }
@@ -281,7 +302,8 @@ report_network_plotly <- function(plot, source = "A") {
     plot$layers <- Filter(function(layer) !inherits(layer$geom, c("GeomSegment", "GeomPoint")), plot$layers)
   }
   fields <- c(marker_1 = "Marker 1", marker_2 = "Marker 2", condition = "Condition",
-    value = "Mean log2 ratio (missing scores zero)", pct_detected = "Fraction detected",
+    value = if ("n_donors" %in% names(plot$data)) "Mean donor median log2 ratio" else "Mean log2 ratio (missing scores zero)",
+    pct_detected = "Fraction detected", n_donors = "Eligible donors",
     n_scored_cells = "Detected cells", n_total_cells = "Total cells")
   plot$layers <- lapply(plot$layers, function(layer) {
     if (inherits(layer$geom, "GeomLabel")) return(ggplot2::ggproto(NULL, layer, geom = ggplot2::GeomText))
@@ -407,25 +429,29 @@ plot_report_volcano <- function(contract, readout, donor, celltype, comparison) 
   celltype <- report_plot_scalar(celltype, "celltype")
   comparison <- report_plot_scalar(comparison, "comparison")
   if (is.null(contract$report$source_results[[donor]][[readout]])) {
-    rows <- as.data.frame(contract$donor_contrasts[[readout]])
-    report_plot_require_columns(rows, c("donor", "celltype", "comparison", "marker_1",
+    across <- identical(donor, PRECOMPUTED_ALL)
+    rows <- as.data.frame(contract[[if (across) "differential_results" else "donor_contrasts"]][[readout]])
+    report_plot_require_columns(rows, c("celltype", "comparison", "marker_1",
       "marker_2", "effect_size", "group_a", "group_b"), "stored donor contrasts")
-    rows <- rows[rows$donor == donor & rows$celltype == celltype & rows$comparison == comparison, , drop = FALSE]
+    keep <- rows$celltype == celltype & rows$comparison == comparison
+    if (!across) keep <- keep & rows$donor == donor
+    rows <- rows[keep, , drop = FALSE]
     if (!"p_adj" %in% names(rows)) rows$p_adj <- rep(NA_real_, nrow(rows))
     if (!"p_value" %in% names(rows)) rows$p_value <- rep(NA_real_, nrow(rows))
     rows$p <- rows$p_value
     rows$target <- rows$group_a
     rows$reference <- rows$group_b
     rows$marker <- rows$marker_1
-    effect <- if (readout == "abundance") "difference" else "diff_median"
+    effect <- if (across) "effect_size" else if (readout == "abundance") "difference" else "diff_median"
     rows[[effect]] <- rows$effect_size
     rows <- rows[is.finite(rows$effect_size) & is.finite(rows$p_adj), , drop = FALSE]
     rows$.significance <- -log10(pmax(rows$p_adj, .Machine$double.xmin))
     plot <- ggplot2::ggplot(rows, ggplot2::aes(x = .data[[effect]], y = .significance)) +
       ggplot2::geom_point(color = "#3B6EA8", alpha = 0.7) +
-      ggplot2::labs(title = paste(donor, celltype, comparison, sep = " | "),
-        x = if (readout == "abundance") "Abundance difference" else "Difference in medians",
-        y = "-log10(adjusted P)", subtitle = "Stored results: target minus reference") +
+      ggplot2::labs(title = paste(if (across) "Across donors" else donor, celltype, comparison, sep = " | "),
+        x = if (across) "Mean donor difference" else if (readout == "abundance") "Abundance difference" else "Difference in medians",
+        y = "-log10(adjusted P)", subtitle = if (across) "Stored donor-level results: target minus reference"
+          else "Stored exploratory results: target minus reference") +
       ggplot2::theme_minimal(base_size = 12)
     if (!nrow(rows)) plot <- plot + ggplot2::annotate("text", x = 0, y = 0,
       label = "No finite effects with adjusted P values for this scope")
@@ -620,6 +646,59 @@ report_spatial_alignment <- function(contract) {
   alignment
 }
 
+# New donor summaries retain their own endpoint; never reconstruct medians from legacy profile means.
+report_comparison_alignment <- function(contract, donor, celltype, comparison) {
+  alignment <- report_spatial_alignment(contract)
+  selected_celltype <- celltype
+  selected_comparison <- comparison
+  collect <- function(section) {
+    rows <- data.table::rbindlist(lapply(c("self_proximity", "colocalization"), function(readout)
+      contract[[section]][[readout]]), fill = TRUE)
+    if (nrow(rows)) rows <- rows[celltype %in% selected_celltype & comparison %in% selected_comparison]
+    rows
+  }
+  if (identical(donor, PRECOMPUTED_ALL)) {
+    values <- collect("donor_values")
+    if (nrow(values)) {
+      values <- values[eligible %in% TRUE & is.finite(value)]
+      if (nrow(values) && all(values$design == "paired")) {
+        keys <- c("analysis_id", "feature_id", "donor")
+        values <- values[values[, .N, by = keys][N == 2L], on = keys, nomatch = 0L]
+      }
+      profiles <- values[, .(value = mean(value),
+        pct_detected = mean(n_scored_cells / n_total_cells), n_donors = data.table::uniqueN(donor)),
+        by = .(marker_1, marker_2, celltype, panel = group)]
+      profiles[, `:=`(donor = PRECOMPUTED_ALL, p_adj = NA_real_, status = "supported")]
+      alignment$profiles <- profiles
+    } else alignment$profiles <- alignment$profiles[FALSE, ]
+    results <- collect("differential_results")
+    if (nrow(results)) {
+      alignment$differences <- results[, .(marker_1, marker_2, celltype,
+        donor = PRECOMPUTED_ALL, panel = comparison, value = effect_size, p_adj,
+        pct_detected = NA_real_, status = ifelse(is.finite(effect_size), "supported", "unavailable"))]
+    } else alignment$differences <- alignment$differences[FALSE, ]
+    alignment$profile_label <- "Mean donor median log2 ratio"
+    alignment$effect_label <- "Mean donor difference"
+  } else {
+    contrasts <- collect("donor_contrasts")
+    if (!nrow(contrasts) || !any(contrasts$comparison_axis %in% "celltype")) return(alignment)
+    groups <- unique(c(contrasts$group_b, contrasts$group_a))
+    fixed <- unique(contrasts$fixed_condition)
+    profiles <- as.data.frame(alignment$profiles)
+    profiles <- profiles[profiles$donor == donor & profiles$celltype %in% groups & profiles$panel %in% fixed, , drop = FALSE]
+    profiles$source_celltype <- profiles$celltype
+    profiles$panel <- profiles$celltype
+    profiles$celltype <- rep(celltype, nrow(profiles))
+    alignment$profiles <- data.table::as.data.table(profiles)
+  }
+  alignment$conditions <- unique(as.character(alignment$profiles$panel))
+  alignment$contrasts <- unique(as.character(alignment$differences$panel))
+  alignment$donors <- unique(c(alignment$profiles$donor, alignment$differences$donor))
+  for (kind in c("profiles", "differences"))
+    alignment$limits[[kind]] <- max(c(.1, abs(alignment[[kind]]$value[is.finite(alignment[[kind]]$value)])))
+  alignment
+}
+
 report_spatial_markers <- function(alignment, celltype = NULL) {
   select <- function(rows, fields) {
     if (!is.data.frame(rows) || !all(fields %in% names(rows))) return(character())
@@ -770,9 +849,16 @@ plot_report_spatial <- function(
   alignment$donors <- unique(c(alignment$donors, donor))
   if (is.null(markers)) markers <- report_spatial_markers(alignment, celltype)
   alignment[[kind]] <- report_spatial_rows(alignment, donor, celltype, kind, panel, markers)
-  .report_comparable_source$comparison_plot(
+  plot <- .report_comparable_source$comparison_plot(
     alignment, celltype, kind, donor, panel, markers = markers
   )
+  label <- alignment[[if (kind == "profiles") "profile_label" else "effect_label"]]
+  if (length(label) == 1L) {
+    plot <- plot + ggplot2::labs(fill = label)
+    scale <- plot$scales$get_scales("fill")
+    if (!is.null(scale)) scale$name <- label
+  }
+  plot
 }
 
 report_abundance_matrix <- function(bundle, contrast, celltype) {

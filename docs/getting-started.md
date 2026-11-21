@@ -105,11 +105,12 @@ upper right to check the active bundle and configured sidecars.
 
 Open **Results**. Select **Prepared results** or a completed session comparison
 under **Result source**. Both use the same views. For prepared results, choose
-a donor, cell type, comparison, and readout. A dataset with one donor shows a
-fixed donor label. A session comparison retains its submitted scope.
+a donor or the across-donor view, cell type, comparison, and readout. A dataset
+with one donor shows a fixed donor label. A session comparison retains its
+submitted scope. Within-donor results remain available without biological replicates.
 
 - **Tables:** inspect searchable results, sample support, method settings, and CSV downloads.
-- **Volcano:** inspect the test beside a combined violin and boxplot. Click a volcano point to change the displayed cell distribution. Hover for details. Scroll or drag a box to zoom. Double-click to reset.
+- **Volcano:** inspect the test beside its feature detail. Within-donor results show a combined cell violin and boxplot. Across-donor results show donor points, with lines for paired donors only. Click a volcano point to change the feature. Hover for details. Scroll or drag a box to zoom. Double-click to reset.
 - **Spatial patterns:** inspect self-proximity and colocalization profiles or differential effects. For colocalization, select the network view to compare condition profiles with shared node positions.
 
 The volcano and spatial views require one cell type. **Spatial patterns** is
@@ -157,33 +158,44 @@ side by side. All three panels use the same protein positions. The two profiles 
 color scale. The differential panel uses a separate fixed scale. Gray cells
 mean that a result is unavailable or untested; missing values are not zero.
 
-Profile means are not the group medians used for differential effects.
+Older profile means are not the group medians used for differential effects.
+New across-donor profiles show means of eligible donor summaries. Paired profiles
+and effects use complete eligible donor pairs for each feature.
 Positive effects mean target minus reference. Diagonal entries show
 self-proximity; other entries show colocalization. Use the SVG and CSV buttons
 to export the applied view. **Protein order CSV** exports the ordered list.
 
 The colocalization network has its own marker and display-threshold controls.
-Its stored population means include missing scores as zero. Its display
+Older stored population means include missing scores as zero. New donor
+summaries use observed scores without zero imputation. Network display
 thresholds are not significance tests.
 
 ### Run and keep a comparison
 
-Open **New comparison**. Choose one donor, one cell type, two different
-conditions, and a readout. The test uses all cells in this scope and all dataset
-markers. The app has no marker-test or cell-subset selector.
+Open **New comparison**. Select **Within-donor exploration** or **Across donors**.
+Compare conditions in one cell type, or cell types in one condition. Select
+one donor for exploration. For an across-donor comparison, select matching
+donors with **Paired**, or different donors with **Independent**. Independent
+design is available for condition comparisons only. The test uses all cells
+in scope and all dataset markers. There is no marker-test or cell-subset selector.
 
 Read the readiness message before you run. It shows cell and marker counts,
-scope errors, and the required input status. Abundance requires stored counts.
+scope errors, and the required input status. Within-donor abundance requires
+stored counts. Across-donor abundance needs normalized values, not counts.
 Spatial tests require a configured proximity sidecar. The worker checks
 sidecar integrity and score coverage after submission. Adjust **Minimum
-observed cells per condition** for a spatial test if necessary.
+observed cells per donor and group** for a spatial test if necessary.
 
-Confirm the exploratory-analysis notice and click **Run comparison**. You can
+For within-donor exploration, confirm the exploratory-analysis notice. Click
+**Run comparison**. You can
 use other views while the separate R process runs. Click **Cancel running
-analysis** to stop it. Comparisons are limited to 2,000 cells, 160 markers,
-and 120 seconds. Spatial processing uses batches of at most 1,000 pairs and
+analysis** to stop it. Comparisons are limited to 2,000 cells per donor,
+40 donors, 80,000 cells in total, 160 markers, and 120 seconds.
+Spatial processing uses batches of at most 1,000 pairs and
 1,000,000 score rows. There is no 1,000-pair limit on the complete comparison.
-For a larger scope, prepare results offline.
+For a larger scope, calculate validated result tables in your analysis workflow.
+The [offline comparison command](hybrid-analysis.md#prepare-a-comparison-outside-the-app)
+uses the same calculation and size limits, without the Shiny timeout.
 
 Each completed test appears in session history. Select a completed comparison
 and click **Open in Results**. Prepared results remain unchanged. Use the CSV,

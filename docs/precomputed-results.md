@@ -165,10 +165,10 @@ The plain R list has these fields:
 | Field | Contents |
 | --- | --- |
 | `bundle_version` | `2L`, the application file format version |
-| `contract` | The unchanged frozen contract with `schema_version = 1L` |
+| `contract` | Analysis contract with `schema_version = 1L` or `2L`; old frozen statistics retain their original meaning |
 | `metadata`, `embeddings` | Prepared cell metadata and all stored reductions |
 | `abundance` | Aligned sparse marker-by-cell transformed abundance |
-| `counts` | Optional aligned sparse counts; needed for new abundance tests and proximity preparation |
+| `counts` | Optional aligned sparse counts; needed for within-donor abundance tests and proximity preparation, not across-donor abundance |
 | `cell_sources` | Optional exact `component`, `original_id`, and `sample_id` mapping from FSMap |
 | `assets` | Optional relative descriptors for proximity and graph sidecars |
 
@@ -186,7 +186,7 @@ object@misc$proxiomevis
 ```
 
 In the plain bundle the same contract is stored at `bundle$contract`.
-Its version 1 fields contain:
+The shared fields, including the original version 1 fields, contain:
 
 ```text
 schema_version         integer contract version
@@ -200,6 +200,14 @@ provenance             source and preparation details
 report                 frozen source rows and settings used by report plots
 proximity_source       optional source-PXL locations for offline preparation
 ```
+
+Schema version 2 also supports comparison-axis and donor-design fields, and
+optional `donor_values` tables. New cell-type and donor-level comparisons use
+this version. Donor values record the source cell type, condition, group, value,
+eligibility, and cell support. Across-donor tests use donors, not cells, as
+replicates. Version 1 inputs remain readable without changing their statistics.
+See [Methods and interpretation](hybrid-analysis.md#methods-and-interpretation)
+for new tests. The frozen demo statistics described below are unchanged.
 
 Each of the three result sections must contain these named readouts:
 
@@ -259,23 +267,24 @@ Consumers should validate the contract version and required columns before
 rendering any view. A newer incompatible layout should use a new version rather
 than silently changing the meaning of an existing field.
 
-## Explore one donor's stored results
+## Explore stored within-donor or across-donor results
 
 The top navigation groups prepared and session views under **Results**. Select
 **Prepared results** or a completed comparison in **Result source**. Its shared
-selection bar contains donor, cell type, comparison, and readout. A single-donor
-dataset displays the donor as a fixed label; multi-donor datasets offer a donor
-dropdown, but every result view still uses one donor's original stored contrast.
-The descriptive cross-donor rows remain preserved in the contract; they are not
-required or substituted for donor-specific effects by this interface.
+selection bar contains analysis scope, cell type, comparison, and readout.
+Select one donor for within-donor exploration, or the across-donor view for
+stored donor-level results. A single-donor dataset displays its donor as a
+fixed label unless an across-donor result is available. A session result keeps
+its submitted scope. New across-donor results do not replace older exploratory
+results. The original combined demo effects remain descriptive.
 
 The three subtabs are:
 
 | Subtab | Contents |
 | --- | --- |
-| Tables | Searchable results, sample support, exports, method settings, and a combined cell-level violin/boxplot for the selected feature |
-| Volcano | One donor and one cell type's original stored test with hover and zoom, beside a violin/boxplot that updates when a point is clicked |
-| Spatial patterns | Matrix of condition profiles or differential effects; colocalization network with aligned condition panels and marker/detection/mean filters; disabled for abundance |
+| Tables | Searchable results, sample or donor support, exports, methods, and selected-feature detail |
+| Volcano | Stored test with hover and zoom; click a point to update cell distributions or donor measurements |
+| Spatial patterns | Group profiles or differential effects; colocalization network with aligned group panels and marker/detection/mean filters; disabled for abundance |
 
 Choosing **All cell types** is supported by the tables and faceted distributions.
 Volcano and spatial views then ask for one cell type rather than silently
@@ -291,8 +300,10 @@ effect, available probabilities, and cell support; condition values are shown
 only if present in the contract. A feature without a stored test is labeled as
 such instead of being converted to a zero effect.
 
-Tables and Volcano show combined violin/boxplots of cell-level values by
-condition. Volcano places the distribution beside the clicked plot on wide
+For within-donor exploration, Tables and Volcano show combined violin/boxplots
+of cell-level values by condition or cell type. Across-donor results instead
+show donor measurements. Lines connect paired donors only; independent donor
+groups have no connecting lines. Volcano places the detail beside the plot on wide
 screens and below it on narrow screens. Abundance uses stored normalized values;
 self-proximity and colocalization use observed scores from the proximity sidecar.
 Missing scores are excluded, not replaced with zero. These descriptive plots do
@@ -318,10 +329,13 @@ The spatial matrix combines self-proximity and colocalization when either
 spatial readout is selected. The tab is disabled for abundance; switching to
 abundance while viewing it returns to Tables. Hover exposes the
 pair, stored value, and availability; click selects the pair for detail. The
-default marker order and scales follow the prepared report. Condition profiles
+default marker order and scales follow the prepared report. Legacy demo profiles
 show stored population means with the upstream missing-as-zero policy, while
-differential effects show differences of observed medians. The former must not
-be subtracted to reconstruct the latter. Untested or unavailable entries are
+their differential effects show differences of observed medians. Those profile
+means must not be subtracted to reconstruct the legacy effects. New donor-level
+profiles use means of observed-score donor medians with equal donor weights.
+Paired profiles and effects use complete eligible donor pairs for each feature.
+Missing donor measurements remain unavailable, not zero. Untested entries are
 distinguished from measured values near zero.
 
 The automatic protein list combines proteins from self-clustering and
@@ -373,13 +387,15 @@ exports use the applied selection. **Protein order CSV** records the ordered axe
 Condition profiles do not require saved differential tests. Prepared bundles can
 contain only profiles. The [general preparation tool](prepare-user-data.md) can
 produce these profiles from proximity sidecars without running a test.
-The network also works without a saved comparison. It shows the available
-conditions for the selected donor and cell type. When a condition has multiple
-samples, profile means are weighted by each sample's cell count. Missing sample
+The network also works without a saved comparison. For stored sample profiles,
+it shows the available conditions for the selected donor and cell type. When a
+condition has multiple samples, profile means are weighted by each sample's cell count. Missing sample
 contributions remain unavailable; they are not treated as zero.
 
-**New comparison** submits a comparison for all cells and markers in the selected
-donor, cell type, and conditions. A background R process performs the test.
+**New comparison** submits a comparison for all cells and markers in scope.
+Within-donor exploration compares conditions or cell types in one donor.
+Across-donor analysis uses matching donors for either comparison axis, or
+independent donor groups for conditions only. A background R process performs the test.
 Select a completed comparison and click **Open in Results** to use the same viewer.
 The session keeps multiple comparisons. Download a comparison before you close
 the session or change datasets. These operations do not replace the prepared results.

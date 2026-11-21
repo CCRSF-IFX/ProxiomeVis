@@ -307,3 +307,303 @@ test_that("session adapters preserve results and profiles without reusing saved 
   entry$request$bundle_md5 <- "another bundle"
   expect_error(hybrid_result_contract(data, entry), "does not belong")
 })
+
+hybrid_module_donor_fixture <- function(independent = FALSE, incomplete = FALSE) {
+  data <- hybrid_module_fixture()
+  original <- data$metadata
+  meta <- do.call(rbind, lapply(c("D1", "D2", "D3"), function(donor) {
+    do.call(rbind, lapply(c("B", "T"), function(celltype) {
+      rows <- original
+      rows$donor <- donor
+      rows$celltype <- celltype
+      rows$component <- paste(donor, celltype, original$component, sep = "_")
+      rows$sample_id <- paste(donor, rows$condition, sep = "_")
+      rows
+    }))
+  }))
+  if (independent) meta <- meta[meta$condition == ifelse(meta$donor == "D2", "NC", "TRT"), ]
+  if (incomplete) meta <- meta[!(meta$donor == "D3" & meta$condition == "NC"), ]
+  rownames(meta) <- meta$component
+  index <- match(sub("^D[123]_[BT]_", "", meta$component), original$component)
+  data$metadata <- meta
+  data$counts <- data$counts[, index, drop = FALSE]
+  colnames(data$counts) <- meta$component
+  data$abundance <- log1p(data$counts)
+  data$cell_sources <- data.frame(component = meta$component, original_id = meta$component, sample_id = meta$sample_id)
+  data$embeddings <- lapply(data$embeddings, function(coordinates) matrix(seq_len(2L * nrow(meta)), ncol = 2L,
+    dimnames = list(meta$component, colnames(coordinates))))
+  data$contract$sample_summaries <- lapply(data$contract$sample_summaries,
+    function(rows) rows[rows$sample_id %in% meta$sample_id, , drop = FALSE])
+  data
+}
+
+test_that("explicit within-donor exploration supports both comparison axes", {
+  current <- shiny::reactiveVal(hybrid_module_donor_fixture())
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(analysis_scope = "within_donor", comparison_axis = "condition", donor = "D1",
+      celltype = "B", target = "TRT", reference = "NC", readout = "abundance", acknowledge = TRUE, run = 1L)
+    expect_length(probe$state$jobs, 1L)
+    submitted <- probe$state$jobs[[1L]]$request
+    expect_identical(submitted$analysis_scope, "within_donor")
+    expect_identical(submitted$design, "within_donor")
+    probe$state$jobs[[1L]]$resolve(hybrid_module_result(submitted))
+    settle_module_task(session, task)
+    session$setInputs(comparison_axis = "celltype", condition = "NC", target = "T", reference = "B", run = 2L)
+    expect_length(probe$state$jobs, 2L)
+    submitted <- probe$state$jobs[[2L]]$request
+    expect_identical(submitted$comparison_axis, "celltype")
+    expect_identical(submitted$condition, "NC")
+    expect_identical(submitted$celltype, "T")
+    expect_setequal(current()$metadata$celltype[match(submitted$group_a_cells, current()$metadata$component)], "T")
+    expect_setequal(current()$metadata$celltype[match(submitted$group_b_cells, current()$metadata$component)], "B")
+    probe$state$jobs[[2L]]$resolve(hybrid_module_result(submitted))
+    settle_module_task(session, task)
+    expect_match(output$result_scope, "Condition: NC", fixed = TRUE)
+    contract <- hybrid_result_contract(current(), selected_entry())
+    expect_identical(contract$schema_version, 2L)
+    expect_true(all(contract$donor_contrasts$abundance$comparison_axis == "celltype"))
+    expect_true(all(contract$donor_contrasts$abundance$fixed_condition == "NC"))
+  })
+})
+
+test_that("paired controls show complete donors and never require the exploratory acknowledgement", {
+  current <- shiny::reactiveVal(hybrid_module_donor_fixture(incomplete = TRUE))
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(analysis_scope = "across_donors", comparison_axis = "condition", design = "paired",
+      donors = c("D1", "D2", "D3"), celltype = "B", target = "TRT", reference = "NC",
+      readout = "abundance", acknowledge = FALSE)
+    expect_null(prepared_request()$error)
+    expect_match(output$selection_summary, "84 target cells; 84 reference cells retained", fixed = TRUE)
+    expect_match(output$selection_summary, "2 complete donor pairs", fixed = TRUE)
+    expect_match(output$selection_summary, "D3 (incomplete pair)", fixed = TRUE)
+    session$setInputs(run = 1L)
+    expect_length(probe$state$jobs, 1L)
+    submitted <- probe$state$jobs[[1L]]$request
+    expect_identical(submitted$design, "paired")
+    expect_setequal(submitted$donors_a, c("D1", "D2"))
+    expect_length(submitted$group_a_cells, 84L)
+    session$setInputs(cancel = 1L)
+    probe$state$jobs[[1L]]$reject(simpleError("Analysis cancelled."))
+    expect_warning(settle_module_task(session, task), "Analysis cancelled")
+    session$setInputs(donors = character())
+    expect_match(prepared_request()$error, "Choose at least one donor")
+    session$setInputs(run = 2L)
+    expect_length(probe$state$jobs, 1L)
+  })
+})
+
+test_that("independent controls keep donor groups separate and celltype mode uses a fixed condition", {
+  current <- shiny::reactiveVal(hybrid_module_donor_fixture(independent = TRUE))
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(analysis_scope = "across_donors", comparison_axis = "condition", design = "independent",
+      donors = c("D1", "D2", "D3"), celltype = "B", target = "TRT", reference = "NC", readout = "abundance")
+    expect_null(prepared_request()$error)
+    expect_match(output$selection_summary, "2 target donors; 1 reference donors", fixed = TRUE)
+    expect_setequal(prepared_request()$request$donors_a, c("D1", "D3"))
+    expect_identical(prepared_request()$request$donors_b, "D2")
+    session$setInputs(comparison_axis = "celltype", condition = "TRT", target = "T", reference = "B", design = "paired")
+    expect_null(prepared_request()$error)
+    expect_match(output$selection_summary, "2 complete donor pairs", fixed = TRUE)
+    request <- prepared_request()$request
+    expect_true(all(current()$metadata$condition[match(c(request$group_a_cells, request$group_b_cells),
+      current()$metadata$component)] == "TRT"))
+    expect_identical(request$celltype, "T")
+  })
+})
+
+test_that("across-donor adapters retain donor measurements and validate as prepared results", {
+  for (scenario in c("paired_conditions", "independent_conditions", "paired_celltypes")) {
+    data <- hybrid_module_donor_fixture(independent = scenario == "independent_conditions")
+    celltypes <- scenario == "paired_celltypes"
+    request <- validate_hybrid_request(data, list(analysis_scope = "across_donors",
+      comparison_axis = if (celltypes) "celltype" else "condition",
+      design = if (scenario == "independent_conditions") "independent" else "paired",
+      donors = c("D1", "D2", "D3"), celltype = if (celltypes) "T" else "B", condition = "NC",
+      target = if (celltypes) "T" else "TRT", reference = if (celltypes) "B" else "NC",
+      readout = "abundance", markers = c("A", "B")))
+    result <- run_donor_analysis(data, request)
+    entry <- list(id = "donor-comparison", label = scenario, request = request, result = result)
+    contract <- hybrid_result_contract(data, entry)
+    expect_identical(contract$schema_version, 2L)
+    expect_identical(contract$differential_results$abundance$effect_size, result$results$effect_size)
+    expect_identical(contract$donor_values$abundance$value, result$donor_values$value)
+    expect_identical(contract$donor_values$abundance$source_celltype, result$donor_values$source_celltype)
+    expect_identical(contract$donor_contrasts$abundance$effect_size, result$donor_contrasts$effect_size)
+    expect_true(all(contract$differential_results$abundance$replicate_unit == "donor"))
+    expect_true(all(contract$donor_values$abundance$comparison_axis == request$comparison_axis))
+    expect_identical(data$contract$sample_summaries, contract$sample_summaries)
+    adapted <- data
+    adapted$contract <- contract
+    expect_true(validate_precomputed_data(adapted))
+    invalid <- entry
+    invalid$result$donor_values$donor[[1L]] <- "outside scope"
+    expect_error(hybrid_result_contract(data, invalid), "measurements do not match")
+    invalid <- entry
+    invalid$result$donor_values$group[[1L]] <- "outside group"
+    expect_error(hybrid_result_contract(data, invalid), "invalid groups")
+    invalid <- entry
+    invalid$result$donor_values <- rbind(invalid$result$donor_values, invalid$result$donor_values[1L, ])
+    expect_error(hybrid_result_contract(data, invalid), "duplicate records")
+    invalid <- entry
+    invalid$result$donor_values <- invalid$result$donor_values[FALSE, ]
+    invalid$result$donor_contrasts <- invalid$result$donor_contrasts[FALSE, ]
+    expect_error(hybrid_result_contract(data, invalid), "cover every requested feature")
+    invalid <- entry
+    invalid$result$donor_values <- invalid$result$donor_values[-1L, ]
+    expect_error(hybrid_result_contract(data, invalid), "cover every requested feature")
+    invalid <- entry
+    invalid$result$donor_values <- invalid$result$donor_values[invalid$result$donor_values$feature_id != "A", ]
+    expect_error(hybrid_result_contract(data, invalid), "cover every requested feature")
+    invalid <- entry
+    invalid$result$donor_values$n_total_cells[[1L]] <- 41L
+    expect_error(hybrid_result_contract(data, invalid), "inconsistent cell support")
+    invalid <- entry
+    invalid$result$donor_values$n_evaluable_cells[[1L]] <- 41L
+    expect_error(hybrid_result_contract(data, invalid), "inconsistent cell support")
+    invalid <- entry
+    invalid$result$donor_values$n_scored_cells[[1L]] <- 43L
+    expect_error(hybrid_result_contract(data, invalid), "inconsistent cell support")
+    invalid <- entry
+    invalid$result$donor_values$eligible[[1L]] <- !invalid$result$donor_values$eligible[[1L]]
+    expect_error(hybrid_result_contract(data, invalid), "inconsistent cell support")
+    invalid <- entry
+    invalid$result$results$effect_size[[1L]] <- invalid$result$results$effect_size[[1L]] + 1
+    expect_error(hybrid_result_contract(data, invalid), "effects or support do not match")
+    invalid <- entry
+    invalid$result$results$n_cells_a[[1L]] <- invalid$result$results$n_cells_a[[1L]] + 1L
+    expect_error(hybrid_result_contract(data, invalid), "effects or support do not match")
+    invalid <- entry
+    invalid$result$results$n_donors_a[[1L]] <- invalid$result$results$n_donors_a[[1L]] + 1L
+    expect_error(hybrid_result_contract(data, invalid), "effects or support do not match")
+    invalid <- entry
+    invalid$result$results$effect_size[[1L]] <- NA_real_
+    expect_error(hybrid_result_contract(data, invalid), "effects or support do not match")
+    invalid <- entry
+    invalid$result$results$inference[[1L]] <- "donor_level"
+    invalid$result$results$p_value[[1L]] <- .01
+    invalid$result$results$p_adj[[1L]] <- .02
+    invalid$result$results$status[[1L]] <- "no_finite_test_result"
+    expect_error(hybrid_result_contract(data, invalid), "inference and test status")
+    if (request$design == "paired") {
+      invalid <- entry
+      invalid$result$donor_contrasts <- invalid$result$donor_contrasts[-1L, ]
+      expect_error(hybrid_result_contract(data, invalid), "every complete eligible donor pair")
+      invalid <- entry
+      invalid$result$donor_contrasts$value_a[[1L]] <- 99
+      expect_error(hybrid_result_contract(data, invalid), "do not match their donor measurements")
+      invalid <- entry
+      invalid$result$donor_contrasts$n_cells_a[[1L]] <- 41L
+      expect_error(hybrid_result_contract(data, invalid), "do not match their donor measurements")
+    } else {
+      invalid <- entry
+      invalid$result$donor_values <- invalid$result$donor_values[invalid$result$donor_values$n_total_cells > 0, ]
+      expect_error(hybrid_result_contract(data, invalid), "cover every requested feature")
+    }
+  }
+})
+
+test_that("engine exports cannot claim inference below the donor test minimum", {
+  for (design in c("paired", "independent")) {
+    data <- hybrid_module_donor_fixture(independent = design == "independent")
+    request <- validate_hybrid_request(data, list(analysis_scope = "across_donors", comparison_axis = "condition",
+      design = design, donors = if (design == "paired") "D1" else c("D1", "D2"), celltype = "B",
+      target = "TRT", reference = "NC", readout = "abundance"))
+    entry <- list(id = "small-comparison", label = "Insufficient donors", request = request,
+      result = run_donor_analysis(data, request))
+    expect_silent(hybrid_result_contract(data, entry))
+    entry$result$results$inference[[1L]] <- "donor_level"
+    entry$result$results$status[[1L]] <- "tested"
+    entry$result$results$p_value[[1L]] <- .01
+    entry$result$results$p_adj[[1L]] <- .02
+    expect_error(hybrid_result_contract(data, entry), "inference and test status")
+  }
+})
+
+test_that("across-donor history and exports retain the submitted design after controls change", {
+  current <- shiny::reactiveVal(hybrid_module_donor_fixture())
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(analysis_scope = "across_donors", comparison_axis = "condition", design = "paired",
+      donors = c("D1", "D2"), celltype = "B", target = "TRT", reference = "NC", readout = "abundance", run = 1L)
+    submitted <- probe$state$jobs[[1L]]$request
+    session$setInputs(donors = "D3", target = "NC", reference = "TRT", design = "independent")
+    probe$state$jobs[[1L]]$resolve(run_donor_analysis(current(), submitted))
+    settle_module_task(session, task)
+    expect_length(history(), 1L)
+    expect_identical(selected_entry()$request, submitted)
+    expect_match(selected_entry()$label, "2 donors paired", fixed = TRUE)
+    expect_match(output$result_scope, "Across donors: D1, D2 paired", fixed = TRUE)
+    package <- readRDS(output$result_rds)
+    expect_identical(package$entry$request, submitted)
+    expect_identical(package$entry$result$donor_values, result()$donor_values)
+    expect_match(paste(readLines(output$provenance_json), collapse = ""), '"analysis_scope": "across_donors"', fixed = TRUE)
+    expect_equal(nrow(utils::read.csv(output$results_csv)), 3L)
+  })
+})
+
+test_that("across-donor abundance uses normalized values without requiring raw counts", {
+  data <- hybrid_module_donor_fixture()
+  data$counts <- NULL
+  current <- shiny::reactiveVal(data)
+  probe <- hybrid_module_probe()
+  shiny::testServer(probe$module, args = list(data = current, manager = new_hybrid_job_manager(),
+    code_dir = tempdir()), {
+    session$setInputs(analysis_scope = "across_donors", comparison_axis = "condition", design = "paired",
+      donors = c("D1", "D2"), celltype = "B", target = "TRT", reference = "NC", readout = "abundance")
+    expect_null(prepared_request()$error)
+    expect_match(output$readiness$html, "does not require counts", fixed = TRUE)
+    session$setInputs(run = 1L)
+    expect_length(probe$state$jobs, 1L)
+    submitted <- probe$state$jobs[[1L]]$request
+    probe$state$jobs[[1L]]$resolve(run_donor_analysis(current(), submitted))
+    settle_module_task(session, task)
+    contract <- hybrid_result_contract(current(), selected_entry())
+    expect_true(all(contract$differential_results$abundance$metric == "delta_mean_donor_mean_normalized_abundance"))
+    session$setInputs(analysis_scope = "within_donor", donor = "D1")
+    expect_match(prepared_request()$error, "Raw counts are not stored")
+  })
+})
+
+test_that("donor result validation uses resolved aliases without changing source mappings", {
+  source <- hybrid_module_donor_fixture()
+  source$bundle_version <- PROXIOMEVIS_BUNDLE_VERSION
+  source$metadata$subject <- source$metadata$donor
+  source$metadata$donor <- source$metadata$celltype
+  source$metadata$sample_source <- source$metadata$sample_id
+  source$metadata$sample_id <- source$metadata$condition
+  source$metadata$class <- source$metadata$cluster
+  mappings <- list(donor_column = "subject", celltype_column = "donor", condition_column = "sample_id",
+    sample_column = "sample_source", cluster_column = "class")
+  source$contract$defaults[names(mappings)] <- mappings
+  data <- precomputed_app_data(source)
+  request <- validate_hybrid_request(data, list(analysis_scope = "across_donors", comparison_axis = "condition",
+    design = "paired", donors = c("D1", "D2"), celltype = "B", target = "TRT", reference = "NC", readout = "abundance"))
+  entry <- list(id = "mapped-comparison", label = "Mapped source", request = request,
+    result = run_donor_analysis(data, request))
+  contract <- hybrid_result_contract(data, entry)
+  expect_identical(contract$defaults, source$contract$defaults)
+  expect_true(all(contract$donor_values$abundance$source_celltype == "B"))
+  expect_setequal(contract$donor_values$abundance$donor, c("D1", "D2"))
+})
+
+test_that("documentation covers all comparison designs and distinguishes cells from donors", {
+  html <- as.character(documentation_ui())
+  for (text in c("Within-donor exploration, Conditions:", "Within-donor exploration, Cell types:",
+    "Across donors, Conditions, Paired:", "Across donors, Cell types, Paired:",
+    "Across donors, Conditions, Independent:", "Biological replicates are not necessary for this exploratory view.",
+    "Version 1 results keep their original methods and values.", "Version 2 adds comparison design and donor measurements.",
+    "one point per donor and group", "a violin and boxplot of available cell values", "paired t-test", "Welch t-test",
+    "at least two complete eligible donor pairs", "at least two eligible donors in each group",
+    "do not show that a study has sufficient statistical power", "keep P values as NA", "approximately normal donor differences",
+    "Raw counts are not necessary for this mode.", "mean stored normalized abundance", "median retained observed log2 ratio")) {
+    expect_match(html, text, fixed = TRUE)
+  }
+  expect_false(grepl("<p>P values describe cells within the selected donor.", html, fixed = TRUE))
+})
